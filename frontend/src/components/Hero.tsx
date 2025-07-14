@@ -59,7 +59,7 @@ export const Hero = () => {
           <div className="relative flex justify-center items-center">
             <div className="relative">
               <img 
-                src="https://github.com/Sweety-Vigneshg/Padak-Marketing-Website/blob/main/frontend/src/assets/padak_p.png?raw=true" 
+                src="https://github.com/Sweety-Vigneshg/Padak-Marketing-Website/blob/main/frontend/src/assets/here-logo-digital-marketing-partner.png?raw=true" 
                 alt="Padak Logo" 
                 className="w-80 h-80 lg:w-96 lg:h-96 object-contain drop-shadow-2xl"
               />
