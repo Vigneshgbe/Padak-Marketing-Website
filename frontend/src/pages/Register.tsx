@@ -36,11 +36,11 @@ export default function Register() {
   };
 
   const handleTermsClick = () => {
-    window.location.href = '/terms';
+    window.location.href = '/Terms';
   };
 
   const handlePrivacyClick = () => {
-    window.location.href = '/privacy';
+    window.location.href = '/Policy';
   };
 
   const handleSignInClick = () => {
