@@ -27,7 +27,7 @@ const courses = [
     duration: "12 weeks",
     students: 1250,
     rating: 4.9,
-    price: "$299",
+    price: "₹24,999",
     level: "Beginner",
     category: "Digital Marketing",
     image: "🎯",
@@ -42,7 +42,7 @@ const courses = [
     duration: "8 weeks",
     students: 890,
     rating: 4.8,
-    price: "$199",
+    price: "₹16,999",
     level: "Advanced",
     category: "SEO",
     image: "🔍",
@@ -57,7 +57,7 @@ const courses = [
     duration: "10 weeks",
     students: 2100,
     rating: 4.9,
-    price: "$249",
+    price: "₹20,999",
     level: "Intermediate",
     category: "Social Media",
     image: "📱",
@@ -72,7 +72,7 @@ const courses = [
     duration: "6 weeks",
     students: 670,
     rating: 4.7,
-    price: "$179",
+    price: "₹14,999",
     level: "Intermediate",
     category: "PPC",
     image: "💰",
@@ -87,7 +87,7 @@ const courses = [
     duration: "9 weeks",
     students: 1450,
     rating: 4.8,
-    price: "$229",
+    price: "₹18,999",
     level: "Beginner",
     category: "Content Marketing",
     image: "✍️",
@@ -102,7 +102,7 @@ const courses = [
     duration: "7 weeks",
     students: 980,
     rating: 4.6,
-    price: "$159",
+    price: "₹12,999",
     level: "Intermediate",
     category: "Email Marketing",
     image: "📧",
@@ -133,12 +133,12 @@ export default function Courses() {
       <Header />
       
       {/* Hero Section */}
-      <section className="py-20 bg-gradient-to-br from-primary/10 via-background to-accent/10">
+      <section className="py-20 bg-gradient-to-br from-orange-50/50 via-background to-orange-100/30 relative">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
             <h1 className="text-4xl lg:text-5xl font-bold mb-6">
               Master Digital Marketing with{" "}
-              <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
                 Expert-Led Courses
               </span>
             </h1>
@@ -157,11 +157,11 @@ export default function Courses() {
                   placeholder="Search courses..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="pl-10 border-orange-200 focus:border-orange-500 focus:ring-orange-500"
                 />
               </div>
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-full md:w-48">
+                <SelectTrigger className="w-full md:w-48 border-orange-200 focus:border-orange-500 focus:ring-orange-500">
                   <Filter className="w-4 h-4 mr-2" />
                   <SelectValue />
                 </SelectTrigger>
@@ -174,7 +174,7 @@ export default function Courses() {
                 </SelectContent>
               </Select>
               <Select value={levelFilter} onValueChange={setLevelFilter}>
-                <SelectTrigger className="w-full md:w-48">
+                <SelectTrigger className="w-full md:w-48 border-orange-200 focus:border-orange-500 focus:ring-orange-500">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -188,29 +188,43 @@ export default function Courses() {
             </div>
           </div>
         </div>
+        
+        {/* Floating background elements */}
+        <div className="absolute top-20 left-10 w-32 h-32 bg-orange-400/10 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-20 right-10 w-24 h-24 bg-orange-500/10 rounded-full blur-2xl animate-pulse delay-1000"></div>
       </section>
 
       {/* Courses Grid */}
-      <section className="py-20">
+      <section className="py-20 bg-gradient-to-br from-orange-50/30 via-background to-orange-100/20">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {filteredCourses.map((course) => (
-              <Card key={course.id} className="group hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
-                <CardHeader>
+              <Card key={course.id} className="group hover:shadow-xl transition-all duration-300 hover:-translate-y-2 border-0 bg-background/90 backdrop-blur-sm hover:bg-white relative overflow-hidden">
+                {/* Orange accent line */}
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 to-orange-400 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300"></div>
+                
+                <CardHeader className="pb-4">
                   <div className="flex items-center justify-between mb-4">
-                    <div className="text-4xl">{course.image}</div>
-                    <Badge variant="outline">{course.level}</Badge>
+                    <div className="text-5xl hover:scale-110 hover:rotate-3 transition-all duration-300 cursor-pointer">
+                      {course.image}
+                    </div>
+                    <Badge variant="outline" className="border-orange-200 text-orange-600 hover:bg-orange-50">
+                      {course.level}
+                    </Badge>
                   </div>
-                  <CardTitle className="text-xl group-hover:text-primary transition-colors">
+                  <CardTitle className="text-xl group-hover:text-orange-600 transition-colors">
                     {course.title}
                   </CardTitle>
-                  <CardDescription>{course.description}</CardDescription>
+                  <CardDescription className="text-base leading-relaxed">
+                    {course.description}
+                  </CardDescription>
                 </CardHeader>
+                
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between text-sm text-muted-foreground">
                     <span>By {course.instructor}</span>
                     <div className="flex items-center space-x-1">
-                      <Star className="w-4 h-4 text-yellow-500 fill-current" />
+                      <Star className="w-4 h-4 text-orange-500 fill-current" />
                       <span>{course.rating}</span>
                     </div>
                   </div>
@@ -235,20 +249,25 @@ export default function Courses() {
                   </div>
                   
                   <div className="flex items-center justify-between pt-4 border-t">
-                    <div className="text-2xl font-bold text-primary">{course.price}</div>
-                    <Button className="group">
+                    <div className="text-2xl font-bold text-orange-600">{course.price}</div>
+                    <Button className="bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-300 group">
                       <Play className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
                       Enroll Now
                     </Button>
                   </div>
                 </CardContent>
+                
+                {/* Subtle background pattern */}
+                <div className="absolute -bottom-2 -right-2 w-20 h-20 bg-orange-400/5 rounded-full blur-xl group-hover:bg-orange-400/10 transition-all duration-300"></div>
               </Card>
             ))}
           </div>
 
           {filteredCourses.length === 0 && (
             <div className="text-center py-12">
-              <BookOpen className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+              <div className="w-16 h-16 bg-gradient-to-br from-orange-500 to-orange-400 rounded-xl flex items-center justify-center mx-auto mb-4">
+                <BookOpen className="w-8 h-8 text-white" />
+              </div>
               <h3 className="text-xl font-semibold mb-2">No courses found</h3>
               <p className="text-muted-foreground">
                 Try adjusting your search terms or filters to find more courses.
