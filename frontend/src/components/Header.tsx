@@ -14,6 +14,17 @@ export const Header = () => {
     { name: "Contact", href: "#contact" }
   ];
 
+  // Logo component using the actual Padak logo image
+  const PadakLogo = () => (
+    <img 
+      src="https://github.com/Sweety-Vigneshg/Padak-Marketing-Website/blob/main/frontend/src/assets/padak_p.png?raw=true" 
+      alt="Padak Logo" 
+      width="32" 
+      height="32" 
+      className="object-contain"
+    />
+  );
+
   return (
     <header className="bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50 w-full border-b">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -21,7 +32,7 @@ export const Header = () => {
           {/* Updated Logo */}
           <div className="flex items-center space-x-3">
             <div className="flex items-center justify-center">
-              
+              <PadakLogo />
             </div>
             <div>
               <h1 className="text-xl font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
@@ -47,7 +58,7 @@ export const Header = () => {
           {/* Desktop Auth Buttons */}
           <div className="hidden md:flex items-center space-x-4">
             <a href="/login">
-              <Button variant="ghost" size="sm" className="hover:text-orange-500">
+              <Button variant="ghost" size="sm" className="text-purple-600 hover:text-white hover:bg-purple-600 border-purple-600 border">
                 <User className="w-4 h-4 mr-2" />
                 Login
               </Button>
@@ -84,7 +95,7 @@ export const Header = () => {
               ))}
               <div className="pt-4 border-t flex flex-col space-y-2">
                 <a href="/login">
-                  <Button variant="ghost" size="sm" className="w-full justify-start hover:text-orange-500">
+                  <Button variant="ghost" size="sm" className="w-full text-purple-600 hover:text-white hover:bg-purple-600 border-purple-600 border">
                     <User className="w-4 h-4 mr-2" />
                     Login
                   </Button>
