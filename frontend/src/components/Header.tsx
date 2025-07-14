@@ -21,7 +21,7 @@ export const Header = () => {
           {/* Updated Logo */}
           <div className="flex items-center space-x-3">
             <div className="flex items-center justify-center">
-              <img></img>
+              
             </div>
             <div>
               <h1 className="text-xl font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
