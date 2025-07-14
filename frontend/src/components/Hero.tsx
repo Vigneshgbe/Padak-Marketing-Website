@@ -1,9 +1,9 @@
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Play } from "lucide-react";
+import { ArrowRight, Play, TrendingUp, Users, Award } from "lucide-react";
 
 export const Hero = () => {
   return (
-    <section className="relative py-12 lg:py-16 overflow-hidden">
+    <section className="relative py-6 lg:py-8 overflow-hidden">
       {/* Background Gradient */}
       <div className="absolute inset-0 bg-gradient-to-br from-orange-100/50 via-background to-orange-50/30"></div>
       
@@ -59,9 +59,9 @@ export const Hero = () => {
           <div className="relative flex justify-center items-center">
             <div className="relative">
               <img 
-                src="https://github.com/Sweety-Vigneshg/Padak-Marketing-Website/blob/main/frontend/src/assets/here-logo-digital-marketing-partner.png?raw=true" 
+                src="https://raw.githubusercontent.com/Sweety-Vigneshg/Padak-Marketing-Website/refs/heads/main/frontend/src/assets/digital-marketing-hero-img.webp" 
                 alt="Padak Logo" 
-                className="w-80 h-80 lg:w-96 lg:h-96 object-contain drop-shadow-2xl"
+                className="w-[380px] h-[380px] lg:w-[480px] lg:h-[480px] object-contain drop-shadow-2xl"
               />
               
               {/* Floating Elements with Orange Theme */}
