@@ -60,7 +60,7 @@ export const Hero = () => {
             <div className="relative">
               <img 
                 src="https://raw.githubusercontent.com/Sweety-Vigneshg/Padak-Marketing-Website/refs/heads/main/frontend/src/assets/digital-marketing-hero-img.webp" 
-                alt="Padak Logo" 
+                alt="Padak - Your Digital Marketing Partner Hero Image" 
                 className="w-[380px] h-[380px] lg:w-[480px] lg:h-[480px] object-contain drop-shadow-2xl"
               />
               
