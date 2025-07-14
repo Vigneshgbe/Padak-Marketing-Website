@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Menu, X, User, BookOpen, Briefcase } from "lucide-react";
-import { Link } from "react-router-dom";
 
 export const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -19,13 +18,15 @@ export const Header = () => {
     <header className="bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50 w-full border-b">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
-          {/* Logo */}
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-gradient-to-r from-primary to-accent rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-lg">P</span>
+          {/* Updated Logo */}
+          <div className="flex items-center space-x-3">
+            <div className="flex items-center justify-center">
+              <img></img>
             </div>
             <div>
-              <h1 className="text-xl font-bold text-primary">Padak</h1>
+              <h1 className="text-xl font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
+                Padak
+              </h1>
               <p className="text-xs text-muted-foreground -mt-1">Your Digital Marketing Partner</p>
             </div>
           </div>
@@ -36,7 +37,7 @@ export const Header = () => {
               <a
                 key={item.name}
                 href={item.href}
-                className="text-sm font-medium text-foreground hover:text-primary transition-colors"
+                className="text-sm font-medium text-foreground hover:text-orange-500 transition-colors"
               >
                 {item.name}
               </a>
@@ -45,20 +46,22 @@ export const Header = () => {
 
           {/* Desktop Auth Buttons */}
           <div className="hidden md:flex items-center space-x-4">
-            <Link to="/login">
-              <Button variant="ghost" size="sm">
+            <a href="/login">
+              <Button variant="ghost" size="sm" className="hover:text-orange-500">
                 <User className="w-4 h-4 mr-2" />
                 Login
               </Button>
-            </Link>
-            <Link to="/register">
-              <Button size="sm">Get Started</Button>
-            </Link>
+            </a>
+            <a href="/register">
+              <Button size="sm" className="bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500">
+                Get Started
+              </Button>
+            </a>
           </div>
 
           {/* Mobile Menu Button */}
           <button
-            className="md:hidden p-2"
+            className="md:hidden p-2 hover:text-orange-500 transition-colors"
             onClick={() => setIsMenuOpen(!isMenuOpen)}
           >
             {isMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -73,22 +76,24 @@ export const Header = () => {
                 <a
                   key={item.name}
                   href={item.href}
-                  className="text-sm font-medium text-foreground hover:text-primary transition-colors"
+                  className="text-sm font-medium text-foreground hover:text-orange-500 transition-colors"
                   onClick={() => setIsMenuOpen(false)}
                 >
                   {item.name}
                 </a>
               ))}
               <div className="pt-4 border-t flex flex-col space-y-2">
-                <Link to="/login">
-                  <Button variant="ghost" size="sm" className="w-full justify-start">
+                <a href="/login">
+                  <Button variant="ghost" size="sm" className="w-full justify-start hover:text-orange-500">
                     <User className="w-4 h-4 mr-2" />
                     Login
                   </Button>
-                </Link>
-                <Link to="/register">
-                  <Button size="sm" className="w-full">Get Started</Button>
-                </Link>
+                </a>
+                <a href="/register">
+                  <Button size="sm" className="w-full bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500">
+                    Get Started
+                  </Button>
+                </a>
               </div>
             </nav>
           </div>
