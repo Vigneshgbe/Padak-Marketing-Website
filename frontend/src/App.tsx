@@ -10,6 +10,8 @@ import Courses from "./pages/Courses";
 import Internships from "./pages/Internships";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
+import PrivacyPolicy from "./pages/Policy";
+import TermsConditions from "./pages/Terms";
 
 const queryClient = new QueryClient();
 
@@ -23,6 +25,8 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/terms" element={<TermsConditions />} />
+          <Route path="/policy" element={<PrivacyPolicy />} />
           <Route path="/courses" element={<Courses />} />
           <Route path="/internships" element={<Internships />} />
           <Route path="/dashboard" element={<Dashboard />} />
