@@ -8,7 +8,7 @@ export const Header = () => {
   const navItems = [
     { name: "Home", href: "/" },
     { name: "Services", href: "#services" },
-    { name: "About", href: "#about" },
+    { name: "About", href: "/about" },
     { name: "Courses", href: "/courses" },
     { name: "Internships", href: "/internships" },
     { name: "Contact", href: "#contact" }
