@@ -9,6 +9,7 @@ import Register from "./pages/Register";
 import Courses from "./pages/Courses";
 import Internships from "./pages/Internships";
 import Dashboard from "./pages/Dashboard";
+import AdminDashboard from "./pages/AdminDashboard";
 import NotFound from "./pages/NotFound";
 import PrivacyPolicy from "./pages/Policy";
 import TermsConditions from "./pages/Terms";
@@ -32,6 +33,7 @@ const App = () => (
           <Route path="/courses" element={<Courses />} />
           <Route path="/internships" element={<Internships />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/admindashboard" element={<AdminDashboard />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

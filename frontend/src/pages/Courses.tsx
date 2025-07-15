@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
@@ -15,110 +15,185 @@ import {
   Filter,
   BookOpen,
   Award,
-  TrendingUp
+  TrendingUp,
+  RefreshCw
 } from "lucide-react";
 
-const courses = [
-  {
-    id: 1,
-    title: "Complete Digital Marketing Mastery",
-    description: "Master all aspects of digital marketing from SEO to social media advertising",
-    instructor: "Sarah Johnson",
-    duration: "12 weeks",
-    students: 1250,
-    rating: 4.9,
-    price: "₹24,999",
-    level: "Beginner",
-    category: "Digital Marketing",
-    image: "🎯",
-    lessons: 48,
-    certificate: true
-  },
-  {
-    id: 2,
-    title: "Advanced SEO Optimization",
-    description: "Advanced techniques for ranking higher in search engines",
-    instructor: "Michael Chen",
-    duration: "8 weeks",
-    students: 890,
-    rating: 4.8,
-    price: "₹16,999",
-    level: "Advanced",
-    category: "SEO",
-    image: "🔍",
-    lessons: 32,
-    certificate: true
-  },
-  {
-    id: 3,
-    title: "Social Media Marketing Pro",
-    description: "Build and execute winning social media strategies",
-    instructor: "Emily Davis",
-    duration: "10 weeks",
-    students: 2100,
-    rating: 4.9,
-    price: "₹20,999",
-    level: "Intermediate",
-    category: "Social Media",
-    image: "📱",
-    lessons: 40,
-    certificate: true
-  },
-  {
-    id: 4,
-    title: "Google Ads Mastery",
-    description: "Create profitable Google Ads campaigns that convert",
-    instructor: "David Wilson",
-    duration: "6 weeks",
-    students: 670,
-    rating: 4.7,
-    price: "₹14,999",
-    level: "Intermediate",
-    category: "PPC",
-    image: "💰",
-    lessons: 24,
-    certificate: true
-  },
-  {
-    id: 5,
-    title: "Content Marketing Strategy",
-    description: "Develop content that engages and converts your audience",
-    instructor: "Lisa Thompson",
-    duration: "9 weeks",
-    students: 1450,
-    rating: 4.8,
-    price: "₹18,999",
-    level: "Beginner",
-    category: "Content Marketing",
-    image: "✍️",
-    lessons: 36,
-    certificate: true
-  },
-  {
-    id: 6,
-    title: "Email Marketing Automation",
-    description: "Build automated email sequences that drive sales",
-    instructor: "Robert Lee",
-    duration: "7 weeks",
-    students: 980,
-    rating: 4.6,
-    price: "₹12,999",
-    level: "Intermediate",
-    category: "Email Marketing",
-    image: "📧",
-    lessons: 28,
-    certificate: true
+// Database API functions - replace with actual MySQL API endpoints
+const API_BASE = '/api'; // Replace with your actual API base URL
+
+const fetchCourses = async () => {
+  try {
+    // Replace with actual API call
+    // const response = await fetch(`${API_BASE}/courses`);
+    // return await response.json();
+    
+    // Mock data for demonstration
+    return [
+      {
+        id: 1,
+        title: "Complete Digital Marketing Mastery",
+        description: "Master all aspects of digital marketing from SEO to social media advertising",
+        instructor: "Sarah Johnson",
+        duration: "12 weeks",
+        students: 1250,
+        rating: 4.9,
+        price: "₹24,999",
+        level: "Beginner",
+        category: "Digital Marketing",
+        image: "🎯",
+        lessons: 48,
+        certificate: true,
+        status: "active"
+      },
+      {
+        id: 2,
+        title: "Advanced SEO Optimization",
+        description: "Advanced techniques for ranking higher in search engines",
+        instructor: "Michael Chen",
+        duration: "8 weeks",
+        students: 890,
+        rating: 4.8,
+        price: "₹16,999",
+        level: "Advanced",
+        category: "SEO",
+        image: "🔍",
+        lessons: 32,
+        certificate: true,
+        status: "active"
+      },
+      {
+        id: 3,
+        title: "Social Media Marketing Pro",
+        description: "Build and execute winning social media strategies",
+        instructor: "Emily Davis",
+        duration: "10 weeks",
+        students: 2100,
+        rating: 4.9,
+        price: "₹20,999",
+        level: "Intermediate",
+        category: "Social Media",
+        image: "📱",
+        lessons: 40,
+        certificate: true,
+        status: "active"
+      },
+      {
+        id: 4,
+        title: "Google Ads Mastery",
+        description: "Create profitable Google Ads campaigns that convert",
+        instructor: "David Wilson",
+        duration: "6 weeks",
+        students: 670,
+        rating: 4.7,
+        price: "₹14,999",
+        level: "Intermediate",
+        category: "PPC",
+        image: "💰",
+        lessons: 24,
+        certificate: true,
+        status: "active"
+      },
+      {
+        id: 5,
+        title: "Content Marketing Strategy",
+        description: "Develop content that engages and converts your audience",
+        instructor: "Lisa Thompson",
+        duration: "9 weeks",
+        students: 1450,
+        rating: 4.8,
+        price: "₹18,999",
+        level: "Beginner",
+        category: "Content Marketing",
+        image: "✍️",
+        lessons: 36,
+        certificate: true,
+        status: "active"
+      },
+      {
+        id: 6,
+        title: "Email Marketing Automation",
+        description: "Build automated email sequences that drive sales",
+        instructor: "Robert Lee",
+        duration: "7 weeks",
+        students: 980,
+        rating: 4.6,
+        price: "₹12,999",
+        level: "Intermediate",
+        category: "Email Marketing",
+        image: "📧",
+        lessons: 28,
+        certificate: true,
+        status: "active"
+      }
+    ];
+  } catch (error) {
+    console.error('Error fetching courses:', error);
+    return [];
   }
-];
+};
+
+const enrollInCourse = async (courseId, userId) => {
+  try {
+    // Replace with actual API call
+    // const response = await fetch(`${API_BASE}/enrollments`, {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({ course_id: courseId, user_id: userId })
+    // });
+    // return await response.json();
+    
+    console.log(`Enrolled in course ${courseId}`);
+    return { success: true, message: 'Successfully enrolled!' };
+  } catch (error) {
+    console.error('Error enrolling in course:', error);
+    return { success: false, message: 'Enrollment failed' };
+  }
+};
 
 export default function Courses() {
+  const [courses, setCourses] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [levelFilter, setLevelFilter] = useState("all");
+  const [enrolling, setEnrolling] = useState(null);
+
+  useEffect(() => {
+    loadCourses();
+  }, []);
+
+  const loadCourses = async () => {
+    setLoading(true);
+    const coursesData = await fetchCourses();
+    setCourses(coursesData.filter(course => course.status === 'active'));
+    setLoading(false);
+  };
+
+  const handleEnrollment = async (courseId) => {
+    setEnrolling(courseId);
+    // In a real app, you'd get the user ID from authentication
+    const userId = 1; // Mock user ID
+    const result = await enrollInCourse(courseId, userId);
+    
+    if (result.success) {
+      // Update course students count
+      setCourses(prev => prev.map(course => 
+        course.id === courseId 
+          ? { ...course, students: course.students + 1 }
+          : course
+      ));
+      alert('Successfully enrolled in the course!');
+    } else {
+      alert('Enrollment failed. Please try again.');
+    }
+    setEnrolling(null);
+  };
 
   const filteredCourses = courses.filter(course => {
     const matchesSearch = course.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         course.description.toLowerCase().includes(searchTerm.toLowerCase());
+                         course.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         course.instructor.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = categoryFilter === "all" || course.category === categoryFilter;
     const matchesLevel = levelFilter === "all" || course.level === levelFilter;
     
@@ -127,6 +202,21 @@ export default function Courses() {
 
   const categories = ["all", ...Array.from(new Set(courses.map(course => course.category)))];
   const levels = ["all", "Beginner", "Intermediate", "Advanced"];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen">
+        <Header />
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="text-center">
+            <RefreshCw className="w-8 h-8 animate-spin text-orange-500 mx-auto mb-4" />
+            <p className="text-gray-600">Loading courses...</p>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen">
@@ -142,10 +232,14 @@ export default function Courses() {
                 Expert-Led Courses
               </span>
             </h1>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
+            <p className="text-xl text-muted-foreground max-w-3xl mx-auto mb-8">
               Learn from industry professionals and get hands-on experience with our 
               comprehensive digital marketing courses. Get certified and advance your career.
             </p>
+            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground mb-4">
+              <TrendingUp className="w-4 h-4" />
+              <span>Updated courses from admin dashboard</span>
+            </div>
           </div>
 
           {/* Search and Filters */}
@@ -154,7 +248,7 @@ export default function Courses() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search courses..."
+                  placeholder="Search courses, instructors..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10 border-orange-200 focus:border-orange-500 focus:ring-orange-500"
@@ -185,6 +279,14 @@ export default function Courses() {
                   ))}
                 </SelectContent>
               </Select>
+              <Button 
+                variant="outline" 
+                onClick={loadCourses}
+                className="border-orange-200 hover:bg-orange-50"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh
+              </Button>
             </div>
           </div>
         </div>
@@ -192,6 +294,34 @@ export default function Courses() {
         {/* Floating background elements */}
         <div className="absolute top-20 left-10 w-32 h-32 bg-orange-400/10 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-20 right-10 w-24 h-24 bg-orange-500/10 rounded-full blur-2xl animate-pulse delay-1000"></div>
+      </section>
+
+      {/* Course Stats */}
+      <section className="py-8 bg-white border-b border-orange-100">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+            <div>
+              <div className="text-2xl font-bold text-orange-600">{courses.length}</div>
+              <div className="text-sm text-gray-600">Active Courses</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-orange-600">
+                {courses.reduce((acc, course) => acc + course.students, 0)}
+              </div>
+              <div className="text-sm text-gray-600">Total Students</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-orange-600">{categories.length - 1}</div>
+              <div className="text-sm text-gray-600">Categories</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-orange-600">
+                {(courses.reduce((acc, course) => acc + course.rating, 0) / courses.length).toFixed(1)}
+              </div>
+              <div className="text-sm text-gray-600">Avg Rating</div>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* Courses Grid */}
@@ -208,9 +338,14 @@ export default function Courses() {
                     <div className="text-5xl hover:scale-110 hover:rotate-3 transition-all duration-300 cursor-pointer">
                       {course.image}
                     </div>
-                    <Badge variant="outline" className="border-orange-200 text-orange-600 hover:bg-orange-50">
-                      {course.level}
-                    </Badge>
+                    <div className="flex flex-col gap-2">
+                      <Badge variant="outline" className="border-orange-200 text-orange-600 hover:bg-orange-50">
+                        {course.level}
+                      </Badge>
+                      <Badge variant="outline" className="border-blue-200 text-blue-600 hover:bg-blue-50 text-xs">
+                        {course.category}
+                      </Badge>
+                    </div>
                   </div>
                   <CardTitle className="text-xl group-hover:text-orange-600 transition-colors">
                     {course.title}
@@ -250,9 +385,17 @@ export default function Courses() {
                   
                   <div className="flex items-center justify-between pt-4 border-t">
                     <div className="text-2xl font-bold text-orange-600">{course.price}</div>
-                    <Button className="bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-300 group">
-                      <Play className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
-                      Enroll Now
+                    <Button 
+                      onClick={() => handleEnrollment(course.id)}
+                      disabled={enrolling === course.id}
+                      className="bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-300 group relative overflow-hidden"
+                    >
+                      {enrolling === course.id ? (
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Play className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
+                      )}
+                      {enrolling === course.id ? 'Enrolling...' : 'Enroll Now'}
                     </Button>
                   </div>
                 </CardContent>
@@ -269,9 +412,17 @@ export default function Courses() {
                 <BookOpen className="w-8 h-8 text-white" />
               </div>
               <h3 className="text-xl font-semibold mb-2">No courses found</h3>
-              <p className="text-muted-foreground">
+              <p className="text-muted-foreground mb-4">
                 Try adjusting your search terms or filters to find more courses.
               </p>
+              <Button 
+                onClick={loadCourses}
+                variant="outline" 
+                className="border-orange-200 hover:bg-orange-50"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh Courses
+              </Button>
             </div>
           )}
         </div>
