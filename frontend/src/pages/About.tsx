@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Header } from "@/components/Header";
 import { CheckCircle, Target, Lightbulb, Users2, Award, TrendingUp, ArrowRight, Sparkles } from "lucide-react";
 
 export const About = () => {
@@ -29,6 +30,8 @@ export const About = () => {
   ];
 
   return (
+    <div className="min-h-screen">
+      <Header />
     <section id="about" className="py-20 bg-gradient-to-br from-orange-50/30 via-background to-orange-100/20 relative overflow-hidden">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid lg:grid-cols-2 gap-16 items-center">
@@ -138,5 +141,6 @@ export const About = () => {
         <div className="absolute bottom-20 left-10 w-32 h-32 bg-orange-500/10 rounded-full blur-2xl animate-pulse delay-1000"></div>
       </div>
     </section>
+    </div>
   );
 };

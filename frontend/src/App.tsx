@@ -12,6 +12,7 @@ import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 import PrivacyPolicy from "./pages/Policy";
 import TermsConditions from "./pages/Terms";
+import { About } from "./pages/About";
 
 const queryClient = new QueryClient();
 
@@ -27,6 +28,7 @@ const App = () => (
           <Route path="/register" element={<Register />} />
           <Route path="/terms" element={<TermsConditions />} />
           <Route path="/policy" element={<PrivacyPolicy />} />
+          <Route path="/about" element={<About />} />
           <Route path="/courses" element={<Courses />} />
           <Route path="/internships" element={<Internships />} />
           <Route path="/dashboard" element={<Dashboard />} />
