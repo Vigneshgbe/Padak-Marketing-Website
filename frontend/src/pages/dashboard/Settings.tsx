@@ -103,7 +103,6 @@ const Settings: React.FC = () => {
               <h2 className="text-xl font-bold mb-6">Appearance Settings</h2>
               <div className="space-y-4">
                 <div>
-                // src/pages/dashboard/Settings.tsx (continued)
                   <h3 className="font-medium mb-2">Theme</h3>
                   <div className="flex space-x-4">
                     <button className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">

@@ -29,7 +29,6 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, stats }) => {
           icon={<BookOpen size={20} />} 
           color="from-blue-500 to-blue-400"
         />
-        // src/components/dashboard/role-specific/StudentDashboard.tsx (continued)
         <StatCard 
           title="Courses Completed" 
           value={stats.coursesCompleted} 

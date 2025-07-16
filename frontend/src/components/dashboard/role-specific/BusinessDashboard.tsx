@@ -99,7 +99,6 @@ const BusinessDashboard: React.FC<BusinessDashboardProps> = ({ user, stats }) =>
               View Detailed Report
             </button>
           </div>
-          // src/components/dashboard/role-specific/BusinessDashboard.tsx (continued)
         </div>
       </div>
 
