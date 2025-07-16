@@ -1,4 +1,7 @@
+// src/pages/Login.tsx
 import { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { useAuth } from "../hooks/use-auth"; 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -70,6 +73,19 @@ export default function Login() {
   });
   const [errors, setErrors] = useState<FormErrors>({});
 
+  const { login, user } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const from = location.state?.from?.pathname || '/dashboard';
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user) {
+      navigate(from, { replace: true });
+    }
+  }, [user, navigate, from]);
+
   const showToast = (type: 'success' | 'error', message: string) => {
     const id = Date.now().toString();
     const newToast: Toast = { id, type, message };
@@ -117,89 +133,33 @@ export default function Login() {
     setErrors({}); // Clear any previous errors
 
     try {
-      // Send login data to backend
-      const response = await fetch('http://localhost:5000/api/login', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify({
-          email: formData.email.trim(),
-          password: formData.password,
-          rememberMe: formData.rememberMe
-        })
-      });
-
-      // Check if response is actually JSON
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        throw new Error('Server returned non-JSON response. Please check if the login API endpoint exists.');
-      }
-
-      let data;
-      try {
-        data = await response.json();
-      } catch (jsonError) {
-        throw new Error('Invalid response format from server');
-      }
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          // Invalid credentials
-          setErrors({ general: data.error || 'Invalid email or password' });
-          showToast('error', 'Invalid email or password');
-        } else if (response.status === 404) {
-          // User not found
-          setErrors({ general: 'No account found with this email' });
-          showToast('error', 'No account found with this email');
-        } else if (response.status === 400) {
-          // Bad request - validation errors
-          setErrors({ general: data.error || 'Invalid login data' });
-          showToast('error', data.error || 'Invalid login data');
-        } else {
-          throw new Error(data.error || 'Login failed');
-        }
-        return;
-      }
-
-      console.log('Login successful:', data);
+      await login(formData.email, formData.password);
+      
       showToast('success', 'Login successful! Redirecting...');
       
-      // Store user data and token if provided
-      if (data.token) {
-        const storage = formData.rememberMe ? localStorage : sessionStorage;
-        storage.setItem('authToken', data.token);
-        
-        // Store user info (similar to registration success)
-        if (data.user) {
-          storage.setItem('userData', JSON.stringify({
-            id: data.user.id,
-            firstName: data.user.firstName,
-            lastName: data.user.lastName,
-            email: data.user.email,
-            accountType: data.user.accountType
-          }));
-        }
+      // Handle remember me functionality
+      if (formData.rememberMe) {
+        // Token is already stored in localStorage by the auth system
+        // You can add additional remember me logic here if needed
       }
       
-      // Redirect to dashboard after successful login
+      // Navigate to dashboard or intended page
       setTimeout(() => {
-        window.location.href = '/dashboard';
+        navigate(from, { replace: true });
       }, 1500);
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error);
       let errorMessage = 'Login failed';
       
-      if (error instanceof Error) {
-        if (error.message.includes('fetch')) {
-          errorMessage = 'Unable to connect to server. Please check your connection.';
-        } else if (error.message.includes('non-JSON')) {
-          errorMessage = 'Server error. Please try again later.';
-        } else {
-          errorMessage = error.message;
-        }
+      if (error.message.includes('fetch')) {
+        errorMessage = 'Unable to connect to server. Please check your connection.';
+      } else if (error.message.includes('Invalid') || error.message.includes('401')) {
+        errorMessage = 'Invalid email or password';
+      } else if (error.message.includes('404')) {
+        errorMessage = 'No account found with this email';
+      } else {
+        errorMessage = error.message || 'Login failed';
       }
       
       setErrors({ general: errorMessage });
@@ -210,15 +170,15 @@ export default function Login() {
   };
 
   const handleBack = () => {
-    window.history.back();
+    navigate(-1);
   };
 
   const handleForgotPassword = () => {
-    window.location.href = '/forgot-password';
+    navigate('/forgot-password');
   };
 
   const handleSignUp = () => {
-    window.location.href = '/register';
+    navigate('/register');
   };
 
   const handleInputChange = (field: keyof FormData, value: string | boolean) => {

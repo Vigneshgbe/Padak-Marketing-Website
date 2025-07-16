@@ -1,60 +1,156 @@
+// server.js
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
-const mysql = require('mysql');
+const mysql = require('mysql2/promise');
 const bcrypt = require('bcrypt');
 const cors = require('cors');
-const jwt = require('jsonwebtoken'); // You'll need to install this: npm install jsonwebtoken
+const jwt = require('jsonwebtoken');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const port = process.env.PORT || 5000;
 
-// JWT Secret (add this to your .env file)
+// JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-secret-key';
 
-// Database connection with better error handling
-const db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Database connection pool
+const pool = mysql.createPool({
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'padak_digital_marketing',
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
   acquireTimeout: 60000,
   timeout: 60000,
   reconnect: true
 });
 
-db.connect(err => {
-  if (err) {
+// Test database connection
+async function testConnection() {
+  try {
+    const connection = await pool.getConnection();
+    console.log('Connected to MySQL database');
+    connection.release();
+  } catch (err) {
     console.error('Database connection failed:', err);
     process.exit(1);
   }
-  console.log('Connected to MySQL database');
-});
+}
 
-// Handle database disconnection
-db.on('error', function(err) {
-  console.error('Database error:', err);
-  if(err.code === 'PROTOCOL_CONNECTION_LOST') {
-    console.log('Attempting to reconnect...');
+testConnection();
+
+// Multer configuration for file uploads
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/');
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
   }
 });
 
-// Middleware with better CORS configuration
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  },
+  fileFilter: function (req, file, cb) {
+    if (file.fieldname === 'avatar') {
+      // Check if file is an image
+      if (file.mimetype.startsWith('image/')) {
+        cb(null, true);
+      } else {
+        cb(new Error('Only image files are allowed for avatar'));
+      }
+    } else {
+      cb(null, true);
+    }
+  }
+});
+
+// CORS configuration
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:8080',
+  'http://localhost:5173',
+  process.env.FRONTEND_URL
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+// Middleware
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
+app.use('/uploads', express.static('uploads'));
 
-// Add request logging middleware
+// Request logging middleware
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  console.log('Request body:', req.body);
   next();
 });
 
-// Registration endpoint (improved with better validation)
+// JWT Authentication middleware
+const authenticateToken = async (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const [users] = await pool.execute(
+      'SELECT * FROM users WHERE id = ? AND is_active = true',
+      [decoded.userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
+    req.user = users[0];
+    next();
+  } catch (error) {
+    return res.status(403).json({ error: 'Invalid token' });
+  }
+};
+
+// Admin middleware
+const requireAdmin = (req, res, next) => {
+  if (req.user.account_type !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+};
+
+// ==================== AUTH ROUTES ====================
+
+// Register endpoint
 app.post('/api/register', async (req, res) => {
   const { firstName, lastName, email, phone, password, accountType } = req.body;
 
@@ -78,56 +174,46 @@ app.post('/api/register', async (req, res) => {
     }
 
     // Check if email exists
-    const emailCheckQuery = 'SELECT * FROM users WHERE email = ?';
-    db.query(emailCheckQuery, [email], async (err, results) => {
-      if (err) {
-        console.error('Database error in registration:', err);
-        return res.status(500).json({ error: 'Database error' });
-      }
-      
-      if (results.length > 0) {
-        return res.status(400).json({ error: 'Email already exists' });
-      }
+    const [existingUsers] = await pool.execute(
+      'SELECT * FROM users WHERE email = ?',
+      [email]
+    );
+    
+    if (existingUsers.length > 0) {
+      return res.status(400).json({ error: 'Email already exists' });
+    }
 
-      try {
-        // Hash password
-        const saltRounds = 10;
-        const hashedPassword = await bcrypt.hash(password, saltRounds);
+    // Hash password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-        // Insert new user
-        const insertQuery = `
-          INSERT INTO users 
-          (first_name, last_name, email, phone, password, account_type, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, NOW())
-        `;
-        
-        db.query(insertQuery, 
-          [firstName.trim(), lastName.trim(), email.trim(), phone || null, hashedPassword, accountType || 'user'],
-          (err, result) => {
-            if (err) {
-              console.error('Database error in user insertion:', err);
-              return res.status(500).json({ error: 'Registration failed' });
-            }
-            
-            console.log('User registered successfully:', { userId: result.insertId, email });
-            res.status(201).json({
-              message: 'User registered successfully',
-              userId: result.insertId
-            });
-          }
-        );
-      } catch (hashError) {
-        console.error('Password hashing error:', hashError);
-        return res.status(500).json({ error: 'Password processing failed' });
-      }
+    // Insert new user
+    const [result] = await pool.execute(
+      `INSERT INTO users 
+       (first_name, last_name, email, phone, password_hash, account_type, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+      [firstName.trim(), lastName.trim(), email.trim(), phone || null, hashedPassword, accountType || 'student']
+    );
+
+    // Create user stats entry
+    await pool.execute(
+      'INSERT INTO user_stats (user_id) VALUES (?)',
+      [result.insertId]
+    );
+    
+    console.log('User registered successfully:', { userId: result.insertId, email });
+    res.status(201).json({
+      message: 'User registered successfully',
+      userId: result.insertId
     });
+
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Login endpoint (improved)
+// Login endpoint
 app.post('/api/login', async (req, res) => {
   const { email, password, rememberMe } = req.body;
 
@@ -138,64 +224,63 @@ app.post('/api/login', async (req, res) => {
     }
 
     // Check if user exists
-    const userQuery = 'SELECT * FROM users WHERE email = ?';
-    db.query(userQuery, [email], async (err, results) => {
-      if (err) {
-        console.error('Database error in login:', err);
-        return res.status(500).json({ error: 'Database error' });
-      }
+    const [users] = await pool.execute(
+      'SELECT * FROM users WHERE email = ? AND is_active = true',
+      [email]
+    );
 
-      if (results.length === 0) {
-        return res.status(404).json({ error: 'No account found with this email' });
-      }
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'No account found with this email' });
+    }
 
-      const user = results[0];
+    const user = users[0];
 
-      try {
-        // Verify password
-        const isPasswordValid = await bcrypt.compare(password, user.password);
-        
-        if (!isPasswordValid) {
-          return res.status(401).json({ error: 'Invalid email or password' });
-        }
+    // Verify password
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+    
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
 
-        // Generate JWT token
-        const tokenExpiry = rememberMe ? '30d' : '1d';
-        const token = jwt.sign(
-          { 
-            userId: user.id, 
-            email: user.email,
-            accountType: user.account_type 
-          },
-          JWT_SECRET,
-          { expiresIn: tokenExpiry }
-        );
+    // Generate JWT token
+    const tokenExpiry = rememberMe ? '30d' : '1d';
+    const token = jwt.sign(
+      { 
+        userId: user.id, 
+        email: user.email,
+        accountType: user.account_type 
+      },
+      JWT_SECRET,
+      { expiresIn: tokenExpiry }
+    );
 
-        // Update last login timestamp (optional)
-        const updateLastLoginQuery = 'UPDATE users SET last_login = NOW() WHERE id = ?';
-        db.query(updateLastLoginQuery, [user.id], (err) => {
-          if (err) console.error('Error updating last login:', err);
-        });
+    // Update last login timestamp
+    await pool.execute(
+      'UPDATE users SET updated_at = NOW() WHERE id = ?',
+      [user.id]
+    );
 
-        console.log('User logged in successfully:', { userId: user.id, email: user.email });
+    console.log('User logged in successfully:', { userId: user.id, email: user.email });
 
-        // Send success response
-        res.status(200).json({
-          message: 'Login successful',
-          token: token,
-          user: {
-            id: user.id,
-            firstName: user.first_name,
-            lastName: user.last_name,
-            email: user.email,
-            phone: user.phone,
-            accountType: user.account_type
-          }
-        });
-
-      } catch (bcryptError) {
-        console.error('Password verification error:', bcryptError);
-        return res.status(500).json({ error: 'Authentication error' });
+    // Send success response
+    res.status(200).json({
+      message: 'Login successful',
+      token: token,
+      user: {
+        id: user.id,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        email: user.email,
+        phone: user.phone,
+        accountType: user.account_type,
+        profileImage: user.profile_image,
+        company: user.company,
+        website: user.website,
+        bio: user.bio,
+        isActive: user.is_active,
+        emailVerified: user.email_verified,
+        createdAt: user.created_at,
+        updatedAt: user.updated_at
       }
     });
 
@@ -205,200 +290,998 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// Contact form endpoint (improved with better validation)
-app.post('/api/contact', async (req, res) => {
-  const { firstName, lastName, email, phone, company, message } = req.body;
-
+// Get current user profile
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
-    console.log('Contact form submission received:', { firstName, lastName, email, phone, company, message });
-
-    // Validate required fields
-    if (!firstName || !lastName || !email || !message) {
-      return res.status(400).json({ 
-        error: 'First name, last name, email, and message are required' 
-      });
-    }
-
-    // Trim whitespace from inputs
-    const trimmedData = {
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      email: email.trim(),
-      phone: phone ? phone.trim() : null,
-      company: company ? company.trim() : null,
-      message: message.trim()
-    };
-
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(trimmedData.email)) {
-      return res.status(400).json({ error: 'Please provide a valid email address' });
-    }
-
-    // Basic phone validation (if provided)
-    if (trimmedData.phone) {
-      const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
-      if (!phoneRegex.test(trimmedData.phone.replace(/[\s\-\(\)]/g, ''))) {
-        return res.status(400).json({ error: 'Please provide a valid phone number' });
-      }
-    }
-
-    // Validate message length
-    if (trimmedData.message.length < 10) {
-      return res.status(400).json({ error: 'Message must be at least 10 characters long' });
-    }
-
-    // Insert contact form data into database
-    const insertQuery = `
-      INSERT INTO contact_messages 
-      (first_name, last_name, email, phone, company, message, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, NOW())
-    `;
-    
-    db.query(insertQuery, 
-      [
-        trimmedData.firstName,
-        trimmedData.lastName,
-        trimmedData.email,
-        trimmedData.phone,
-        trimmedData.company,
-        trimmedData.message
-      ],
-      (err, result) => {
-        if (err) {
-          console.error('Database error in contact form:', err);
-          return res.status(500).json({ error: 'Failed to save contact message' });
-        }
-        
-        console.log('Contact message saved successfully:', {
-          id: result.insertId,
-          firstName: trimmedData.firstName,
-          lastName: trimmedData.lastName,
-          email: trimmedData.email
-        });
-
-        res.status(201).json({
-          message: 'Contact message sent successfully',
-          contactId: result.insertId
-        });
-      }
-    );
-
-  } catch (error) {
-    console.error('Contact form error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Middleware to verify JWT token (for protected routes)
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
-  }
-
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) {
-      return res.status(403).json({ error: 'Invalid or expired token' });
-    }
-    req.user = user;
-    next();
-  });
-};
-
-// Protected route example (optional)
-app.get('/api/profile', authenticateToken, (req, res) => {
-  const userQuery = 'SELECT id, first_name, last_name, email, phone, account_type FROM users WHERE id = ?';
-  db.query(userQuery, [req.user.userId], (err, results) => {
-    if (err) {
-      console.error('Database error in profile:', err);
-      return res.status(500).json({ error: 'Database error' });
-    }
-    
-    if (results.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const user = results[0];
+    const user = req.user;
     res.json({
       id: user.id,
       firstName: user.first_name,
       lastName: user.last_name,
       email: user.email,
       phone: user.phone,
-      accountType: user.account_type
+      accountType: user.account_type,
+      profileImage: user.profile_image,
+      company: user.company,
+      website: user.website,
+      bio: user.bio,
+      isActive: user.is_active,
+      emailVerified: user.email_verified,
+      createdAt: user.created_at,
+      updatedAt: user.updated_at
     });
-  });
+  } catch (error) {
+    console.error('Get profile error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
-// Protected route to get contact messages (optional - for admin dashboard)
-app.get('/api/contact-messages', authenticateToken, (req, res) => {
-  // Only allow admin users to view contact messages
-  if (req.user.accountType !== 'admin') {
-    return res.status(403).json({ error: 'Access denied. Admin privileges required.' });
+// Update user profile
+app.put('/api/auth/profile', authenticateToken, async (req, res) => {
+  try {
+    const { firstName, lastName, phone, company, website, bio } = req.body;
+    const userId = req.user.id;
+
+    await pool.execute(
+      `UPDATE users SET 
+       first_name = ?, last_name = ?, phone = ?, company = ?, website = ?, bio = ?, updated_at = NOW()
+       WHERE id = ?`,
+      [firstName, lastName, phone, company, website, bio, userId]
+    );
+
+    // Get updated user data
+    const [users] = await pool.execute(
+      'SELECT * FROM users WHERE id = ?',
+      [userId]
+    );
+
+    const user = users[0];
+    res.json({
+      id: user.id,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      email: user.email,
+      phone: user.phone,
+      accountType: user.account_type,
+      profileImage: user.profile_image,
+      company: user.company,
+      website: user.website,
+      bio: user.bio,
+      isActive: user.is_active,
+      emailVerified: user.email_verified,
+      createdAt: user.created_at,
+      updatedAt: user.updated_at
+    });
+
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ error: 'Server error' });
   }
+});
 
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
-  const offset = (page - 1) * limit;
-
-  // Get total count
-  const countQuery = 'SELECT COUNT(*) as total FROM contact_messages';
-  db.query(countQuery, (err, countResults) => {
-    if (err) {
-      console.error('Database error in contact messages count:', err);
-      return res.status(500).json({ error: 'Database error' });
+// Upload avatar
+app.post('/api/auth/avatar', authenticateToken, upload.single('avatar'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const totalMessages = countResults[0].total;
+    const userId = req.user.id;
+    const profileImage = `/uploads/${req.file.filename}`;
 
-    // Get paginated messages
-    const messagesQuery = `
-      SELECT id, first_name, last_name, email, phone, company, message, created_at
-      FROM contact_messages 
-      ORDER BY created_at DESC 
-      LIMIT ? OFFSET ?
-    `;
-    
-    db.query(messagesQuery, [limit, offset], (err, results) => {
-      if (err) {
-        console.error('Database error in contact messages:', err);
-        return res.status(500).json({ error: 'Database error' });
+    // Delete old avatar if exists
+    if (req.user.profile_image) {
+      const oldPath = path.join(__dirname, req.user.profile_image);
+      if (fs.existsSync(oldPath)) {
+        fs.unlinkSync(oldPath);
       }
+    }
 
+    await pool.execute(
+      'UPDATE users SET profile_image = ?, updated_at = NOW() WHERE id = ?',
+      [profileImage, userId]
+    );
+
+    res.json({ profileImage });
+
+  } catch (error) {
+    console.error('Avatar upload error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ==================== DASHBOARD ROUTES ====================
+
+// Get user stats
+app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const [stats] = await pool.execute(
+      'SELECT * FROM user_stats WHERE user_id = ?',
+      [userId]
+    );
+
+    if (stats.length === 0) {
+      // Create default stats if not exists
+      await pool.execute(
+        'INSERT INTO user_stats (user_id) VALUES (?)',
+        [userId]
+      );
+      
       res.json({
-        messages: results,
+        coursesEnrolled: 0,
+        coursesCompleted: 0,
+        certificatesEarned: 0,
+        learningStreak: 0,
+        lastActivity: new Date().toISOString()
+      });
+    } else {
+      const userStats = stats[0];
+      res.json({
+        coursesEnrolled: userStats.courses_enrolled,
+        coursesCompleted: userStats.courses_completed,
+        certificatesEarned: userStats.certificates_earned,
+        learningStreak: userStats.learning_streak,
+        lastActivity: userStats.last_activity
+      });
+    }
+
+  } catch (error) {
+    console.error('Get stats error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ==================== COURSES ROUTES ====================
+
+// Get all courses
+app.get('/api/courses', async (req, res) => {
+  try {
+    const [courses] = await pool.execute(
+      'SELECT * FROM courses WHERE is_active = true ORDER BY created_at DESC'
+    );
+
+    res.json(courses.map(course => ({
+      id: course.id,
+      title: course.title,
+      description: course.description,
+      instructorName: course.instructor_name,
+      durationWeeks: course.duration_weeks,
+      difficultyLevel: course.difficulty_level,
+      category: course.category,
+      price: course.price,
+      thumbnail: course.thumbnail,
+      isActive: course.is_active
+    })));
+
+  } catch (error) {
+    console.error('Get courses error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get user's enrolled courses
+app.get('/api/enrollments/my-courses', authenticateToken, async (req, res) => {
+    try {
+      const userId = req.user.id;
+  
+      const [enrollments] = await pool.execute(
+        `SELECT e.*, c.* FROM enrollments e
+         JOIN courses c ON e.course_id = c.id
+         WHERE e.user_id = ? AND e.status = 'active'
+         ORDER BY e.enrollment_date DESC`,
+        [userId]
+      );
+  
+      res.json(enrollments.map(enrollment => ({
+        id: enrollment.id,
+        userId: enrollment.user_id,
+        courseId: enrollment.course_id,
+        progress: enrollment.progress,
+        enrollmentDate: enrollment.enrollment_date,
+        completionDate: enrollment.completion_date,
+        status: enrollment.status,
+        course: {
+          id: enrollment.course_id,
+          title: enrollment.title,
+          description: enrollment.description,
+          instructorName: enrollment.instructor_name,
+          durationWeeks: enrollment.duration_weeks,
+          difficultyLevel: enrollment.difficulty_level,
+          category: enrollment.category,
+          price: enrollment.price,
+          thumbnail: enrollment.thumbnail,
+          isActive: enrollment.is_active
+        }
+      })));
+  
+    } catch (error) {
+      console.error('Get my courses error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+  // Enroll in a course
+  app.post('/api/courses/enroll', authenticateToken, async (req, res) => {
+    try {
+      const { courseId } = req.body;
+      const userId = req.user.id;
+  
+      // Check if already enrolled
+      const [existing] = await pool.execute(
+        'SELECT * FROM enrollments WHERE user_id = ? AND course_id = ?',
+        [userId, courseId]
+      );
+  
+      if (existing.length > 0) {
+        return res.status(400).json({ error: 'Already enrolled in this course' });
+      }
+  
+      // Check if course exists
+      const [courses] = await pool.execute(
+        'SELECT * FROM courses WHERE id = ? AND is_active = true',
+        [courseId]
+      );
+  
+      if (courses.length === 0) {
+        return res.status(404).json({ error: 'Course not found' });
+      }
+  
+      // Create enrollment
+      await pool.execute(
+        'INSERT INTO enrollments (user_id, course_id, enrollment_date) VALUES (?, ?, NOW())',
+        [userId, courseId]
+      );
+  
+      // Update user stats
+      await pool.execute(
+        'UPDATE user_stats SET courses_enrolled = courses_enrolled + 1 WHERE user_id = ?',
+        [userId]
+      );
+  
+      res.status(201).json({ message: 'Successfully enrolled in course' });
+  
+    } catch (error) {
+      console.error('Course enrollment error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+  // ==================== ASSIGNMENTS ROUTES ====================
+  
+  // Get user's assignments
+  app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) => {
+    try {
+      const userId = req.user.id;
+  
+      const [assignments] = await pool.execute(
+        `SELECT a.*, c.title as course_title, s.* FROM assignments a
+         JOIN courses c ON a.course_id = c.id
+         JOIN enrollments e ON e.course_id = c.id AND e.user_id = ?
+         LEFT JOIN assignment_submissions s ON s.assignment_id = a.id AND s.user_id = ?
+         ORDER BY a.due_date ASC`,
+        [userId, userId]
+      );
+  
+      res.json(assignments.map(assignment => ({
+        id: assignment.id,
+        courseId: assignment.course_id,
+        title: assignment.title,
+        description: assignment.description,
+        dueDate: assignment.due_date,
+        maxPoints: assignment.max_points,
+        course: {
+          title: assignment.course_title
+        },
+        submission: assignment.assignment_id ? {
+          id: assignment.assignment_id,
+          assignmentId: assignment.assignment_id,
+          userId: assignment.user_id,
+          content: assignment.content,
+          filePath: assignment.file_path,
+          submittedAt: assignment.submitted_at,
+          grade: assignment.grade,
+          feedback: assignment.feedback,
+          status: assignment.status
+        } : null
+      })));
+  
+    } catch (error) {
+      console.error('Get assignments error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+  // Submit assignment
+  app.post('/api/assignments/submit', authenticateToken, upload.single('file'), async (req, res) => {
+    try {
+      const { assignmentId, content } = req.body;
+      const userId = req.user.id;
+      const filePath = req.file ? `/uploads/${req.file.filename}` : null;
+  
+      // Check if assignment exists and user is enrolled
+      const [assignments] = await pool.execute(
+        `SELECT a.* FROM assignments a
+         JOIN enrollments e ON e.course_id = a.course_id AND e.user_id = ?
+         WHERE a.id = ?`,
+        [userId, assignmentId]
+      );
+  
+      if (assignments.length === 0) {
+        return res.status(404).json({ error: 'Assignment not found or not enrolled' });
+      }
+  
+      // Check if already submitted
+      const [existing] = await pool.execute(
+        'SELECT * FROM assignment_submissions WHERE assignment_id = ? AND user_id = ?',
+        [assignmentId, userId]
+      );
+  
+      if (existing.length > 0) {
+        // Update existing submission
+        await pool.execute(
+          'UPDATE assignment_submissions SET content = ?, file_path = ?, submitted_at = NOW() WHERE assignment_id = ? AND user_id = ?',
+          [content, filePath, assignmentId, userId]
+        );
+      } else {
+        // Create new submission
+        await pool.execute(
+          'INSERT INTO assignment_submissions (assignment_id, user_id, content, file_path, submitted_at) VALUES (?, ?, ?, ?, NOW())',
+          [assignmentId, userId, content, filePath]
+        );
+      }
+  
+      res.status(201).json({ message: 'Assignment submitted successfully' });
+  
+    } catch (error) {
+      console.error('Assignment submission error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+  // ==================== CERTIFICATES ROUTES ====================
+  
+  // Get user's certificates
+  app.get('/api/certificates/my-certificates', authenticateToken, async (req, res) => {
+    try {
+      const userId = req.user.id;
+  
+      const [certificates] = await pool.execute(
+        `SELECT cert.*, c.title as course_title FROM certificates cert
+         JOIN courses c ON cert.course_id = c.id
+         WHERE cert.user_id = ?
+         ORDER BY cert.issued_date DESC`,
+        [userId]
+      );
+  
+      res.json(certificates.map(cert => ({
+        id: cert.id,
+        userId: cert.user_id,
+        courseId: cert.course_id,
+        certificateUrl: cert.certificate_url,
+        issuedDate: cert.issued_date,
+        course: {
+          title: cert.course_title
+        }
+      })));
+  
+    } catch (error) {
+      console.error('Get certificates error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+  // ==================== SERVICES ROUTES ====================
+  
+  // Get service categories
+  app.get('/api/services/categories', async (req, res) => {
+    try {
+      const [categories] = await pool.execute(
+        'SELECT * FROM service_categories WHERE is_active = true ORDER BY name'
+      );
+  
+      const categoriesWithSubs = await Promise.all(categories.map(async (category) => {
+        const [subcategories] = await pool.execute(
+          'SELECT * FROM service_subcategories WHERE category_id = ? AND is_active = true ORDER BY name',
+          [category.id]
+        );
+  
+        return {
+          id: category.id,
+          name: category.name,
+          description: category.description,
+          icon: category.icon,
+          subcategories: subcategories.map(sub => ({
+            id: sub.id,
+            categoryId: sub.category_id,
+            name: sub.name,
+            description: sub.description,
+            basePrice: sub.base_price
+          }))
+        };
+      }));
+  
+      res.json(categoriesWithSubs);
+  
+    } catch (error) {
+      console.error('Get service categories error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+  // Submit service request
+  app.post('/api/services/requests', authenticateToken, async (req, res) => {
+    try {
+      const {
+        subcategoryId, fullName, email, phone, company, website,
+        projectDetails, budgetRange, timeline, contactMethod, additionalRequirements
+      } = req.body;
+      const userId = req.user.id;
+  
+      // Validate required fields
+      if (!subcategoryId || !fullName || !email || !phone || !projectDetails || !budgetRange || !timeline || !contactMethod) {
+        return res.status(400).json({ error: 'All required fields must be provided' });
+      }
+  
+      // Check if subcategory exists
+      const [subcategories] = await pool.execute(
+        'SELECT * FROM service_subcategories WHERE id = ? AND is_active = true',
+        [subcategoryId]
+      );
+  
+      if (subcategories.length === 0) {
+        return res.status(404).json({ error: 'Service subcategory not found' });
+      }
+  
+      // Create service request
+      const [result] = await pool.execute(
+        `INSERT INTO service_requests 
+         (user_id, subcategory_id, full_name, email, phone, company, website, 
+          project_details, budget_range, timeline, contact_method, additional_requirements, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [userId, subcategoryId, fullName, email, phone, company, website, 
+         projectDetails, budgetRange, timeline, contactMethod, additionalRequirements]
+      );
+  
+      res.status(201).json({ 
+        message: 'Service request submitted successfully',
+        requestId: result.insertId 
+      });
+  
+    } catch (error) {
+      console.error('Service request error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+  // Get user's service requests
+  app.get('/api/services/my-requests', authenticateToken, async (req, res) => {
+    try {
+      const userId = req.user.id;
+  
+      const [requests] = await pool.execute(
+        `SELECT sr.*, sc.name as category_name, ss.name as subcategory_name 
+         FROM service_requests sr
+         JOIN service_subcategories ss ON sr.subcategory_id = ss.id
+         JOIN service_categories sc ON ss.category_id = sc.id
+         WHERE sr.user_id = ?
+         ORDER BY sr.created_at DESC`,
+        [userId]
+      );
+  
+      res.json(requests.map(request => ({
+        id: request.id,
+        userId: request.user_id,
+        subcategoryId: request.subcategory_id,
+        fullName: request.full_name,
+        email: request.email,
+        phone: request.phone,
+        company: request.company,
+        website: request.website,
+        projectDetails: request.project_details,
+        budgetRange: request.budget_range,
+        timeline: request.timeline,
+        contactMethod: request.contact_method,
+        additionalRequirements: request.additional_requirements,
+        status: request.status,
+        createdAt: request.created_at,
+        updatedAt: request.updated_at,
+        categoryName: request.category_name,
+        subcategoryName: request.subcategory_name
+      })));
+  
+    } catch (error) {
+      console.error('Get service requests error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+  // ==================== ADMIN ROUTES ====================
+  
+  // Get admin dashboard stats
+  app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      // Get total users
+      const [userCount] = await pool.execute(
+        'SELECT COUNT(*) as total FROM users WHERE is_active = true'
+      );
+  
+      // Get total courses
+      const [courseCount] = await pool.execute(
+        'SELECT COUNT(*) as total FROM courses WHERE is_active = true'
+      );
+  
+      // Get total enrollments
+      const [enrollmentCount] = await pool.execute(
+        'SELECT COUNT(*) as total FROM enrollments'
+      );
+  
+      // Get pending service requests
+      const [pendingRequests] = await pool.execute(
+        'SELECT COUNT(*) as total FROM service_requests WHERE status = "pending"'
+      );
+  
+      // Get total revenue (mock calculation)
+      const [revenue] = await pool.execute(
+        'SELECT SUM(c.price) as total FROM enrollments e JOIN courses c ON e.course_id = c.id'
+      );
+  
+      res.json({
+        totalUsers: userCount[0].total,
+        totalCourses: courseCount[0].total,
+        totalEnrollments: enrollmentCount[0].total,
+        totalRevenue: `₹${(revenue[0].total || 0).toLocaleString()}`,
+        activeInternships: 12, // Mock data
+        pendingContacts: pendingRequests[0].total
+      });
+  
+    } catch (error) {
+      console.error('Get admin stats error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+  // Get all users (admin only)
+  app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const offset = (page - 1) * limit;
+  
+      const [users] = await pool.execute(
+        `SELECT id, first_name, last_name, email, phone, account_type, is_active, created_at
+         FROM users 
+         ORDER BY created_at DESC 
+         LIMIT ? OFFSET ?`,
+        [limit, offset]
+      );
+  
+      const [totalCount] = await pool.execute(
+        'SELECT COUNT(*) as total FROM users'
+      );
+  
+      res.json({
+        users: users.map(user => ({
+          id: user.id,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          email: user.email,
+          phone: user.phone,
+          accountType: user.account_type,
+          isActive: user.is_active,
+          createdAt: user.created_at
+        })),
         pagination: {
           currentPage: page,
-          totalPages: Math.ceil(totalMessages / limit),
-          totalMessages: totalMessages,
-          hasNextPage: page < Math.ceil(totalMessages / limit),
+          totalPages: Math.ceil(totalCount[0].total / limit),
+          totalUsers: totalCount[0].total
+        }
+      });
+  
+    } catch (error) {
+      console.error('Get users error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+// Continue from where we stopped in admin service requests
+
+// Get all service requests (admin only)
+app.get('/api/admin/service-requests', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const [requests] = await pool.execute(
+        `SELECT sr.*, u.first_name, u.last_name, sc.name as category_name, ss.name as subcategory_name 
+         FROM service_requests sr
+         JOIN users u ON sr.user_id = u.id
+         JOIN service_subcategories ss ON sr.subcategory_id = ss.id
+         JOIN service_categories sc ON ss.category_id = sc.id
+         ORDER BY sr.created_at DESC`
+      );
+  
+      res.json(requests.map(request => ({
+        id: request.id,
+        userId: request.user_id,
+        userName: `${request.first_name} ${request.last_name}`,
+        subcategoryId: request.subcategory_id,
+        fullName: request.full_name,
+        email: request.email,
+        phone: request.phone,
+        company: request.company,
+        website: request.website,
+        projectDetails: request.project_details,
+        budgetRange: request.budget_range,
+        timeline: request.timeline,
+        contactMethod: request.contact_method,
+        additionalRequirements: request.additional_requirements,
+        status: request.status,
+        createdAt: request.created_at,
+        updatedAt: request.updated_at,
+        categoryName: request.category_name,
+        subcategoryName: request.subcategory_name
+      })));
+  
+    } catch (error) {
+      console.error('Get admin service requests error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+  // Update service request status (admin only)
+  app.put('/api/admin/service-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+  
+      if (!['pending', 'in-progress', 'completed', 'cancelled'].includes(status)) {
+        return res.status(400).json({ error: 'Invalid status' });
+      }
+  
+      await pool.execute(
+        'UPDATE service_requests SET status = ?, updated_at = NOW() WHERE id = ?',
+        [status, id]
+      );
+  
+      res.json({ message: 'Service request status updated successfully' });
+  
+    } catch (error) {
+      console.error('Update service request error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+  // Create new course (admin only)
+  app.post('/api/admin/courses', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const {
+        title, description, instructorName, durationWeeks,
+        difficultyLevel, category, price
+      } = req.body;
+  
+      if (!title || !description || !instructorName || !durationWeeks || !difficultyLevel || !category || !price) {
+        return res.status(400).json({ error: 'All fields are required' });
+      }
+  
+      const [result] = await pool.execute(
+        `INSERT INTO courses 
+         (title, description, instructor_name, duration_weeks, difficulty_level, category, price, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [title, description, instructorName, durationWeeks, difficultyLevel, category, price]
+      );
+  
+      res.status(201).json({
+        message: 'Course created successfully',
+        courseId: result.insertId
+      });
+  
+    } catch (error) {
+      console.error('Create course error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+  // Update course (admin only)
+  app.put('/api/admin/courses/:id', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        title, description, instructorName, durationWeeks,
+        difficultyLevel, category, price, isActive
+      } = req.body;
+  
+      await pool.execute(
+        `UPDATE courses SET 
+         title = ?, description = ?, instructor_name = ?, duration_weeks = ?,
+         difficulty_level = ?, category = ?, price = ?, is_active = ?, updated_at = NOW()
+         WHERE id = ?`,
+        [title, description, instructorName, durationWeeks, difficultyLevel, category, price, isActive, id]
+      );
+  
+      res.json({ message: 'Course updated successfully' });
+  
+    } catch (error) {
+      console.error('Update course error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+  // Delete course (admin only)
+  app.delete('/api/admin/courses/:id', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+  
+      // Soft delete by setting is_active to false
+      await pool.execute(
+        'UPDATE courses SET is_active = false, updated_at = NOW() WHERE id = ?',
+        [id]
+      );
+  
+      res.json({ message: 'Course deleted successfully' });
+  
+    } catch (error) {
+      console.error('Delete course error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+  // Get recent enrollments (admin only)
+  app.get('/api/admin/recent-enrollments', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const [enrollments] = await pool.execute(
+        `SELECT e.*, u.first_name, u.last_name, c.title as course_title
+         FROM enrollments e
+         JOIN users u ON e.user_id = u.id
+         JOIN courses c ON e.course_id = c.id
+         ORDER BY e.enrollment_date DESC
+         LIMIT 10`
+      );
+  
+      res.json(enrollments.map(enrollment => ({
+        id: enrollment.id,
+        userName: `${enrollment.first_name} ${enrollment.last_name}`,
+        courseName: enrollment.course_title,
+        date: enrollment.enrollment_date,
+        status: enrollment.status
+      })));
+  
+    } catch (error) {
+      console.error('Get recent enrollments error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+  // Get recent users (admin only)
+  app.get('/api/admin/recent-users', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const [users] = await pool.execute(
+        `SELECT id, first_name, last_name, email, account_type, created_at
+         FROM users 
+         WHERE is_active = true
+         ORDER BY created_at DESC
+         LIMIT 10`
+      );
+  
+      res.json(users.map(user => ({
+        id: user.id,
+        name: `${user.first_name} ${user.last_name}`,
+        email: user.email,
+        type: user.account_type,
+        joinDate: user.created_at.toISOString().split('T')[0]
+      })));
+  
+    } catch (error) {
+      console.error('Get recent users error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+  // ==================== CONTACT ROUTES ====================
+  
+  // Contact form endpoint
+  app.post('/api/contact', async (req, res) => {
+    const { firstName, lastName, email, phone, company, message } = req.body;
+  
+    try {
+      // Validate required fields
+      if (!firstName || !lastName || !email || !message) {
+        return res.status(400).json({ 
+          error: 'First name, last name, email, and message are required' 
+        });
+      }
+  
+      // Basic email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({ error: 'Please provide a valid email address' });
+      }
+  
+      // Insert contact form data into database
+      const [result] = await pool.execute(
+        `INSERT INTO contact_messages 
+         (first_name, last_name, email, phone, company, message, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+        [firstName.trim(), lastName.trim(), email.trim(), phone || null, company || null, message.trim()]
+      );
+      
+      console.log('Contact message saved successfully:', {
+        id: result.insertId,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.trim()
+      });
+  
+      res.status(201).json({
+        message: 'Contact message sent successfully',
+        contactId: result.insertId
+      });
+  
+    } catch (error) {
+      console.error('Contact form error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+  // Get contact messages (admin only)
+  app.get('/api/admin/contact-messages', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const offset = (page - 1) * limit;
+  
+      const [messages] = await pool.execute(
+        `SELECT id, first_name, last_name, email, phone, company, message, created_at
+         FROM contact_messages 
+         ORDER BY created_at DESC 
+         LIMIT ? OFFSET ?`,
+        [limit, offset]
+      );
+  
+      const [totalCount] = await pool.execute(
+        'SELECT COUNT(*) as total FROM contact_messages'
+      );
+  
+      res.json({
+        messages: messages,
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(totalCount[0].total / limit),
+          totalMessages: totalCount[0].total,
+          hasNextPage: page < Math.ceil(totalCount[0].total / limit),
           hasPreviousPage: page > 1
         }
       });
+  
+    } catch (error) {
+      console.error('Get contact messages error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+  // ==================== ANALYTICS ROUTES ====================
+  
+  // Get analytics data (admin only)
+  app.get('/api/admin/analytics', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+      // User growth data (last 6 months)
+      const [userGrowth] = await pool.execute(
+        `SELECT 
+           DATE_FORMAT(created_at, '%Y-%m') as month,
+           COUNT(*) as count
+         FROM users 
+         WHERE created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+         GROUP BY DATE_FORMAT(created_at, '%Y-%m')
+         ORDER BY month`
+      );
+  
+      // Course enrollment data
+      const [courseEnrollments] = await pool.execute(
+        `SELECT 
+           c.title,
+           COUNT(e.id) as enrollments
+         FROM courses c
+         LEFT JOIN enrollments e ON c.id = e.course_id
+         WHERE c.is_active = true
+         GROUP BY c.id, c.title
+         ORDER BY enrollments DESC
+         LIMIT 10`
+      );
+  
+      // Revenue by month (mock calculation)
+      const [revenueData] = await pool.execute(
+        `SELECT 
+           DATE_FORMAT(e.enrollment_date, '%Y-%m') as month,
+           SUM(c.price) as revenue
+         FROM enrollments e
+         JOIN courses c ON e.course_id = c.id
+         WHERE e.enrollment_date >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+         GROUP BY DATE_FORMAT(e.enrollment_date, '%Y-%m')
+         ORDER BY month`
+      );
+  
+      res.json({
+        userGrowth: userGrowth,
+        courseEnrollments: courseEnrollments,
+        revenueData: revenueData
+      });
+  
+    } catch (error) {
+      console.error('Get analytics error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  });
+  
+  // ==================== UTILITY ROUTES ====================
+  
+  // Health check endpoint
+  app.get('/api/health', (req, res) => {
+    res.json({ 
+      status: 'OK', 
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
     });
   });
-});
-
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
-});
-
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ error: 'Endpoint not found' });
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
-});
-
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-  console.log(`Health check available at: http://localhost:${port}/api/health`);
-});
+  
+  // Get server info
+  app.get('/api/info', (req, res) => {
+    res.json({
+      name: 'Padak Dashboard API',
+      version: '1.0.0',
+      environment: process.env.NODE_ENV || 'development',
+      timestamp: new Date().toISOString()
+    });
+  });
+  
+  // ==================== ERROR HANDLING ====================
+  
+  // 404 handler
+  app.use((req, res) => {
+    res.status(404).json({ 
+      error: 'Endpoint not found',
+      path: req.path,
+      method: req.method
+    });
+  });
+  
+  // Global error handling middleware
+  app.use((err, req, res, next) => {
+    console.error('Unhandled error:', err);
+    
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'File too large' });
+    }
+    
+    if (err.message === 'Only image files are allowed for avatar') {
+      return res.status(400).json({ error: err.message });
+    }
+    
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+    });
+  });
+  
+  // ==================== SERVER STARTUP ====================
+  
+  // Graceful shutdown
+  process.on('SIGINT', async () => {
+    console.log('Received SIGINT. Graceful shutdown...');
+    await pool.end();
+    process.exit(0);
+  });
+  
+  process.on('SIGTERM', async () => {
+    console.log('Received SIGTERM. Graceful shutdown...');
+    await pool.end();
+    process.exit(0);
+  });
+  
+  // Start server
+  app.listen(port, () => {
+    console.log(`🚀 Server running on port ${port}`);
+    console.log(`📊 Health check: http://localhost:${port}/api/health`);
+    console.log(`📚 API Info: http://localhost:${port}/api/info`);
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  });
+  
+  module.exports = app;
+        

@@ -1,0 +1,156 @@
+// src/components/dashboard/common/Sidebar.tsx
+import React from 'react';
+import { 
+  LayoutDashboard, BookOpen, ListChecks, BadgeCheck, Calendar, 
+  Users, Briefcase, BarChart, Settings, LogOut, 
+  Shield, UserCheck, MessageSquare, GraduationCap, FileText,
+  Sun, Moon, User
+} from 'lucide-react';
+import { useAuth } from '../../../hooks/use-auth';
+
+interface NavItem {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+}
+
+interface SidebarProps {
+  activeView: string;
+  onViewChange: (view: string) => void;
+  darkMode: boolean;
+  onToggleDarkMode: () => void;
+  onProfileClick: () => void;
+}
+
+const Sidebar: React.FC<SidebarProps> = ({ 
+  activeView, 
+  onViewChange, 
+  darkMode, 
+  onToggleDarkMode,
+  onProfileClick 
+}) => {
+  const { user, logout } = useAuth();
+
+  const getNavItems = (): NavItem[] => {
+    if (user?.accountType === 'admin') {
+      return [
+        { id: 'dashboard', label: 'Admin Dashboard', icon: <Shield size={20} /> },
+        { id: 'manage-courses', label: 'Manage Courses', icon: <BookOpen size={20} /> },
+        { id: 'manage-users', label: 'Manage Users', icon: <Users size={20} /> },
+        { id: 'manage-internships', label: 'Manage Internships', icon: <GraduationCap size={20} /> },
+        { id: 'contact-messages', label: 'Contact Messages', icon: <MessageSquare size={20} /> },
+        { id: 'enrollments', label: 'Course Enrollments', icon: <UserCheck size={20} /> },
+        { id: 'analytics', label: 'Analytics', icon: <BarChart size={20} /> },
+        { id: 'settings', label: 'Settings', icon: <Settings size={20} /> },
+      ];
+    }
+    
+    const baseItems = [
+      { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
+      { id: 'courses', label: 'My Courses', icon: <BookOpen size={20} /> },
+      { id: 'assignments', label: 'Assignments', icon: <ListChecks size={20} /> },
+      { id: 'certificates', label: 'Certificates', icon: <BadgeCheck size={20} /> },
+      { id: 'calendar', label: 'Calendar', icon: <Calendar size={20} /> },
+      { id: 'resources', label: 'Resources', icon: <FileText size={20} /> },
+    ];
+    
+    if (['professional', 'business', 'agency'].includes(user?.accountType || '')) {
+      baseItems.push({ id: 'services', label: 'Request Services', icon: <Briefcase size={20} /> });
+    }
+    
+    baseItems.push({ id: 'settings', label: 'Settings', icon: <Settings size={20} /> });
+    
+    return baseItems;
+  };
+
+  const navItems = getNavItems();
+
+  if (!user) return null;
+
+  return (
+    <aside className="fixed lg:static z-30 h-screen w-64 bg-white dark:bg-gray-800 shadow-lg">
+      <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center space-x-2">
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-orange-500 to-orange-400 flex items-center justify-center">
+            <span className="text-white font-bold">P</span>
+          </div>
+          <span className="text-xl font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
+            Padak
+          </span>
+        </div>
+      </div>
+      
+      <div className="p-4">
+        <div 
+          className="flex items-center mb-6 p-3 rounded-lg bg-orange-50 dark:bg-gray-700 cursor-pointer hover:bg-orange-100 dark:hover:bg-gray-600 transition-colors"
+          onClick={onProfileClick}
+        >
+          <div className="relative">
+            {user.profileImage ? (
+              <img 
+                src={user.profileImage} 
+                alt="Profile" 
+                className="w-16 h-16 rounded-xl object-cover"
+              />
+            ) : (
+              <div className="bg-gray-200 dark:bg-gray-600 border-2 border-dashed border-gray-300 dark:border-gray-500 rounded-xl w-16 h-16 flex items-center justify-center">
+                {user.accountType === 'admin' ? (
+                  <Shield size={24} className="text-orange-500" />
+                ) : (
+                  <User size={24} className="text-gray-400" />
+                )}
+              </div>
+            )}
+          </div>
+          <div className="ml-3">
+            <h3 className="font-semibold">{user.firstName} {user.lastName}</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 capitalize">
+              {user.accountType === 'admin' ? 'Administrator' : user.accountType}
+            </p>
+          </div>
+        </div>
+        
+        <nav className="space-y-1">
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => onViewChange(item.id)}
+              className={`flex items-center w-full p-3 rounded-lg transition-colors ${
+                activeView === item.id 
+                  ? 'bg-orange-500 text-white' 
+                  : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+              }`}
+            >
+              <span className="mr-3">{item.icon}</span>
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
+        
+        <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <button 
+            onClick={onToggleDarkMode}
+            className="flex items-center w-full p-3 rounded-lg text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+          >
+            <span className="mr-3">
+              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+            </span>
+            <span>{darkMode ? 'Light Mode' : 'Dark Mode'}</span>
+          </button>
+          
+          <button 
+            onClick={logout}
+            className="flex items-center w-full p-3 rounded-lg text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+          >
+            <span className="mr-3">
+              <LogOut size={20} />
+            </span>
+            <span>Logout</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+};
+
+export default Sidebar;
