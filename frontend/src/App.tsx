@@ -9,7 +9,7 @@ import Register from "./pages/Register";
 import Courses from "./pages/Courses";
 import Internships from "./pages/Internships";
 import Dashboard from "./pages/Dashboard";
-import AdminDashboard from "./pages/AdminDashboard";
+import AdminDashboard from "./pages/admin/AdminDashboard";
 import NotFound from "./pages/NotFound";
 import PrivacyPolicy from "./pages/Policy";
 import TermsConditions from "./pages/Terms";
