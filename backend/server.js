@@ -2248,10 +2248,6 @@ app.get('/api/courses/enrolled', authenticateToken, async (req, res) => {
   
   // ==================== ADMIN DASHBOARD ROUTES ====================
 
-  // =======New ========
-
-  // ==================== ADMIN DASHBOARD ROUTE =====================
-
 // Admin Dashboard Stats
 app.get('/api/admin/dashboard-stats', authenticateToken, async (req, res) => {
   try {
