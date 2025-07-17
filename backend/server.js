@@ -489,12 +489,12 @@ app.get('/api/calendar/events', authenticateToken, async (req, res) => {
     `;
     
     // Execute queries
-    const [courseEventsResult] = await db.execute(courseEventsQuery, [userId]);
-    const [assignmentEventsResult] = await db.execute(assignmentEventsQuery, [userId, userId]);
+    const [courseEventsResult] = await pool.execute(courseEventsQuery, [userId]);
+    const [assignmentEventsResult] = await pool.execute(assignmentEventsQuery, [userId, userId]);
     
     let customEventsResult = [];
     try {
-      [customEventsResult] = await db.execute(customEventsQuery, [userId]);
+      [customEventsResult] = await pool.execute(customEventsQuery, [userId]);
     } catch (error) {
       // Custom events table doesn't exist, skip
       console.log('Custom events table not found, skipping...');
@@ -607,7 +607,7 @@ app.get('/api/calendar/events/date/:date', authenticateToken, async (req, res) =
       ORDER BY date ASC
     `;
     
-    const [eventsResult] = await db.execute(eventsQuery, [userId, userId, date, userId, date]);
+    const [eventsResult] = await pool.execute(eventsQuery, [userId, userId, date, userId, date]);
     
     // Try to get custom events for the date
     let customEvents = [];
@@ -627,7 +627,7 @@ app.get('/api/calendar/events/date/:date', authenticateToken, async (req, res) =
         FROM custom_calendar_events
         WHERE user_id = ? AND DATE(event_date) = ?
       `;
-      const [customResult] = await db.execute(customQuery, [userId, date]);
+      const [customResult] = await pool.execute(customQuery, [userId, date]);
       customEvents = customResult;
     } catch (error) {
       // Custom events table doesn't exist
@@ -690,7 +690,7 @@ app.get('/api/calendar/upcoming', authenticateToken, async (req, res) => {
       LIMIT 10
     `;
     
-    const [upcomingResult] = await db.execute(upcomingEventsQuery, [userId, userId]);
+    const [upcomingResult] = await pool.execute(upcomingEventsQuery, [userId, userId]);
     
     // Try to get upcoming custom events
     let customUpcoming = [];
@@ -714,7 +714,7 @@ app.get('/api/calendar/upcoming', authenticateToken, async (req, res) => {
         ORDER BY event_date ASC
         LIMIT 5
       `;
-      const [customResult] = await db.execute(customQuery, [userId]);
+      const [customResult] = await pool.execute(customQuery, [userId]);
       customUpcoming = customResult;
     } catch (error) {
       // Custom events table doesn't exist
@@ -766,7 +766,7 @@ app.get('/api/calendar/stats', authenticateToken, async (req, res) => {
       WHERE e.user_id = ?
     `;
     
-    const [statsResult] = await db.execute(statsQuery, [userId, userId]);
+    const [statsResult] = await pool.execute(statsQuery, [userId, userId]);
     const stats = statsResult[0];
     
     res.json({
@@ -809,7 +809,7 @@ app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) =
       ORDER BY a.due_date ASC
     `;
     
-    const [assignmentsResult] = await db.execute(assignmentsQuery, [userId, userId]);
+    const [assignmentsResult] = await pool.execute(assignmentsQuery, [userId, userId]);
     
     const assignments = assignmentsResult.map(assignment => ({
       id: assignment.id,
@@ -870,14 +870,14 @@ app.post('/api/calendar/events', authenticateToken, async (req, res) => {
       )
     `;
     
-    await db.execute(createTableQuery);
+    await pool.execute(createTableQuery);
     
     const insertQuery = `
       INSERT INTO custom_calendar_events (user_id, title, description, event_date, event_time, event_type, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
     `;
     
-    const [result] = await db.execute(insertQuery, [userId, title, description, date, time, type]);
+    const [result] = await pool.execute(insertQuery, [userId, title, description, date, time, type]);
     
     res.status(201).json({
       id: result.insertId,
@@ -907,7 +907,7 @@ app.put('/api/calendar/events/:id', authenticateToken, async (req, res) => {
       WHERE id = ? AND user_id = ?
     `;
     
-    const [checkResult] = await db.execute(checkQuery, [id, userId]);
+    const [checkResult] = await pool.execute(checkQuery, [id, userId]);
     
     if (checkResult.length === 0) {
       return res.status(404).json({ error: 'Calendar event not found or unauthorized' });
@@ -919,7 +919,7 @@ app.put('/api/calendar/events/:id', authenticateToken, async (req, res) => {
       WHERE id = ? AND user_id = ?
     `;
     
-    await db.execute(updateQuery, [title, description, date, time, type, id, userId]);
+    await pool.execute(updateQuery, [title, description, date, time, type, id, userId]);
     
     res.json({ message: 'Calendar event updated successfully' });
   } catch (error) {
@@ -939,7 +939,7 @@ app.delete('/api/calendar/events/:id', authenticateToken, async (req, res) => {
       WHERE id = ? AND user_id = ?
     `;
     
-    const [result] = await db.execute(deleteQuery, [id, userId]);
+    const [result] = await pool.execute(deleteQuery, [id, userId]);
     
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Calendar event not found or unauthorized' });
@@ -976,7 +976,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
       WHERE id = ?
     `;
     
-    const [userResult] = await db.execute(userQuery, [userId]);
+    const [userResult] = await pool.execute(userQuery, [userId]);
     
     if (userResult.length === 0) {
       return res.status(404).json({ error: 'User not found' });
