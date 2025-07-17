@@ -9,7 +9,6 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -97,6 +96,8 @@ app.use(cors({
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static('uploads'));
+
+// ======== AUTHENTICATION MIDDLEWARE ========
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -421,6 +422,586 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Get stats error:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ==================== CALENDER EVENTS ROUTES ====================
+
+// GET /api/calendar/events - Get all calendar events for current user
+app.get('/api/calendar/events', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // Get course start/end dates for enrolled courses
+    const courseEventsQuery = `
+      SELECT 
+        c.id,
+        c.title,
+        c.description,
+        c.created_at as date,
+        'course_start' as type,
+        c.id as course_id,
+        c.title as course_title,
+        c.category as course_category
+      FROM courses c
+      JOIN enrollments e ON c.id = e.course_id
+      WHERE e.user_id = ? AND e.status = 'active'
+      ORDER BY c.created_at ASC
+    `;
+    
+    // Get assignment deadlines
+    const assignmentEventsQuery = `
+      SELECT 
+        a.id,
+        a.title,
+        a.description,
+        a.due_date as date,
+        'assignment' as type,
+        c.id as course_id,
+        c.title as course_title,
+        c.category as course_category,
+        CASE 
+          WHEN s.status = 'graded' THEN 'completed'
+          WHEN a.due_date < CURDATE() AND s.id IS NULL THEN 'overdue'
+          ELSE 'pending'
+        END as status
+      FROM assignments a
+      JOIN courses c ON a.course_id = c.id
+      JOIN enrollments e ON c.id = e.course_id
+      LEFT JOIN assignment_submissions s ON a.id = s.assignment_id AND s.user_id = ?
+      WHERE e.user_id = ? AND e.status = 'active'
+      ORDER BY a.due_date ASC
+    `;
+    
+    // Get custom calendar events if the table exists
+    const customEventsQuery = `
+      SELECT 
+        id,
+        title,
+        description,
+        event_date as date,
+        event_time as time,
+        event_type as type,
+        'custom' as color
+      FROM custom_calendar_events 
+      WHERE user_id = ? AND event_date >= CURDATE() - INTERVAL 30 DAY
+      ORDER BY event_date ASC
+    `;
+    
+    // Execute queries
+    const [courseEventsResult] = await pool.execute(courseEventsQuery, [userId]);
+    const [assignmentEventsResult] = await pool.execute(assignmentEventsQuery, [userId, userId]);
+    
+    let customEventsResult = [];
+    try {
+      [customEventsResult] = await pool.execute(customEventsQuery, [userId]);
+    } catch (error) {
+      // Custom events table doesn't exist, skip
+      console.log('Custom events table not found, skipping...');
+    }
+    
+    // Format course events
+    const courseEvents = courseEventsResult.map(event => ({
+      id: `course-${event.id}`,
+      title: `Course: ${event.title}`,
+      description: event.description || 'Course enrollment',
+      date: event.date,
+      type: 'course_start',
+      course: {
+        id: event.course_id,
+        title: event.course_title,
+        category: event.course_category
+      },
+      color: 'blue'
+    }));
+    
+    // Format assignment events
+    const assignmentEvents = assignmentEventsResult.map(assignment => ({
+      id: `assignment-${assignment.id}`,
+      title: assignment.title,
+      description: assignment.description || 'Assignment due',
+      date: assignment.date,
+      type: 'assignment',
+      course: {
+        id: assignment.course_id,
+        title: assignment.course_title,
+        category: assignment.course_category
+      },
+      status: assignment.status,
+      color: assignment.status === 'completed' ? 'green' : 
+             assignment.status === 'overdue' ? 'red' : 'orange'
+    }));
+    
+    // Format custom events
+    const customEvents = customEventsResult.map(event => ({
+      id: `custom-${event.id}`,
+      title: event.title,
+      description: event.description || '',
+      date: event.date,
+      time: event.time,
+      type: event.type || 'custom',
+      color: 'purple'
+    }));
+    
+    // Combine all events
+    const allEvents = [...courseEvents, ...assignmentEvents, ...customEvents];
+    
+    res.json(allEvents);
+  } catch (error) {
+    console.error('Error fetching calendar events:', error);
+    res.status(500).json({ error: 'Failed to fetch calendar events' });
+  }
+});
+
+// GET /api/calendar/events/date/:date - Get events for specific date
+app.get('/api/calendar/events/date/:date', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { date } = req.params;
+    
+    // Validate date format (YYYY-MM-DD)
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(date)) {
+      return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
+    }
+    
+    const eventsQuery = `
+      SELECT 
+        'assignment' as event_type,
+        a.id,
+        a.title,
+        a.description,
+        a.due_date as date,
+        NULL as time,
+        c.id as course_id,
+        c.title as course_title,
+        c.category as course_category,
+        CASE 
+          WHEN s.status = 'graded' THEN 'completed'
+          WHEN a.due_date < CURDATE() AND s.id IS NULL THEN 'overdue'
+          ELSE 'pending'
+        END as status
+      FROM assignments a
+      JOIN courses c ON a.course_id = c.id
+      JOIN enrollments e ON c.id = e.course_id
+      LEFT JOIN assignment_submissions s ON a.id = s.assignment_id AND s.user_id = ?
+      WHERE e.user_id = ? AND e.status = 'active' AND DATE(a.due_date) = ?
+      
+      UNION ALL
+      
+      SELECT 
+        'course_start' as event_type,
+        c.id,
+        CONCAT('Course: ', c.title) as title,
+        c.description,
+        c.created_at as date,
+        NULL as time,
+        c.id as course_id,
+        c.title as course_title,
+        c.category as course_category,
+        'active' as status
+      FROM courses c
+      JOIN enrollments e ON c.id = e.course_id
+      WHERE e.user_id = ? AND e.status = 'active' AND DATE(c.created_at) = ?
+      
+      ORDER BY date ASC
+    `;
+    
+    const [eventsResult] = await pool.execute(eventsQuery, [userId, userId, date, userId, date]);
+    
+    // Try to get custom events for the date
+    let customEvents = [];
+    try {
+      const customQuery = `
+        SELECT 
+          'custom' as event_type,
+          id,
+          title,
+          description,
+          event_date as date,
+          event_time as time,
+          NULL as course_id,
+          NULL as course_title,
+          NULL as course_category,
+          'pending' as status
+        FROM custom_calendar_events
+        WHERE user_id = ? AND DATE(event_date) = ?
+      `;
+      const [customResult] = await pool.execute(customQuery, [userId, date]);
+      customEvents = customResult;
+    } catch (error) {
+      // Custom events table doesn't exist
+    }
+    
+    const allEvents = [...eventsResult, ...customEvents];
+    
+    const events = allEvents.map(event => ({
+      id: `${event.event_type}-${event.id}`,
+      title: event.title,
+      description: event.description || '',
+      date: event.date,
+      time: event.time,
+      type: event.event_type,
+      course: event.course_id ? {
+        id: event.course_id,
+        title: event.course_title,
+        category: event.course_category
+      } : null,
+      status: event.status
+    }));
+    
+    res.json(events);
+  } catch (error) {
+    console.error('Error fetching events for date:', error);
+    res.status(500).json({ error: 'Failed to fetch events for specified date' });
+  }
+});
+
+// GET /api/calendar/upcoming - Get upcoming events (next 7 days)
+app.get('/api/calendar/upcoming', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const upcomingEventsQuery = `
+      SELECT 
+        'assignment' as event_type,
+        a.id,
+        a.title,
+        a.description,
+        a.due_date as date,
+        NULL as time,
+        c.id as course_id,
+        c.title as course_title,
+        c.category as course_category,
+        CASE 
+          WHEN s.status = 'graded' THEN 'completed'
+          WHEN a.due_date < CURDATE() AND s.id IS NULL THEN 'overdue'
+          ELSE 'pending'
+        END as status
+      FROM assignments a
+      JOIN courses c ON a.course_id = c.id
+      JOIN enrollments e ON c.id = e.course_id
+      LEFT JOIN assignment_submissions s ON a.id = s.assignment_id AND s.user_id = ?
+      WHERE e.user_id = ? AND e.status = 'active'
+        AND a.due_date >= CURDATE() 
+        AND a.due_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+      
+      ORDER BY date ASC
+      LIMIT 10
+    `;
+    
+    const [upcomingResult] = await pool.execute(upcomingEventsQuery, [userId, userId]);
+    
+    // Try to get upcoming custom events
+    let customUpcoming = [];
+    try {
+      const customQuery = `
+        SELECT 
+          'custom' as event_type,
+          id,
+          title,
+          description,
+          event_date as date,
+          event_time as time,
+          NULL as course_id,
+          NULL as course_title,
+          NULL as course_category,
+          'pending' as status
+        FROM custom_calendar_events
+        WHERE user_id = ? 
+          AND event_date >= CURDATE() 
+          AND event_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+        ORDER BY event_date ASC
+        LIMIT 5
+      `;
+      const [customResult] = await pool.execute(customQuery, [userId]);
+      customUpcoming = customResult;
+    } catch (error) {
+      // Custom events table doesn't exist
+    }
+    
+    const allUpcoming = [...upcomingResult, ...customUpcoming];
+    
+    const upcomingEvents = allUpcoming.map(event => ({
+      id: `${event.event_type}-${event.id}`,
+      title: event.title,
+      description: event.description || '',
+      date: event.date,
+      time: event.time,
+      type: event.event_type,
+      course: event.course_id ? {
+        id: event.course_id,
+        title: event.course_title,
+        category: event.course_category
+      } : null,
+      status: event.status,
+      color: event.status === 'completed' ? 'green' : 
+             event.status === 'overdue' ? 'red' : 
+             event.event_type === 'custom' ? 'purple' : 'orange'
+    }));
+    
+    res.json(upcomingEvents);
+  } catch (error) {
+    console.error('Error fetching upcoming events:', error);
+    res.status(500).json({ error: 'Failed to fetch upcoming events' });
+  }
+});
+
+// GET /api/calendar/stats - Get calendar statistics
+app.get('/api/calendar/stats', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const statsQuery = `
+      SELECT 
+        COUNT(CASE WHEN s.id IS NULL AND a.due_date >= CURDATE() THEN 1 END) as pending_assignments,
+        COUNT(CASE WHEN s.status = 'graded' THEN 1 END) as completed_assignments,
+        COUNT(CASE WHEN s.id IS NULL AND a.due_date < CURDATE() THEN 1 END) as overdue_assignments,
+        COUNT(CASE WHEN e.status = 'active' THEN 1 END) as active_courses,
+        COUNT(CASE WHEN e.status = 'completed' THEN 1 END) as completed_courses
+      FROM assignments a
+      JOIN courses c ON a.course_id = c.id
+      JOIN enrollments e ON c.id = e.course_id
+      LEFT JOIN assignment_submissions s ON a.id = s.assignment_id AND s.user_id = ?
+      WHERE e.user_id = ?
+    `;
+    
+    const [statsResult] = await pool.execute(statsQuery, [userId, userId]);
+    const stats = statsResult[0];
+    
+    res.json({
+      pending_assignments: stats.pending_assignments || 0,
+      completed_assignments: stats.completed_assignments || 0,
+      overdue_assignments: stats.overdue_assignments || 0,
+      active_courses: stats.active_courses || 0,
+      completed_courses: stats.completed_courses || 0,
+      total_assignments: (stats.pending_assignments || 0) + (stats.completed_assignments || 0) + (stats.overdue_assignments || 0)
+    });
+  } catch (error) {
+    console.error('Error fetching calendar stats:', error);
+    res.status(500).json({ error: 'Failed to fetch calendar statistics' });
+  }
+});
+
+// GET /api/assignments/my-assignments - Get user's assignments (for calendar frontend)
+app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const assignmentsQuery = `
+      SELECT 
+        a.id,
+        a.title,
+        a.description,
+        a.due_date,
+        a.max_points,
+        c.id as course_id,
+        c.title as course_title,
+        c.category as course_category,
+        s.id as submission_id,
+        s.status as submission_status,
+        s.grade as submission_grade
+      FROM assignments a
+      JOIN courses c ON a.course_id = c.id
+      JOIN enrollments e ON c.id = e.course_id
+      LEFT JOIN assignment_submissions s ON a.id = s.assignment_id AND s.user_id = ?
+      WHERE e.user_id = ? AND e.status = 'active'
+      ORDER BY a.due_date ASC
+    `;
+    
+    const [assignmentsResult] = await pool.execute(assignmentsQuery, [userId, userId]);
+    
+    const assignments = assignmentsResult.map(assignment => ({
+      id: assignment.id,
+      title: assignment.title,
+      description: assignment.description,
+      due_date: assignment.due_date,
+      max_points: assignment.max_points,
+      course: {
+        id: assignment.course_id,
+        title: assignment.course_title,
+        category: assignment.course_category
+      },
+      submission: assignment.submission_id ? {
+        id: assignment.submission_id,
+        status: assignment.submission_status,
+        grade: assignment.submission_grade
+      } : null
+    }));
+    
+    res.json(assignments);
+  } catch (error) {
+    console.error('Error fetching user assignments:', error);
+    res.status(500).json({ error: 'Failed to fetch assignments' });
+  }
+});
+
+// POST /api/calendar/events - Create a custom calendar event
+app.post('/api/calendar/events', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { title, description, date, time, type = 'custom' } = req.body;
+    
+    // Validate required fields
+    if (!title || !date) {
+      return res.status(400).json({ error: 'Title and date are required' });
+    }
+    
+    // Validate date format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(date)) {
+      return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
+    }
+    
+    // Check if custom_calendar_events table exists, if not create it
+    const createTableQuery = `
+      CREATE TABLE IF NOT EXISTS custom_calendar_events (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        event_date DATE NOT NULL,
+        event_time TIME,
+        event_type VARCHAR(50) DEFAULT 'custom',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        INDEX idx_user_date (user_id, event_date)
+      )
+    `;
+    
+    await pool.execute(createTableQuery);
+    
+    const insertQuery = `
+      INSERT INTO custom_calendar_events (user_id, title, description, event_date, event_time, event_type, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+    `;
+    
+    const [result] = await pool.execute(insertQuery, [userId, title, description, date, time, type]);
+    
+    res.status(201).json({
+      id: result.insertId,
+      title,
+      description,
+      date,
+      time,
+      type,
+      message: 'Calendar event created successfully'
+    });
+  } catch (error) {
+    console.error('Error creating calendar event:', error);
+    res.status(500).json({ error: 'Failed to create calendar event' });
+  }
+});
+
+// PUT /api/calendar/events/:id - Update a custom calendar event
+app.put('/api/calendar/events/:id', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const { title, description, date, time, type } = req.body;
+    
+    // Check if event exists and belongs to user
+    const checkQuery = `
+      SELECT id FROM custom_calendar_events 
+      WHERE id = ? AND user_id = ?
+    `;
+    
+    const [checkResult] = await pool.execute(checkQuery, [id, userId]);
+    
+    if (checkResult.length === 0) {
+      return res.status(404).json({ error: 'Calendar event not found or unauthorized' });
+    }
+    
+    const updateQuery = `
+      UPDATE custom_calendar_events 
+      SET title = ?, description = ?, event_date = ?, event_time = ?, event_type = ?, updated_at = NOW()
+      WHERE id = ? AND user_id = ?
+    `;
+    
+    await pool.execute(updateQuery, [title, description, date, time, type, id, userId]);
+    
+    res.json({ message: 'Calendar event updated successfully' });
+  } catch (error) {
+    console.error('Error updating calendar event:', error);
+    res.status(500).json({ error: 'Failed to update calendar event' });
+  }
+});
+
+// DELETE /api/calendar/events/:id - Delete a custom calendar event
+app.delete('/api/calendar/events/:id', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    
+    const deleteQuery = `
+      DELETE FROM custom_calendar_events 
+      WHERE id = ? AND user_id = ?
+    `;
+    
+    const [result] = await pool.execute(deleteQuery, [id, userId]);
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Calendar event not found or unauthorized' });
+    }
+    
+    res.json({ message: 'Calendar event deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting calendar event:', error);
+    res.status(500).json({ error: 'Failed to delete calendar event' });
+  }
+});
+
+// GET /api/auth/me - Get current user info (for calendar frontend)
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const userQuery = `
+      SELECT 
+        id,
+        first_name,
+        last_name,
+        email,
+        account_type,
+        profile_image,
+        company,
+        website,
+        bio,
+        is_active,
+        email_verified,
+        created_at,
+        last_login
+      FROM users 
+      WHERE id = ?
+    `;
+    
+    const [userResult] = await pool.execute(userQuery, [userId]);
+    
+    if (userResult.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const user = userResult[0];
+    
+    res.json({
+      id: user.id,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      email: user.email,
+      account_type: user.account_type,
+      profile_image: user.profile_image,
+      company: user.company,
+      website: user.website,
+      bio: user.bio,
+      is_active: user.is_active,
+      email_verified: user.email_verified,
+      created_at: user.created_at,
+      last_login: user.last_login
+    });
+  } catch (error) {
+    console.error('Error fetching user info:', error);
+    res.status(500).json({ error: 'Failed to fetch user information' });
   }
 });
 
@@ -1494,7 +2075,6 @@ app.delete('/api/certificates/:certificateId', authenticateToken, async (req, re
     }
   });
   
-// Continue from where we stopped in admin service requests
 
 // Get all service requests (admin only)
 app.get('/api/admin/service-requests', authenticateToken, requireAdmin, async (req, res) => {
