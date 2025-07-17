@@ -31,9 +31,7 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  acquireTimeout: 60000,
-  timeout: 60000,
-  reconnect: true
+  connectTimeout: 10000,
 });
 
 // Test database connection
@@ -88,18 +86,11 @@ const allowedOrigins = [
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
+
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  origin: ['http://localhost:8080', 'http://your-frontend-domain.com'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true
 }));
 
 // Middleware
@@ -642,35 +633,303 @@ app.get('/api/enrollments/my-courses', authenticateToken, async (req, res) => {
   
   // ==================== CERTIFICATES ROUTES ====================
   
-  // Get user's certificates
-  app.get('/api/certificates/my-certificates', authenticateToken, async (req, res) => {
-    try {
-      const userId = req.user.id;
-  
-      const [certificates] = await pool.execute(
-        `SELECT cert.*, c.title as course_title FROM certificates cert
-         JOIN courses c ON cert.course_id = c.id
-         WHERE cert.user_id = ?
-         ORDER BY cert.issued_date DESC`,
-        [userId]
-      );
-  
-      res.json(certificates.map(cert => ({
-        id: cert.id,
-        userId: cert.user_id,
-        courseId: cert.course_id,
-        certificateUrl: cert.certificate_url,
-        issuedDate: cert.issued_date,
-        course: {
-          title: cert.course_title
-        }
-      })));
-  
-    } catch (error) {
-      console.error('Get certificates error:', error);
-      res.status(500).json({ error: 'Server error' });
+  // Add these routes to your server.js file
+
+// Certificate Routes
+app.get('/api/certificates/my-certificates', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const [certificates] = await pool.execute(`
+      SELECT 
+        c.id,
+        c.user_id as userId,
+        c.course_id as courseId,
+        c.certificate_url as certificateUrl,
+        c.issued_date as issuedDate,
+        co.title as courseTitle,
+        co.description as courseDescription,
+        co.instructor_name as instructorName,
+        co.category,
+        co.difficulty_level as difficultyLevel,
+        e.completion_date as completionDate,
+        e.status as enrollmentStatus,
+        COALESCE(AVG(asub.grade), 0) as finalGrade
+      FROM certificates c
+      JOIN courses co ON c.course_id = co.id
+      JOIN enrollments e ON c.user_id = e.user_id AND c.course_id = e.course_id
+      LEFT JOIN assignments a ON a.course_id = co.id
+      LEFT JOIN assignment_submissions asub ON asub.assignment_id = a.id AND asub.user_id = c.user_id
+      WHERE c.user_id = ?
+      GROUP BY c.id, c.user_id, c.course_id, c.certificate_url, c.issued_date, 
+               co.title, co.description, co.instructor_name, co.category, co.difficulty_level,
+               e.completion_date, e.status
+      ORDER BY c.issued_date DESC
+    `, [userId]);
+
+    // Transform the data to match the expected format
+    const formattedCertificates = certificates.map(cert => ({
+      id: cert.id,
+      userId: cert.userId,
+      courseId: cert.courseId,
+      certificateUrl: cert.certificateUrl,
+      issuedDate: cert.issuedDate,
+      course: {
+        id: cert.courseId,
+        title: cert.courseTitle,
+        description: cert.courseDescription,
+        instructorName: cert.instructorName,
+        category: cert.category,
+        difficultyLevel: cert.difficultyLevel
+      },
+      enrollment: {
+        completionDate: cert.completionDate,
+        finalGrade: Math.round(cert.finalGrade),
+        status: cert.enrollmentStatus
+      }
+    }));
+
+    res.json(formattedCertificates);
+  } catch (error) {
+    console.error('Error fetching certificates:', error);
+    res.status(500).json({ error: 'Failed to fetch certificates' });
+  }
+});
+
+// Download certificate endpoint
+app.get('/api/certificates/:certificateId/download', authenticateToken, async (req, res) => {
+  try {
+    const { certificateId } = req.params;
+    const userId = req.user.id;
+    
+    // Verify the certificate belongs to the user
+    const [certificates] = await pool.execute(`
+      SELECT c.*, co.title as courseTitle, u.first_name, u.last_name
+      FROM certificates c
+      JOIN courses co ON c.course_id = co.id
+      JOIN users u ON c.user_id = u.id
+      WHERE c.id = ? AND c.user_id = ?
+    `, [certificateId, userId]);
+
+    if (certificates.length === 0) {
+      return res.status(404).json({ error: 'Certificate not found' });
     }
-  });
+
+    const certificate = certificates[0];
+    
+    // If certificate_url exists, redirect to it
+    if (certificate.certificate_url) {
+      return res.redirect(certificate.certificate_url);
+    }
+
+    // Otherwise, generate a simple PDF certificate
+    // For now, we'll return a JSON response - you can implement PDF generation later
+    const certificateData = {
+      recipientName: `${certificate.first_name} ${certificate.last_name}`,
+      courseName: certificate.courseTitle,
+      completionDate: certificate.issued_date,
+      certificateId: certificate.id
+    };
+
+    res.json({
+      message: 'Certificate ready for download',
+      data: certificateData,
+      downloadUrl: `/api/certificates/${certificateId}/pdf`
+    });
+    
+  } catch (error) {
+    console.error('Error downloading certificate:', error);
+    res.status(500).json({ error: 'Failed to download certificate' });
+  }
+});
+
+// Get all certificates (admin only)
+app.get('/api/certificates', authenticateToken, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.account_type !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const [certificates] = await pool.execute(`
+      SELECT 
+        c.id,
+        c.user_id as userId,
+        c.course_id as courseId,
+        c.certificate_url as certificateUrl,
+        c.issued_date as issuedDate,
+        co.title as courseTitle,
+        co.instructor_name as instructorName,
+        co.category,
+        co.difficulty_level as difficultyLevel,
+        u.first_name,
+        u.last_name,
+        u.email,
+        e.completion_date as completionDate
+      FROM certificates c
+      JOIN courses co ON c.course_id = co.id
+      JOIN users u ON c.user_id = u.id
+      JOIN enrollments e ON c.user_id = e.user_id AND c.course_id = e.course_id
+      ORDER BY c.issued_date DESC
+    `);
+
+    const formattedCertificates = certificates.map(cert => ({
+      id: cert.id,
+      userId: cert.userId,
+      courseId: cert.courseId,
+      certificateUrl: cert.certificateUrl,
+      issuedDate: cert.issuedDate,
+      course: {
+        id: cert.courseId,
+        title: cert.courseTitle,
+        instructorName: cert.instructorName,
+        category: cert.category,
+        difficultyLevel: cert.difficultyLevel
+      },
+      user: {
+        firstName: cert.first_name,
+        lastName: cert.last_name,
+        email: cert.email
+      },
+      enrollment: {
+        completionDate: cert.completionDate
+      }
+    }));
+
+    res.json(formattedCertificates);
+  } catch (error) {
+    console.error('Error fetching all certificates:', error);
+    res.status(500).json({ error: 'Failed to fetch certificates' });
+  }
+});
+
+// Issue new certificate (admin only)
+app.post('/api/certificates', authenticateToken, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.account_type !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { userId, courseId, certificateUrl } = req.body;
+
+    if (!userId || !courseId) {
+      return res.status(400).json({ error: 'User ID and Course ID are required' });
+    }
+
+    // Check if user has completed the course
+    const [enrollments] = await pool.execute(`
+      SELECT * FROM enrollments 
+      WHERE user_id = ? AND course_id = ? AND status = 'completed'
+    `, [userId, courseId]);
+
+    if (enrollments.length === 0) {
+      return res.status(400).json({ error: 'User has not completed this course' });
+    }
+
+    // Check if certificate already exists
+    const [existingCertificates] = await pool.execute(`
+      SELECT * FROM certificates WHERE user_id = ? AND course_id = ?
+    `, [userId, courseId]);
+
+    if (existingCertificates.length > 0) {
+      return res.status(400).json({ error: 'Certificate already exists for this user and course' });
+    }
+
+    // Create new certificate
+    const [result] = await pool.execute(`
+      INSERT INTO certificates (user_id, course_id, certificate_url, issued_date)
+      VALUES (?, ?, ?, NOW())
+    `, [userId, courseId, certificateUrl || null]);
+
+    // Update user stats
+    await pool.execute(`
+      UPDATE user_stats 
+      SET certificates_earned = certificates_earned + 1 
+      WHERE user_id = ?
+    `, [userId]);
+
+    res.status(201).json({
+      message: 'Certificate issued successfully',
+      certificateId: result.insertId
+    });
+  } catch (error) {
+    console.error('Error issuing certificate:', error);
+    res.status(500).json({ error: 'Failed to issue certificate' });
+  }
+});
+
+// Update certificate
+app.put('/api/certificates/:certificateId', authenticateToken, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.account_type !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { certificateId } = req.params;
+    const { certificateUrl } = req.body;
+
+    const [result] = await pool.execute(`
+      UPDATE certificates 
+      SET certificate_url = ?, issued_date = NOW()
+      WHERE id = ?
+    `, [certificateUrl, certificateId]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Certificate not found' });
+    }
+
+    res.json({ message: 'Certificate updated successfully' });
+  } catch (error) {
+    console.error('Error updating certificate:', error);
+    res.status(500).json({ error: 'Failed to update certificate' });
+  }
+});
+
+// Delete certificate (admin only)
+app.delete('/api/certificates/:certificateId', authenticateToken, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.account_type !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { certificateId } = req.params;
+
+    // Get certificate details before deletion
+    const [certificates] = await pool.execute(`
+      SELECT user_id FROM certificates WHERE id = ?
+    `, [certificateId]);
+
+    if (certificates.length === 0) {
+      return res.status(404).json({ error: 'Certificate not found' });
+    }
+
+    const certificate = certificates[0];
+
+    // Delete certificate
+    const [result] = await pool.execute(`
+      DELETE FROM certificates WHERE id = ?
+    `, [certificateId]);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Certificate not found' });
+    }
+
+    // Update user stats
+    await pool.execute(`
+      UPDATE user_stats 
+      SET certificates_earned = GREATEST(certificates_earned - 1, 0)
+      WHERE user_id = ?
+    `, [certificate.user_id]);
+
+    res.json({ message: 'Certificate deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting certificate:', error);
+    res.status(500).json({ error: 'Failed to delete certificate' });
+  }
+});
   
   // ==================== SERVICES ROUTES ====================
   

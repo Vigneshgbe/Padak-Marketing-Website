@@ -114,3 +114,41 @@ export interface User {
     activeInternships?: number;
     pendingContacts?: number;
   }
+
+  // Add these types to your src/lib/types.ts file
+
+export interface Certificate {
+  id: number;
+  userId: number;
+  courseId: number;
+  certificateUrl: string;
+  issuedDate: string;
+  course: {
+    id: number;
+    title: string;
+    description: string;
+    instructorName: string;
+    category: string;
+    difficultyLevel: 'beginner' | 'intermediate' | 'advanced';
+  };
+  enrollment: {
+    completionDate: string;
+    finalGrade?: number;
+    status: 'active' | 'completed' | 'dropped';
+  };
+}
+
+export interface CertificateResponse {
+  message: string;
+  data?: any;
+  downloadUrl?: string;
+}
+
+// If you need admin certificate interface
+export interface AdminCertificate extends Certificate {
+  user: {
+    firstName: string;
+    lastName: string;
+    email: string;
+  };
+}
