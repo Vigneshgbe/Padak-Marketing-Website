@@ -1,27 +1,86 @@
 // src/pages/dashboard/Assignments.tsx
 import React, { useState, useEffect } from 'react';
-import { FileText, Calendar, CheckCircle, Clock, AlertCircle } from 'lucide-react';
-import { Assignment } from '../../lib/types';
+import { FileText, Calendar, CheckCircle, Clock, AlertCircle, Upload, Download, Eye } from 'lucide-react';
 import { apiService } from '../../lib/api';
+
+// Types based on your database schema
+interface Assignment {
+  id: number;
+  course_id: number;
+  title: string;
+  description: string;
+  due_date: string;
+  max_points: number;
+  created_at: string;
+  course: {
+    id: number;
+    title: string;
+    category: string;
+  };
+  submission?: {
+    id: number;
+    content: string;
+    file_path: string;
+    submitted_at: string;
+    grade: number;
+    feedback: string;
+    status: 'submitted' | 'graded' | 'returned';
+  };
+}
+
+interface User {
+  id: number;
+  first_name: string;
+  last_name: string;
+  email: string;
+  account_type: 'student' | 'professional' | 'business' | 'agency' | 'admin';
+}
 
 const Assignments: React.FC = () => {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'submitted' | 'graded'>('all');
+  const [submissionModal, setSubmissionModal] = useState<{ show: boolean; assignmentId: number | null }>({
+    show: false,
+    assignmentId: null
+  });
+  const [submissionContent, setSubmissionContent] = useState('');
+  const [submissionFile, setSubmissionFile] = useState<File | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    const fetchAssignments = async () => {
+    const initializeData = async () => {
       try {
-        const data = await apiService.get<Assignment[]>('/assignments/my-assignments');
-        setAssignments(data);
+        setLoading(true);
+        
+        // Get current user info
+        const userData = await apiService.get<User>('/auth/me');
+        setUser(userData);
+        
+        // Fetch assignments based on user type
+        let assignmentsData: Assignment[] = [];
+        
+        if (userData.account_type === 'student' || userData.account_type === 'professional') {
+          // Get assignments for enrolled courses
+          assignmentsData = await apiService.get<Assignment[]>('/assignments/my-assignments');
+        } else if (userData.account_type === 'admin') {
+          // Admins can see all assignments
+          assignmentsData = await apiService.get<Assignment[]>('/assignments/all');
+        } else {
+          // Business and agency users might have different assignment access
+          assignmentsData = await apiService.get<Assignment[]>('/assignments/my-assignments');
+        }
+        
+        setAssignments(assignmentsData);
       } catch (error) {
-        console.error('Failed to fetch assignments:', error);
+        console.error('Failed to fetch data:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchAssignments();
+    initializeData();
   }, []);
 
   const filteredAssignments = assignments.filter(assignment => {
@@ -32,26 +91,94 @@ const Assignments: React.FC = () => {
     return true;
   });
 
-  const getStatusIcon = (assignment: Assignment) => {
+  const getStatusInfo = (assignment: Assignment) => {
     if (!assignment.submission) {
-      const isOverdue = new Date(assignment.dueDate) < new Date();
-      return isOverdue ? <AlertCircle size={20} className="text-red-500" /> : <Clock size={20} className="text-yellow-500" />;
+      const isOverdue = new Date(assignment.due_date) < new Date();
+      return {
+        icon: isOverdue ? <AlertCircle size={20} className="text-red-500" /> : <Clock size={20} className="text-yellow-500" />,
+        text: isOverdue ? 'Overdue' : 'Pending',
+        color: isOverdue ? 'text-red-500' : 'text-yellow-500'
+      };
     }
     if (assignment.submission.status === 'graded') {
-      return <CheckCircle size={20} className="text-green-500" />;
+      return {
+        icon: <CheckCircle size={20} className="text-green-500" />,
+        text: `Graded (${assignment.submission.grade}/${assignment.max_points})`,
+        color: 'text-green-500'
+      };
     }
-    return <Clock size={20} className="text-blue-500" />;
+    return {
+      icon: <Clock size={20} className="text-blue-500" />,
+      text: 'Submitted',
+      color: 'text-blue-500'
+    };
   };
 
-  const getStatusText = (assignment: Assignment) => {
-    if (!assignment.submission) {
-      const isOverdue = new Date(assignment.dueDate) < new Date();
-      return isOverdue ? 'Overdue' : 'Pending';
+  const handleSubmitAssignment = async (assignmentId: number) => {
+    if (!submissionContent.trim() && !submissionFile) {
+      alert('Please provide either text content or upload a file');
+      return;
     }
-    if (assignment.submission.status === 'graded') {
-      return `Graded (${assignment.submission.grade}/${assignment.maxPoints})`;
+
+    setSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append('assignment_id', assignmentId.toString());
+      formData.append('content', submissionContent);
+      
+      if (submissionFile) {
+        formData.append('file', submissionFile);
+      }
+
+      await apiService.post('/assignments/submit', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      // Refresh assignments
+      const updatedAssignments = await apiService.get<Assignment[]>('/assignments/my-assignments');
+      setAssignments(updatedAssignments);
+
+      // Close modal and reset form
+      setSubmissionModal({ show: false, assignmentId: null });
+      setSubmissionContent('');
+      setSubmissionFile(null);
+    } catch (error) {
+      console.error('Failed to submit assignment:', error);
+      alert('Failed to submit assignment. Please try again.');
+    } finally {
+      setSubmitting(false);
     }
-    return 'Submitted';
+  };
+
+  const openSubmissionModal = (assignmentId: number) => {
+    setSubmissionModal({ show: true, assignmentId });
+  };
+
+  const closeSubmissionModal = () => {
+    setSubmissionModal({ show: false, assignmentId: null });
+    setSubmissionContent('');
+    setSubmissionFile(null);
+  };
+
+  const downloadSubmission = async (submissionId: number, fileName: string) => {
+    try {
+      const response = await apiService.get(`/assignments/download-submission/${submissionId}`, {
+        responseType: 'blob',
+      });
+      
+      const url = window.URL.createObjectURL(new Blob([response]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to download submission:', error);
+    }
   };
 
   if (loading) {
@@ -67,7 +194,7 @@ const Assignments: React.FC = () => {
       <div className="mb-8">
         <h1 className="text-2xl md:text-3xl font-bold">Assignments</h1>
         <p className="text-gray-600 dark:text-gray-400">
-          Track and submit your course assignments
+          {user?.account_type === 'admin' ? 'Manage all assignments' : 'Track and submit your course assignments'}
         </p>
       </div>
 
@@ -94,48 +221,73 @@ const Assignments: React.FC = () => {
       </div>
 
       <div className="space-y-4">
-        {filteredAssignments.map((assignment) => (
-          <div key={assignment.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center mb-2">
-                  <FileText size={20} className="text-orange-500 mr-2" />
-                  <h3 className="font-bold text-lg">{assignment.title}</h3>
-                </div>
-                
-                <p className="text-gray-600 dark:text-gray-400 mb-3">
-                  {assignment.description}
-                </p>
-                
-                <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 mb-4">
-                  <span className="mr-4">Course: {assignment.course.title}</span>
-                  <Calendar size={16} className="mr-1" />
-                  <span>Due: {new Date(assignment.dueDate).toLocaleDateString()}</span>
-                </div>
-
-                {assignment.submission?.feedback && (
-                  <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                    <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-1">Feedback:</h4>
-                    <p className="text-blue-700 dark:text-blue-400 text-sm">{assignment.submission.feedback}</p>
+        {filteredAssignments.map((assignment) => {
+          const statusInfo = getStatusInfo(assignment);
+          return (
+            <div key={assignment.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center mb-2">
+                    <FileText size={20} className="text-orange-500 mr-2" />
+                    <h3 className="font-bold text-lg">{assignment.title}</h3>
                   </div>
-                )}
-              </div>
-              
-              <div className="flex flex-col items-end">
-                <div className="flex items-center mb-2">
-                  {getStatusIcon(assignment)}
-                  <span className="ml-2 text-sm font-medium">{getStatusText(assignment)}</span>
+                  
+                  <p className="text-gray-600 dark:text-gray-400 mb-3">
+                    {assignment.description}
+                  </p>
+                  
+                  <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 mb-4">
+                    <span className="mr-4">Course: {assignment.course.title}</span>
+                    <Calendar size={16} className="mr-1" />
+                    <span>Due: {new Date(assignment.due_date).toLocaleDateString()}</span>
+                    <span className="ml-4">Max Points: {assignment.max_points}</span>
+                  </div>
+
+                  {assignment.submission?.feedback && (
+                    <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                      <h4 className="font-semibold text-blue-800 dark:text-blue-300 mb-1">Feedback:</h4>
+                      <p className="text-blue-700 dark:text-blue-400 text-sm">{assignment.submission.feedback}</p>
+                    </div>
+                  )}
+
+                  {assignment.submission && (
+                    <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">Submitted: {new Date(assignment.submission.submitted_at).toLocaleString()}</span>
+                        {assignment.submission.file_path && (
+                          <button
+                            onClick={() => downloadSubmission(assignment.submission!.id, assignment.submission!.file_path)}
+                            className="flex items-center text-sm text-orange-500 hover:text-orange-600"
+                          >
+                            <Download size={16} className="mr-1" />
+                            Download
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
                 
-                {!assignment.submission && (
-                  <button className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors">
-                    Submit Assignment
-                  </button>
-                )}
+                <div className="flex flex-col items-end">
+                  <div className="flex items-center mb-2">
+                    {statusInfo.icon}
+                    <span className={`ml-2 text-sm font-medium ${statusInfo.color}`}>{statusInfo.text}</span>
+                  </div>
+                  
+                  {!assignment.submission && user?.account_type !== 'admin' && (
+                    <button
+                      onClick={() => openSubmissionModal(assignment.id)}
+                      className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors flex items-center"
+                    >
+                      <Upload size={16} className="mr-1" />
+                      Submit Assignment
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {filteredAssignments.length === 0 && (
@@ -145,6 +297,54 @@ const Assignments: React.FC = () => {
           <p className="text-gray-600 dark:text-gray-400">
             {filter === 'all' ? 'You have no assignments yet' : `No ${filter} assignments`}
           </p>
+        </div>
+      )}
+
+      {/* Submission Modal */}
+      {submissionModal.show && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-bold mb-4">Submit Assignment</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Content</label>
+                <textarea
+                  value={submissionContent}
+                  onChange={(e) => setSubmissionContent(e.target.value)}
+                  placeholder="Enter your assignment content..."
+                  className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent dark:bg-gray-700"
+                  rows={4}
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-2">File Upload (Optional)</label>
+                <input
+                  type="file"
+                  onChange={(e) => setSubmissionFile(e.target.files?.[0] || null)}
+                  className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent dark:bg-gray-700"
+                />
+              </div>
+            </div>
+            
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                onClick={closeSubmissionModal}
+                className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+                disabled={submitting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSubmitAssignment(submissionModal.assignmentId!)}
+                disabled={submitting}
+                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors disabled:opacity-50"
+              >
+                {submitting ? 'Submitting...' : 'Submit'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

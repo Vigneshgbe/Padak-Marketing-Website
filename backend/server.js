@@ -17,7 +17,7 @@ const port = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-secret-key';
 
 // Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, 'uploads');
+const uploadsDir = path.join(__dirname, 'uploads', 'assignments');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -541,99 +541,449 @@ app.get('/api/enrollments/my-courses', authenticateToken, async (req, res) => {
   
   // ==================== ASSIGNMENTS ROUTES ====================
   
-  // Get user's assignments
-  app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) => {
-    try {
-      const userId = req.user.id;
+// Configure multer for file uploads
+// const storage = multer.diskStorage({
+//   destination: (req, file, cb) => {
+//     const uploadDir = 'uploads/assignments';
+//     if (!fs.existsSync(uploadDir)) {
+//       fs.mkdirSync(uploadDir, { recursive: true });
+//     }
+//     cb(null, uploadDir);
+//   },
+//   filename: (req, file, cb) => {
+//     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+//     cb(null, `assignment-${uniqueSuffix}${path.extname(file.originalname)}`);
+//   }
+// });
+
+// const upload = multer({ 
+//   storage: storage,
+//   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+//   fileFilter: (req, file, cb) => {
+//     const allowedTypes = ['.pdf', '.doc', '.docx', '.txt', '.zip', '.rar'];
+//     const fileExt = path.extname(file.originalname).toLowerCase();
+//     if (allowedTypes.includes(fileExt)) {
+//       cb(null, true);
+//     } else {
+//       cb(new Error('Invalid file type. Only PDF, DOC, DOCX, TXT, ZIP, RAR files are allowed.'));
+//     }
+//   }
+// });
+
+// Add these routes to your existing server.js file
+
+// GET /auth/me - Get current user info
+app.get('/auth/me', authenticateToken, (req, res) => {
+  const query = `
+    SELECT id, first_name, last_name, email, phone, account_type, 
+           profile_image, company, website, bio, is_active, email_verified
+    FROM users 
+    WHERE id = ?
+  `;
   
-      const [assignments] = await pool.execute(
-        `SELECT a.*, c.title as course_title, s.* FROM assignments a
-         JOIN courses c ON a.course_id = c.id
-         JOIN enrollments e ON e.course_id = c.id AND e.user_id = ?
-         LEFT JOIN assignment_submissions s ON s.assignment_id = a.id AND s.user_id = ?
-         ORDER BY a.due_date ASC`,
-        [userId, userId]
-      );
+  db.query(query, [req.user.id], (err, results) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    
+    if (results.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json(results[0]);
+  });
+});
+
+// GET /assignments/my-assignments - Get user's assignments
+app.get('/assignments/my-assignments', authenticateToken, (req, res) => {
+  const query = `
+    SELECT 
+      a.id,
+      a.course_id,
+      a.title,
+      a.description,
+      a.due_date,
+      a.max_points,
+      a.created_at,
+      c.title as course_title,
+      c.category as course_category,
+      s.id as submission_id,
+      s.content as submission_content,
+      s.file_path as submission_file_path,
+      s.submitted_at,
+      s.grade,
+      s.feedback,
+      s.status as submission_status
+    FROM assignments a
+    INNER JOIN courses c ON a.course_id = c.id
+    INNER JOIN enrollments e ON c.id = e.course_id
+    LEFT JOIN assignment_submissions s ON a.id = s.assignment_id AND s.user_id = ?
+    WHERE e.user_id = ? AND c.is_active = TRUE
+    ORDER BY a.due_date ASC
+  `;
   
-      res.json(assignments.map(assignment => ({
-        id: assignment.id,
-        courseId: assignment.course_id,
-        title: assignment.title,
-        description: assignment.description,
-        dueDate: assignment.due_date,
-        maxPoints: assignment.max_points,
+  db.query(query, [req.user.id, req.user.id], (err, results) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    
+    // Format results
+    const assignments = results.map(row => ({
+      id: row.id,
+      course_id: row.course_id,
+      title: row.title,
+      description: row.description,
+      due_date: row.due_date,
+      max_points: row.max_points,
+      created_at: row.created_at,
+      course: {
+        id: row.course_id,
+        title: row.course_title,
+        category: row.course_category
+      },
+      submission: row.submission_id ? {
+        id: row.submission_id,
+        content: row.submission_content,
+        file_path: row.submission_file_path,
+        submitted_at: row.submitted_at,
+        grade: row.grade,
+        feedback: row.feedback,
+        status: row.submission_status
+      } : null
+    }));
+    
+    res.json(assignments);
+  });
+});
+
+// GET /assignments/all - Get all assignments (admin only)
+app.get('/assignments/all', authenticateToken, (req, res) => {
+  // Check if user is admin
+  const userQuery = 'SELECT account_type FROM users WHERE id = ?';
+  db.query(userQuery, [req.user.id], (err, userResults) => {
+    if (err || userResults.length === 0) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+    
+    if (userResults[0].account_type !== 'admin') {
+      return res.status(403).json({ error: 'Access denied. Admin only.' });
+    }
+    
+    const query = `
+      SELECT 
+        a.id,
+        a.course_id,
+        a.title,
+        a.description,
+        a.due_date,
+        a.max_points,
+        a.created_at,
+        c.title as course_title,
+        c.category as course_category,
+        COUNT(s.id) as submission_count,
+        COUNT(CASE WHEN s.status = 'graded' THEN 1 END) as graded_count
+      FROM assignments a
+      INNER JOIN courses c ON a.course_id = c.id
+      LEFT JOIN assignment_submissions s ON a.id = s.assignment_id
+      WHERE c.is_active = TRUE
+      GROUP BY a.id, a.course_id, a.title, a.description, a.due_date, a.max_points, a.created_at, c.title, c.category
+      ORDER BY a.due_date ASC
+    `;
+    
+    db.query(query, (err, results) => {
+      if (err) {
+        console.error('Database error:', err);
+        return res.status(500).json({ error: 'Database error' });
+      }
+      
+      const assignments = results.map(row => ({
+        id: row.id,
+        course_id: row.course_id,
+        title: row.title,
+        description: row.description,
+        due_date: row.due_date,
+        max_points: row.max_points,
+        created_at: row.created_at,
         course: {
-          title: assignment.course_title
+          id: row.course_id,
+          title: row.course_title,
+          category: row.course_category
         },
-        submission: assignment.assignment_id ? {
-          id: assignment.assignment_id,
-          assignmentId: assignment.assignment_id,
-          userId: assignment.user_id,
-          content: assignment.content,
-          filePath: assignment.file_path,
-          submittedAt: assignment.submitted_at,
-          grade: assignment.grade,
-          feedback: assignment.feedback,
-          status: assignment.status
+        submission_count: row.submission_count,
+        graded_count: row.graded_count
+      }));
+      
+      res.json(assignments);
+    });
+  });
+});
+
+// POST /assignments/submit - Submit assignment
+app.post('/assignments/submit', authenticateToken, upload.single('file'), (req, res) => {
+  const { assignment_id, content } = req.body;
+  const file_path = req.file ? req.file.filename : null;
+  
+  if (!assignment_id) {
+    return res.status(400).json({ error: 'Assignment ID is required' });
+  }
+  
+  if (!content && !file_path) {
+    return res.status(400).json({ error: 'Either content or file is required' });
+  }
+  
+  // Check if assignment exists and user is enrolled
+  const checkQuery = `
+    SELECT a.id, a.course_id, a.title
+    FROM assignments a
+    INNER JOIN courses c ON a.course_id = c.id
+    INNER JOIN enrollments e ON c.id = e.course_id
+    WHERE a.id = ? AND e.user_id = ?
+  `;
+  
+  db.query(checkQuery, [assignment_id, req.user.id], (err, checkResults) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    
+    if (checkResults.length === 0) {
+      return res.status(404).json({ error: 'Assignment not found or not enrolled' });
+    }
+    
+    // Check if already submitted
+    const existingQuery = 'SELECT id FROM assignment_submissions WHERE assignment_id = ? AND user_id = ?';
+    db.query(existingQuery, [assignment_id, req.user.id], (err, existingResults) => {
+      if (err) {
+        console.error('Database error:', err);
+        return res.status(500).json({ error: 'Database error' });
+      }
+      
+      if (existingResults.length > 0) {
+        return res.status(400).json({ error: 'Assignment already submitted' });
+      }
+      
+      // Insert submission
+      const insertQuery = `
+        INSERT INTO assignment_submissions (assignment_id, user_id, content, file_path, submitted_at, status)
+        VALUES (?, ?, ?, ?, NOW(), 'submitted')
+      `;
+      
+      db.query(insertQuery, [assignment_id, req.user.id, content || '', file_path], (err, insertResult) => {
+        if (err) {
+          console.error('Database error:', err);
+          return res.status(500).json({ error: 'Database error' });
+        }
+        
+        res.json({
+          success: true,
+          message: 'Assignment submitted successfully',
+          submission_id: insertResult.insertId
+        });
+      });
+    });
+  });
+});
+
+// GET /assignments/download-submission/:id - Download submission file
+app.get('/assignments/download-submission/:id', authenticateToken, (req, res) => {
+  const submissionId = req.params.id;
+  
+  // Get submission details
+  const query = `
+    SELECT s.file_path, s.user_id, a.title, u.account_type
+    FROM assignment_submissions s
+    INNER JOIN assignments a ON s.assignment_id = a.id
+    INNER JOIN users u ON u.id = ?
+    WHERE s.id = ?
+  `;
+  
+  db.query(query, [req.user.id, submissionId], (err, results) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    
+    if (results.length === 0) {
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+    
+    const submission = results[0];
+    
+    // Check permissions - user can download their own submission or admin can download any
+    if (submission.user_id !== req.user.id && submission.account_type !== 'admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    if (!submission.file_path) {
+      return res.status(404).json({ error: 'No file attached to this submission' });
+    }
+    
+    const filePath = path.join(__dirname, 'uploads', 'assignments', submission.file_path);
+    
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    
+    // Set headers and send file
+    res.setHeader('Content-Disposition', `attachment; filename="${submission.file_path}"`);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+  });
+});
+
+// GET /assignments/course/:courseId - Get assignments for a specific course
+app.get('/assignments/course/:courseId', authenticateToken, (req, res) => {
+  const courseId = req.params.courseId;
+  
+  // Check if user is enrolled or admin
+  const checkQuery = `
+    SELECT e.user_id, u.account_type
+    FROM enrollments e
+    INNER JOIN users u ON u.id = ?
+    WHERE e.course_id = ? AND e.user_id = ?
+    UNION
+    SELECT ? as user_id, account_type
+    FROM users
+    WHERE id = ? AND account_type = 'admin'
+  `;
+  
+  db.query(checkQuery, [req.user.id, courseId, req.user.id, req.user.id, req.user.id], (err, checkResults) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    
+    if (checkResults.length === 0) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    const query = `
+      SELECT 
+        a.id,
+        a.course_id,
+        a.title,
+        a.description,
+        a.due_date,
+        a.max_points,
+        a.created_at,
+        c.title as course_title,
+        c.category as course_category,
+        s.id as submission_id,
+        s.content as submission_content,
+        s.file_path as submission_file_path,
+        s.submitted_at,
+        s.grade,
+        s.feedback,
+        s.status as submission_status
+      FROM assignments a
+      INNER JOIN courses c ON a.course_id = c.id
+      LEFT JOIN assignment_submissions s ON a.id = s.assignment_id AND s.user_id = ?
+      WHERE a.course_id = ?
+      ORDER BY a.due_date ASC
+    `;
+    
+    db.query(query, [req.user.id, courseId], (err, results) => {
+      if (err) {
+        console.error('Database error:', err);
+        return res.status(500).json({ error: 'Database error' });
+      }
+      
+      const assignments = results.map(row => ({
+        id: row.id,
+        course_id: row.course_id,
+        title: row.title,
+        description: row.description,
+        due_date: row.due_date,
+        max_points: row.max_points,
+        created_at: row.created_at,
+        course: {
+          id: row.course_id,
+          title: row.course_title,
+          category: row.course_category
+        },
+        submission: row.submission_id ? {
+          id: row.submission_id,
+          content: row.submission_content,
+          file_path: row.submission_file_path,
+          submitted_at: row.submitted_at,
+          grade: row.grade,
+          feedback: row.feedback,
+          status: row.submission_status
         } : null
-      })));
-  
-    } catch (error) {
-      console.error('Get assignments error:', error);
-      res.status(500).json({ error: 'Server error' });
-    }
+      }));
+      
+      res.json(assignments);
+    });
   });
+});
+
+// PUT /assignments/grade/:submissionId - Grade assignment (admin/instructor only)
+app.put('/assignments/grade/:submissionId', authenticateToken, (req, res) => {
+  const submissionId = req.params.submissionId;
+  const { grade, feedback } = req.body;
   
-  // Submit assignment
-  app.post('/api/assignments/submit', authenticateToken, upload.single('file'), async (req, res) => {
-    try {
-      const { assignmentId, content } = req.body;
-      const userId = req.user.id;
-      const filePath = req.file ? `/uploads/${req.file.filename}` : null;
-  
-      // Check if assignment exists and user is enrolled
-      const [assignments] = await pool.execute(
-        `SELECT a.* FROM assignments a
-         JOIN enrollments e ON e.course_id = a.course_id AND e.user_id = ?
-         WHERE a.id = ?`,
-        [userId, assignmentId]
-      );
-  
-      if (assignments.length === 0) {
-        return res.status(404).json({ error: 'Assignment not found or not enrolled' });
-      }
-  
-      // Check if already submitted
-      const [existing] = await pool.execute(
-        'SELECT * FROM assignment_submissions WHERE assignment_id = ? AND user_id = ?',
-        [assignmentId, userId]
-      );
-  
-      if (existing.length > 0) {
-        // Update existing submission
-        await pool.execute(
-          'UPDATE assignment_submissions SET content = ?, file_path = ?, submitted_at = NOW() WHERE assignment_id = ? AND user_id = ?',
-          [content, filePath, assignmentId, userId]
-        );
-      } else {
-        // Create new submission
-        await pool.execute(
-          'INSERT INTO assignment_submissions (assignment_id, user_id, content, file_path, submitted_at) VALUES (?, ?, ?, ?, NOW())',
-          [assignmentId, userId, content, filePath]
-        );
-      }
-  
-      res.status(201).json({ message: 'Assignment submitted successfully' });
-  
-    } catch (error) {
-      console.error('Assignment submission error:', error);
-      res.status(500).json({ error: 'Server error' });
+  // Check if user is admin
+  const userQuery = 'SELECT account_type FROM users WHERE id = ?';
+  db.query(userQuery, [req.user.id], (err, userResults) => {
+    if (err || userResults.length === 0) {
+      return res.status(500).json({ error: 'Database error' });
     }
+    
+    if (userResults[0].account_type !== 'admin') {
+      return res.status(403).json({ error: 'Access denied. Admin only.' });
+    }
+    
+    // Validate grade
+    if (grade < 0 || grade > 100) {
+      return res.status(400).json({ error: 'Grade must be between 0 and 100' });
+    }
+    
+    // Update submission
+    const updateQuery = `
+      UPDATE assignment_submissions 
+      SET grade = ?, feedback = ?, status = 'graded'
+      WHERE id = ?
+    `;
+    
+    db.query(updateQuery, [grade, feedback || '', submissionId], (err, result) => {
+      if (err) {
+        console.error('Database error:', err);
+        return res.status(500).json({ error: 'Database error' });
+      }
+      
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ error: 'Submission not found' });
+      }
+      
+      res.json({
+        success: true,
+        message: 'Assignment graded successfully'
+      });
+    });
   });
+});
+
+// Error handling middleware for multer
+app.use((error, req, res, next) => {
+  if (error instanceof multer.MulterError) {
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'File too large. Maximum size is 10MB.' });
+    }
+  }
+  if (error.message.includes('Invalid file type')) {
+    return res.status(400).json({ error: error.message });
+  }
+  next(error);
+});
+
   
   // ==================== CERTIFICATES ROUTES ====================
   
-  // Add these routes to your server.js file
 
 // Certificate Routes
 app.get('/api/certificates/my-certificates', authenticateToken, async (req, res) => {
