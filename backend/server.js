@@ -2121,6 +2121,136 @@ app.get('/api/courses/enrolled', authenticateToken, async (req, res) => {
   }
 });
 
+  // ==================== INTERNSHIPS SECTION ROUTES ====================
+
+  // GET /api/internships - Fetch all internships
+app.get('/api/internships', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM internships ORDER BY posted_at DESC');
+    // Parse JSON fields from database strings to JavaScript arrays/objects
+    const internships = rows.map(row => ({
+      ...row,
+      requirements: JSON.parse(row.requirements),
+      benefits: JSON.parse(row.benefits)
+    }));
+    res.json(internships);
+  } catch (error) {
+    console.error('Error fetching internships:', error);
+    res.status(500).json({ message: 'Internal server error while fetching internships.' });
+  }
+});
+
+// GET /api/user/internship-applications - Fetch applications for the authenticated user
+app.get('/api/user/internship-applications', authenticateToken, async (req, res) => {
+  const userId = req.user.id; // User ID is attached by authenticateToken middleware
+
+  if (!userId) {
+    return res.status(400).json({ message: 'User ID not found in token.' });
+  }
+
+  try {
+    const [applications] = await pool.query(
+      `SELECT
+         sub.id AS submission_id,
+         sub.submitted_at,
+         sub.status,
+         sub.resume_url,
+         sub.cover_letter,
+         i.id AS internship_id,
+         i.title,
+         i.company,
+         i.location,
+         i.duration,
+         i.type,
+         i.level,
+         i.description,
+         i.requirements,
+         i.benefits,
+         i.applications_count,
+         i.spots_available,
+         i.posted_at AS internship_posted_at
+       FROM internship_submissions sub
+       JOIN internships i ON sub.internship_id = i.id
+       WHERE sub.user_id = ?
+       ORDER BY sub.submitted_at DESC`,
+      [userId]
+    );
+
+    // Parse JSON fields from database strings to JavaScript arrays/objects
+    const parsedApplications = applications.map(app => ({
+      ...app,
+      requirements: JSON.parse(app.requirements || '[]'), // Handle potential null/empty JSON
+      benefits: JSON.parse(app.benefits || '[]')
+    }));
+
+    res.json(parsedApplications);
+  } catch (error) {
+    console.error('Error fetching user internship applications:', error);
+    res.status(500).json({ message: 'Internal server error while fetching your applications.' });
+  }
+});
+
+
+// POST /api/internships/:id/apply - Apply for an internship
+app.post('/api/internships/:id/apply', authenticateToken, async (req, res) => {
+  const { id: internshipId } = req.params;
+  const { full_name, email, phone, resume_url, cover_letter } = req.body;
+  const userId = req.user.id;
+
+  if (!full_name || !email || !resume_url) {
+    return res.status(400).json({ message: 'Full name, email, and resume link are required.' });
+  }
+
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    const [internshipRows] = await connection.query(
+      'SELECT spots_available FROM internships WHERE id = ? FOR UPDATE',
+      [internshipId]
+    );
+
+    if (internshipRows.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ message: 'Internship not found.' });
+    }
+    if (internshipRows[0].spots_available <= 0) {
+      await connection.rollback();
+      return res.status(400).json({ message: 'No available spots left for this internship.' });
+    }
+
+    const [existingApplication] = await connection.query(
+      'SELECT id FROM internship_submissions WHERE internship_id = ? AND user_id = ?',
+      [internshipId, userId]
+    );
+    if (existingApplication.length > 0) {
+      await connection.rollback();
+      return res.status(409).json({ message: 'You have already applied for this internship.' });
+    }
+
+    await connection.query(
+      'INSERT INTO internship_submissions (internship_id, user_id, full_name, email, phone, resume_url, cover_letter) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [internshipId, userId, full_name, email, phone || null, resume_url, cover_letter || null]
+    );
+
+    await connection.query(
+      'UPDATE internships SET spots_available = spots_available - 1, applications_count = applications_count + 1 WHERE id = ?',
+      [internshipId]
+    );
+
+    await connection.commit();
+    res.status(201).json({ message: 'Internship application submitted successfully!' });
+
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error('Error submitting internship application:', error);
+    res.status(500).json({ message: 'Internal server error during application submission.' });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
   // ==================== SERVICES ROUTES ====================
   
   // Get service categories
@@ -2368,283 +2498,6 @@ app.get('/api/admin/service-requests', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch service requests', details: error.message });
   }
 });
-
-  /// ==== Main Old ======
-  
-//   // Get admin dashboard stats
-//   app.get('/api/admin/stats', authenticateToken, requireAdmin, async (req, res) => {
-//     try {
-//       // Get total users
-//       const [userCount] = await pool.execute(
-//         'SELECT COUNT(*) as total FROM users WHERE is_active = true'
-//       );
-  
-//       // Get total courses
-//       const [courseCount] = await pool.execute(
-//         'SELECT COUNT(*) as total FROM courses WHERE is_active = true'
-//       );
-  
-//       // Get total enrollments
-//       const [enrollmentCount] = await pool.execute(
-//         'SELECT COUNT(*) as total FROM enrollments'
-//       );
-  
-//       // Get pending service requests
-//       const [pendingRequests] = await pool.execute(
-//         'SELECT COUNT(*) as total FROM service_requests WHERE status = "pending"'
-//       );
-  
-//       // Get total revenue (mock calculation)
-//       const [revenue] = await pool.execute(
-//         'SELECT SUM(c.price) as total FROM enrollments e JOIN courses c ON e.course_id = c.id'
-//       );
-  
-//       res.json({
-//         totalUsers: userCount[0].total,
-//         totalCourses: courseCount[0].total,
-//         totalEnrollments: enrollmentCount[0].total,
-//         totalRevenue: `₹${(revenue[0].total || 0).toLocaleString()}`,
-//         activeInternships: 12, // Mock data
-//         pendingContacts: pendingRequests[0].total
-//       });
-  
-//     } catch (error) {
-//       console.error('Get admin stats error:', error);
-//       res.status(500).json({ error: 'Server error' });
-//     }
-//   });
-  
-//   // Get all users (admin only)
-//   app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
-//     try {
-//       const page = parseInt(req.query.page) || 1;
-//       const limit = parseInt(req.query.limit) || 10;
-//       const offset = (page - 1) * limit;
-  
-//       const [users] = await pool.execute(
-//         `SELECT id, first_name, last_name, email, phone, account_type, is_active, created_at
-//          FROM users 
-//          ORDER BY created_at DESC 
-//          LIMIT ? OFFSET ?`,
-//         [limit, offset]
-//       );
-  
-//       const [totalCount] = await pool.execute(
-//         'SELECT COUNT(*) as total FROM users'
-//       );
-  
-//       res.json({
-//         users: users.map(user => ({
-//           id: user.id,
-//           firstName: user.first_name,
-//           lastName: user.last_name,
-//           email: user.email,
-//           phone: user.phone,
-//           accountType: user.account_type,
-//           isActive: user.is_active,
-//           createdAt: user.created_at
-//         })),
-//         pagination: {
-//           currentPage: page,
-//           totalPages: Math.ceil(totalCount[0].total / limit),
-//           totalUsers: totalCount[0].total
-//         }
-//       });
-  
-//     } catch (error) {
-//       console.error('Get users error:', error);
-//       res.status(500).json({ error: 'Server error' });
-//     }
-//   });
-  
-
-// // Get all service requests (admin only)
-// app.get('/api/admin/service-requests', authenticateToken, requireAdmin, async (req, res) => {
-//     try {
-//       const [requests] = await pool.execute(
-//         `SELECT sr.*, u.first_name, u.last_name, sc.name as category_name, ss.name as subcategory_name 
-//          FROM service_requests sr
-//          JOIN users u ON sr.user_id = u.id
-//          JOIN service_subcategories ss ON sr.subcategory_id = ss.id
-//          JOIN service_categories sc ON ss.category_id = sc.id
-//          ORDER BY sr.created_at DESC`
-//       );
-  
-//       res.json(requests.map(request => ({
-//         id: request.id,
-//         userId: request.user_id,
-//         userName: `${request.first_name} ${request.last_name}`,
-//         subcategoryId: request.subcategory_id,
-//         fullName: request.full_name,
-//         email: request.email,
-//         phone: request.phone,
-//         company: request.company,
-//         website: request.website,
-//         projectDetails: request.project_details,
-//         budgetRange: request.budget_range,
-//         timeline: request.timeline,
-//         contactMethod: request.contact_method,
-//         additionalRequirements: request.additional_requirements,
-//         status: request.status,
-//         createdAt: request.created_at,
-//         updatedAt: request.updated_at,
-//         categoryName: request.category_name,
-//         subcategoryName: request.subcategory_name
-//       })));
-  
-//     } catch (error) {
-//       console.error('Get admin service requests error:', error);
-//       res.status(500).json({ error: 'Server error' });
-//     }
-//   });
-  
-//   // Update service request status (admin only)
-//   app.put('/api/admin/service-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
-//     try {
-//       const { id } = req.params;
-//       const { status } = req.body;
-  
-//       if (!['pending', 'in-progress', 'completed', 'cancelled'].includes(status)) {
-//         return res.status(400).json({ error: 'Invalid status' });
-//       }
-  
-//       await pool.execute(
-//         'UPDATE service_requests SET status = ?, updated_at = NOW() WHERE id = ?',
-//         [status, id]
-//       );
-  
-//       res.json({ message: 'Service request status updated successfully' });
-  
-//     } catch (error) {
-//       console.error('Update service request error:', error);
-//       res.status(500).json({ error: 'Server error' });
-//     }
-//   });
-  
-//   // Create new course (admin only)
-//   app.post('/api/admin/courses', authenticateToken, requireAdmin, async (req, res) => {
-//     try {
-//       const {
-//         title, description, instructorName, durationWeeks,
-//         difficultyLevel, category, price
-//       } = req.body;
-  
-//       if (!title || !description || !instructorName || !durationWeeks || !difficultyLevel || !category || !price) {
-//         return res.status(400).json({ error: 'All fields are required' });
-//       }
-  
-//       const [result] = await pool.execute(
-//         `INSERT INTO courses 
-//          (title, description, instructor_name, duration_weeks, difficulty_level, category, price, created_at)
-//          VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
-//         [title, description, instructorName, durationWeeks, difficultyLevel, category, price]
-//       );
-  
-//       res.status(201).json({
-//         message: 'Course created successfully',
-//         courseId: result.insertId
-//       });
-  
-//     } catch (error) {
-//       console.error('Create course error:', error);
-//       res.status(500).json({ error: 'Server error' });
-//     }
-//   });
-  
-//   // Update course (admin only)
-//   app.put('/api/admin/courses/:id', authenticateToken, requireAdmin, async (req, res) => {
-//     try {
-//       const { id } = req.params;
-//       const {
-//         title, description, instructorName, durationWeeks,
-//         difficultyLevel, category, price, isActive
-//       } = req.body;
-  
-//       await pool.execute(
-//         `UPDATE courses SET 
-//          title = ?, description = ?, instructor_name = ?, duration_weeks = ?,
-//          difficulty_level = ?, category = ?, price = ?, is_active = ?, updated_at = NOW()
-//          WHERE id = ?`,
-//         [title, description, instructorName, durationWeeks, difficultyLevel, category, price, isActive, id]
-//       );
-  
-//       res.json({ message: 'Course updated successfully' });
-  
-//     } catch (error) {
-//       console.error('Update course error:', error);
-//       res.status(500).json({ error: 'Server error' });
-//     }
-//   });
-  
-//   // Delete course (admin only)
-//   app.delete('/api/admin/courses/:id', authenticateToken, requireAdmin, async (req, res) => {
-//     try {
-//       const { id } = req.params;
-  
-//       // Soft delete by setting is_active to false
-//       await pool.execute(
-//         'UPDATE courses SET is_active = false, updated_at = NOW() WHERE id = ?',
-//         [id]
-//       );
-  
-//       res.json({ message: 'Course deleted successfully' });
-  
-//     } catch (error) {
-//       console.error('Delete course error:', error);
-//       res.status(500).json({ error: 'Server error' });
-//     }
-//   });
-  
-//   // Get recent enrollments (admin only)
-//   app.get('/api/admin/recent-enrollments', authenticateToken, requireAdmin, async (req, res) => {
-//     try {
-//       const [enrollments] = await pool.execute(
-//         `SELECT e.*, u.first_name, u.last_name, c.title as course_title
-//          FROM enrollments e
-//          JOIN users u ON e.user_id = u.id
-//          JOIN courses c ON e.course_id = c.id
-//          ORDER BY e.enrollment_date DESC
-//          LIMIT 10`
-//       );
-  
-//       res.json(enrollments.map(enrollment => ({
-//         id: enrollment.id,
-//         userName: `${enrollment.first_name} ${enrollment.last_name}`,
-//         courseName: enrollment.course_title,
-//         date: enrollment.enrollment_date,
-//         status: enrollment.status
-//       })));
-  
-//     } catch (error) {
-//       console.error('Get recent enrollments error:', error);
-//       res.status(500).json({ error: 'Server error' });
-//     }
-//   });
-  
-//   // Get recent users (admin only)
-//   app.get('/api/admin/recent-users', authenticateToken, requireAdmin, async (req, res) => {
-//     try {
-//       const [users] = await pool.execute(
-//         `SELECT id, first_name, last_name, email, account_type, created_at
-//          FROM users 
-//          WHERE is_active = true
-//          ORDER BY created_at DESC
-//          LIMIT 10`
-//       );
-  
-//       res.json(users.map(user => ({
-//         id: user.id,
-//         name: `${user.first_name} ${user.last_name}`,
-//         email: user.email,
-//         type: user.account_type,
-//         joinDate: user.created_at.toISOString().split('T')[0]
-//       })));
-  
-//     } catch (error) {
-//       console.error('Get recent users error:', error);
-//       res.status(500).json({ error: 'Server error' });
-//     }
-//   });
   
   // ==================== CONTACT ROUTES ====================
   

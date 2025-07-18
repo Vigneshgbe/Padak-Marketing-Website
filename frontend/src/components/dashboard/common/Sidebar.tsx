@@ -1,10 +1,10 @@
 // src/components/dashboard/common/Sidebar.tsx
 import React from 'react';
-import { 
-  LayoutDashboard, BookOpen, ListChecks, BadgeCheck, Calendar, 
-  Users, Briefcase, BarChart, Settings, LogOut, 
+import {
+  LayoutDashboard, BookOpen, ListChecks, BadgeCheck, Calendar,
+  Users, Briefcase, BarChart, Settings, LogOut,
   Shield, UserCheck, MessageSquare, GraduationCap, FileText,
-  Sun, Moon, User
+  Sun, Moon, User // Added User for default profile icon
 } from 'lucide-react';
 import { useAuth } from '../../../hooks/use-auth';
 
@@ -22,21 +22,23 @@ interface SidebarProps {
   onProfileClick: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ 
-  activeView, 
-  onViewChange, 
-  darkMode, 
+const Sidebar: React.FC<SidebarProps> = ({
+  activeView,
+  onViewChange,
+  darkMode,
   onToggleDarkMode,
-  onProfileClick 
+  onProfileClick
 }) => {
-  const { user, logout } = useAuth();
+  const { user, logout } = useAuth(); // Assuming useAuth provides user object with accountType
 
   const getNavItems = (): NavItem[] => {
+    // Admin navigation items
     if (user?.accountType === 'admin') {
       return [
-        { id: 'dashboard', label: 'Admin Dashboard', icon: <Shield size={20} /> },
+        { id: 'dashboard', label: 'Admin Dashboard', icon: <LayoutDashboard size={20} /> }, // Changed to LayoutDashboard for general dashboard view
         { id: 'manage-courses', label: 'Manage Courses', icon: <BookOpen size={20} /> },
         { id: 'manage-users', label: 'Manage Users', icon: <Users size={20} /> },
+        // Admin manages internships, so GraduationCap is appropriate for this context.
         { id: 'manage-internships', label: 'Manage Internships', icon: <GraduationCap size={20} /> },
         { id: 'contact-messages', label: 'Contact Messages', icon: <MessageSquare size={20} /> },
         { id: 'enrollments', label: 'Course Enrollments', icon: <UserCheck size={20} /> },
@@ -44,27 +46,35 @@ const Sidebar: React.FC<SidebarProps> = ({
         { id: 'settings', label: 'Settings', icon: <Settings size={20} /> },
       ];
     }
-    
-    const baseItems = [
+
+    // Default/Student/Professional/Business/Agency user navigation items
+    const baseItems: NavItem[] = [
       { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
       { id: 'courses', label: 'My Courses', icon: <BookOpen size={20} /> },
+      // Corrected: 'internships' now uses Briefcase icon for all non-admin users
+      { id: 'internships', label: 'Internships', icon: <Briefcase size={20} /> },
       { id: 'assignments', label: 'Assignments', icon: <ListChecks size={20} /> },
       { id: 'certificates', label: 'Certificates', icon: <BadgeCheck size={20} /> },
       { id: 'calendar', label: 'Calendar', icon: <Calendar size={20} /> },
       { id: 'resources', label: 'Resources', icon: <FileText size={20} /> },
     ];
-    
+
+    // Add 'Request Services' only for specific account types
     if (['professional', 'business', 'agency'].includes(user?.accountType || '')) {
+      // Using Briefcase again here, as it signifies professional/business related services.
+      // If distinction is critical, could use other icons like 'Sparkles' for services, etc.
       baseItems.push({ id: 'services', label: 'Request Services', icon: <Briefcase size={20} /> });
     }
-    
+
+    // Settings is common for all non-admin users
     baseItems.push({ id: 'settings', label: 'Settings', icon: <Settings size={20} /> });
-    
+
     return baseItems;
   };
 
   const navItems = getNavItems();
 
+  // If user object is null (e.g., not logged in), don't render sidebar
   if (!user) return null;
 
   return (
@@ -79,45 +89,48 @@ const Sidebar: React.FC<SidebarProps> = ({
           </span>
         </div>
       </div>
-      
-      <div className="p-4">
-        <div 
+
+      <div className="p-4 overflow-y-auto h-[calc(100vh-80px)]"> {/* Added overflow for scrollable content */}
+        <div
           className="flex items-center mb-6 p-3 rounded-lg bg-orange-50 dark:bg-gray-700 cursor-pointer hover:bg-orange-100 dark:hover:bg-gray-600 transition-colors"
           onClick={onProfileClick}
         >
-          <div className="relative">
+          <div className="relative flex-shrink-0">
             {user.profileImage ? (
-              <img 
-                src={user.profileImage} 
-                alt="Profile" 
-                className="w-16 h-16 rounded-xl object-cover"
+              <img
+                src={user.profileImage}
+                alt="Profile"
+                className="w-12 h-12 rounded-xl object-cover" // Adjusted size for better fit
               />
             ) : (
-              <div className="bg-gray-200 dark:bg-gray-600 border-2 border-dashed border-gray-300 dark:border-gray-500 rounded-xl w-16 h-16 flex items-center justify-center">
+              <div className="bg-gray-200 dark:bg-gray-600 border-2 border-dashed border-gray-300 dark:border-gray-500 rounded-xl w-12 h-12 flex items-center justify-center"> {/* Adjusted size */}
                 {user.accountType === 'admin' ? (
                   <Shield size={24} className="text-orange-500" />
                 ) : (
-                  <User size={24} className="text-gray-400" />
+                  // Display first letter of first name if no image
+                  <span className="text-lg font-semibold text-gray-400 capitalize">
+                    {user.firstName?.charAt(0) || <User size={24} />}
+                  </span>
                 )}
               </div>
             )}
           </div>
-          <div className="ml-3">
-            <h3 className="font-semibold">{user.firstName} {user.lastName}</h3>
+          <div className="ml-3 flex-grow">
+            <h3 className="font-semibold text-gray-900 dark:text-gray-100 line-clamp-1">{user.firstName} {user.lastName}</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 capitalize">
               {user.accountType === 'admin' ? 'Administrator' : user.accountType}
             </p>
           </div>
         </div>
-        
+
         <nav className="space-y-1">
           {navItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => onViewChange(item.id)}
+              onClick={() => onViewChange(item.id)} // This triggers the parent to change content
               className={`flex items-center w-full p-3 rounded-lg transition-colors ${
-                activeView === item.id 
-                  ? 'bg-orange-500 text-white' 
+                activeView === item.id
+                  ? 'bg-orange-500 text-white'
                   : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
               }`}
             >
@@ -126,9 +139,9 @@ const Sidebar: React.FC<SidebarProps> = ({
             </button>
           ))}
         </nav>
-        
+
         <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-          <button 
+          <button
             onClick={onToggleDarkMode}
             className="flex items-center w-full p-3 rounded-lg text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
           >
@@ -137,8 +150,8 @@ const Sidebar: React.FC<SidebarProps> = ({
             </span>
             <span>{darkMode ? 'Light Mode' : 'Dark Mode'}</span>
           </button>
-          
-          <button 
+
+          <button
             onClick={logout}
             className="flex items-center w-full p-3 rounded-lg text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
           >

@@ -19,6 +19,7 @@ import Resources from './dashboard/Resources';
 import Services from './dashboard/Services';
 import Settings from './dashboard/Settings';
 import { UserStats } from '../lib/types';
+import Interns from './Interns';
 
 const Dashboard: React.FC = () => {
   const { user, loading } = useAuth();
@@ -91,6 +92,8 @@ const Dashboard: React.FC = () => {
     switch (activeView) {
       case 'courses':
         return <MyCourses />;
+      case 'internships':
+        return <Interns />;
       case 'assignments':
         return <Assignments />;
       case 'certificates':

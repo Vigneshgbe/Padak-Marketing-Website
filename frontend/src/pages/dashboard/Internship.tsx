@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from "react";
-import { Header } from "@/components/Header";
-import { Footer } from "@/components/Footer";
+// src/pages/dashboard/Internship.tsx
+import React, { useState, useEffect, useCallback } from "react";
+// IMPORTANT: Removed Header and Footer imports. This component is designed to be embedded
+// within a dashboard layout that provides its own Header and Footer.
+// import { Header } from "@/components/Header";
+// import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,30 +19,30 @@ import {
   Users,
   Award,
   Building,
-  Mail, // For email field in application form
-  FileText, // For resume field in application form
-  AlertCircle, // For displaying errors
-  Check, // For success icon
-  X // For error icon
+  Mail,
+  FileText,
+  AlertCircle,
+  Check,
+  X,
+  Link as LinkIcon, // Renamed to avoid conflict if react-router-dom's Link is used
 } from "lucide-react";
-import { useNavigate } from 'react-router-dom'; // For redirection
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog"; // For the application modal
-import { Label } from "@/components/ui/label"; // For form labels
-import { Textarea } from "@/components/ui/textarea"; // For cover letter
+import { useNavigate } from 'react-router-dom';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
-// Helper function for date formatting (re-used from AdminDashboard for consistency)
+// Helper function for date formatting
 const formatDateForDisplay = (dateString?: string | Date) => {
   if (!dateString) return 'N/A';
   const date = new Date(dateString);
   if (isNaN(date.getTime())) {
-    const parts = String(dateString).match(/(\d{4})-(\d{2})-(\d{2})T/); // Try ISO format first
-    if (parts) {
-      const parsedDate = new Date(`${parts[1]}-${parts[2]}-${parts[3]}`);
+    const isoDateMatch = String(dateString).match(/(\d{4})-(\d{2})-(\d{2})T/);
+    if (isoDateMatch) {
+      const parsedDate = new Date(`${isoDateMatch[1]}-${isoDateMatch[2]}-${isoDateMatch[3]}`);
       if (!isNaN(parsedDate.getTime())) {
         return parsedDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
       }
     }
-    // Fallback for "DD Mon YYYY" if needed (though DB typically returns ISO or DateTime object)
     const customParts = String(dateString).match(/(\d{2}) (\w{3}) (\d{4})/);
     if (customParts) {
       const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -52,7 +55,7 @@ const formatDateForDisplay = (dateString?: string | Date) => {
         }
       }
     }
-    return String(dateString); // Fallback to original string if still invalid
+    return String(dateString);
   }
   return date.toLocaleDateString('en-IN', {
     day: '2-digit',
@@ -78,6 +81,32 @@ interface Internship {
   spots_available: number;
 }
 
+// Interface for a user's specific internship application (from backend JOIN)
+interface UserInternshipApplication {
+  submission_id: number;
+  submitted_at: string;
+  status: string; // 'Pending', 'Reviewed', 'Accepted', 'Rejected'
+  full_name: string;
+  email: string;
+  phone?: string;
+  resume_url: string;
+  cover_letter?: string;
+
+  internship_id: number;
+  title: string;
+  company: string;
+  location: string;
+  duration: string;
+  type: string;
+  level: string;
+  description: string;
+  requirements: string[];
+  benefits: string[];
+  internship_posted_at: string;
+  applications_count: number;
+  spots_available: number;
+}
+
 // Define Internship Submission form data structure
 interface InternshipApplicationFormData {
   full_name: string;
@@ -90,7 +119,7 @@ interface InternshipApplicationFormData {
 // Utility function to get authentication data from localStorage
 const getAuthData = () => {
   const token = localStorage.getItem('token');
-  const userString = localStorage.getItem('user'); // Assuming user data is stored as a stringified JSON
+  const userString = localStorage.getItem('user');
   if (token && userString) {
     try {
       const user = JSON.parse(userString);
@@ -103,10 +132,31 @@ const getAuthData = () => {
   return null;
 };
 
-const Internships: React.FC = () => {
-  const [internships, setInternships] = useState<Internship[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+// Function to determine badge style based on application status
+const getStatusBadgeStyle = (status: string) => {
+  switch (status.toLowerCase()) {
+    case 'pending':
+      return "bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-100/80";
+    case 'reviewed':
+      return "bg-purple-100 text-purple-800 border-purple-200 hover:bg-purple-100/80";
+    case 'accepted':
+      return "bg-green-100 text-green-800 border-green-200 hover:bg-green-100/80";
+    case 'rejected':
+      return "bg-red-100 text-red-800 border-red-200 hover:bg-red-100/80";
+    default:
+      return "bg-gray-100 text-gray-800 border-gray-200 hover:bg-gray-100/80";
+  }
+};
+
+
+export default function InternshipContent() { // This component is named InternshipContent
+  const [allInternships, setAllInternships] = useState<Internship[]>([]);
+  const [userApplications, setUserApplications] = useState<UserInternshipApplication[]>([]);
+  const [loadingAllInternships, setLoadingAllInternships] = useState(true);
+  const [loadingUserApplications, setLoadingUserApplications] = useState(true);
+  const [errorAllInternships, setErrorAllInternships] = useState<string | null>(null);
+  const [errorUserApplications, setErrorUserApplications] = useState<string | null>(null);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [locationFilter, setLocationFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -125,70 +175,118 @@ const Internships: React.FC = () => {
   const [applicationMessage, setApplicationMessage] = useState<string>('');
 
   const navigate = useNavigate();
-  const authData = getAuthData(); // Check auth status on component render
+  const authData = getAuthData();
 
-  // --- Data Fetching Effect ---
-  useEffect(() => {
-    const fetchInternships = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const response = await fetch('http://localhost:5000/api/internships'); // Adjust URL if your backend is different
-        if (!response.ok) {
-          throw new Error(`HTTP error! Status: ${response.status} - ${response.statusText}`);
-        }
-        const data: Internship[] = await response.json();
-        setInternships(data);
-      } catch (err: any) {
-        setError("Failed to fetch internships: " + err.message);
-        console.error("Fetch internships error:", err);
-      } finally {
-        setLoading(false);
+  // --- Fetch All Internships ---
+  const fetchAllInternships = useCallback(async () => {
+    setLoadingAllInternships(true);
+    setErrorAllInternships(null);
+    try {
+      const response = await fetch('http://localhost:5000/api/internships');
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status} - ${response.statusText}`);
       }
-    };
-    fetchInternships();
-  }, []); // Empty dependency array means this runs once on component mount
+      const data: Internship[] = await response.json();
+      setAllInternships(data);
+    } catch (err: any) {
+      setErrorAllInternships("Failed to fetch internships: " + err.message);
+      console.error("Fetch all internships error:", err);
+    } finally {
+      setLoadingAllInternships(false);
+    }
+  }, []); // No dependencies, runs once on mount
 
-  // --- Pre-fill Application Form Effect ---
+  // --- Fetch User's Applications ---
+  const fetchUserApplications = useCallback(async () => {
+    setLoadingUserApplications(true);
+    setErrorUserApplications(null);
+
+    if (!authData || !authData.token) {
+      // If not authenticated, do not attempt to fetch user-specific data
+      setErrorUserApplications("You must be logged in to view your applications.");
+      setLoadingUserApplications(false);
+      return;
+    }
+
+    try {
+      const response = await fetch('http://localhost:5000/api/user/internship-applications', {
+        headers: { 'Authorization': `Bearer ${authData.token}` }
+      });
+
+      if (!response.ok) {
+        // Handle specific auth errors if needed, e.g., redirect to login
+        if (response.status === 401 || response.status === 403) {
+            setErrorUserApplications("Authentication failed or session expired. Please log in again.");
+            // Optionally, clear local storage and redirect to login:
+            // localStorage.clear();
+            // navigate('/login');
+        } else {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `HTTP error! Status: ${response.status}`);
+        }
+      }
+
+      const data: UserInternshipApplication[] = await response.json();
+      setUserApplications(data);
+    } catch (err: any) {
+      setErrorUserApplications("Failed to fetch your applications: " + err.message);
+      console.error("Fetch user applications error:", err);
+    } finally {
+      setLoadingUserApplications(false);
+    }
+  }, [authData]); // Re-run if authData changes (e.g., after a login/logout)
+
+
+  // Initial data fetches on component mount
+  useEffect(() => {
+    fetchAllInternships();
+    fetchUserApplications();
+  }, [fetchAllInternships, fetchUserApplications]); // Depend on memoized fetch functions
+
+  // Pre-fill Application Form Effect
   useEffect(() => {
     if (isApplyModalOpen && authData?.user) {
-      // Assuming authData.user has 'name' and 'email' properties
       setApplicationFormData(prev => ({
         ...prev,
         full_name: authData.user.name || '',
         email: authData.user.email || ''
       }));
     } else if (!isApplyModalOpen) {
-      // Reset form data when modal closes
+      // Reset form data and status when modal closes
       setApplicationFormData({ full_name: '', email: '', phone: '', resume_url: '', cover_letter: '' });
-      setApplicationStatus('idle'); // Also reset status
-      setApplicationMessage(''); // Clear message
+      setApplicationStatus('idle');
+      setApplicationMessage('');
     }
-  }, [isApplyModalOpen, authData]); // Re-run when modal opens/closes or authData changes
+  }, [isApplyModalOpen, authData]);
 
-  // --- Handle Apply Button Click ---
+  // Handle Apply Button Click
   const handleApplyClick = (internship: Internship) => {
     if (!authData) {
       // If not logged in, redirect to login page
-      navigate('/login'); // Make sure you have a '/login' route in your app
+      navigate('/login');
       return;
     }
     setSelectedInternship(internship);
     setIsApplyModalOpen(true); // Open the application modal
   };
 
-  // --- Handle Application Form Input Changes ---
+  // Handle Application Form Input Changes
   const handleApplicationFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setApplicationFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // --- Handle Application Form Submission ---
+  // Handle Application Form Submission
   const handleApplicationSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedInternship || !authData?.token) {
       setApplicationStatus('error');
       setApplicationMessage('Authentication or internship details missing.');
+      return;
+    }
+    if (!applicationFormData.full_name || !applicationFormData.email || !applicationFormData.resume_url) {
+      setApplicationStatus('error');
+      setApplicationMessage('Full Name, Email, and Resume Link are required.');
       return;
     }
 
@@ -200,34 +298,29 @@ const Internships: React.FC = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authData.token}` // Send JWT for authentication
+          'Authorization': `Bearer ${authData.token}`
         },
         body: JSON.stringify(applicationFormData)
       });
 
-      const result = await response.json(); // Always try to parse JSON for messages
+      const result = await response.json();
 
       if (!response.ok) {
-        // If response is not OK (e.g., 400, 403, 409, 500), throw an error
         throw new Error(result.message || `Server error: ${response.statusText}`);
       }
 
       setApplicationStatus('success');
       setApplicationMessage(result.message || 'Application submitted successfully!');
 
-      // Optimistically update internship spots and application count in UI
-      // This avoids another full fetch and provides immediate feedback
-      setInternships(prevInternships =>
+      // Optimistically update allInternships display and refresh user applications
+      setAllInternships(prevInternships =>
         prevInternships.map(int =>
           int.id === selectedInternship.id
-            ? {
-                ...int,
-                applications_count: int.applications_count + 1,
-                spots_available: Math.max(0, int.spots_available - 1) // Ensure spots don't go below 0
-              }
+            ? { ...int, applications_count: int.applications_count + 1, spots_available: Math.max(0, int.spots_available - 1) }
             : int
         )
       );
+      fetchUserApplications(); // Re-fetch user's applications to show the new one immediately
 
     } catch (err: any) {
       setApplicationStatus('error');
@@ -236,11 +329,11 @@ const Internships: React.FC = () => {
     }
   };
 
-  // --- Filtering Logic ---
-  const filteredInternships = internships.filter(internship => {
+  // Filtering Logic for All Internships
+  const filteredInternships = allInternships.filter(internship => {
     const matchesSearch = internship.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          internship.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         internship.description.toLowerCase().includes(searchTerm.toLowerCase()); // Added description to search
+                         internship.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesLocation = locationFilter === "all" ||
                            (locationFilter === "remote" && internship.location.toLowerCase() === "remote") ||
                            (locationFilter === "onsite" && internship.location.toLowerCase() !== "remote");
@@ -250,29 +343,108 @@ const Internships: React.FC = () => {
     return matchesSearch && matchesLocation && matchesType && matchesLevel;
   });
 
-  return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
+  // Function to check if a specific internship has been applied for by the user
+  const isApplied = (internshipId: number) => {
+    return userApplications.some(app => app.internship_id === internshipId);
+  };
 
-      {/* Hero Section */}
-      <section className="py-20 bg-gradient-to-br from-orange-50/50 via-background to-orange-100/30 relative">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <h1 className="text-4xl lg:text-5xl font-bold mb-6">
-              Launch Your Career with{" "}
-              <span className="bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
-                Digital Marketing Internships
-              </span>
-            </h1>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-              Gain real-world experience with top companies in the digital marketing industry.
-              Build your portfolio, expand your network, and kickstart your career.
-            </p>
-          </div>
+  return (
+    // Removed min-h-screen and flex-col, removed Header/Footer
+    <div className="flex-grow"> {/* This div acts as the main content area for the dashboard section */}
+
+      <main className="container mx-auto px-4 py-8"> {/* Adjusted padding for embedding */}
+        <h1 className="text-3xl lg:text-4xl font-bold mb-6">Internship Hub</h1>
+        <p className="text-xl text-muted-foreground mb-8">
+          Manage your applications and discover new opportunities.
+        </p>
+
+        {/* My Applications Section */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold mb-4">My Applications</h2>
+          {loadingUserApplications && (
+            <Card className="min-h-[150px] flex items-center justify-center border-0 shadow-sm bg-background/80">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500 mx-auto mb-3"></div>
+                <p className="text-muted-foreground text-sm">Loading your applications...</p>
+              </div>
+            </Card>
+          )}
+
+          {errorUserApplications && (
+            <Card className="min-h-[150px] flex flex-col items-center justify-center border-red-200 bg-red-50/50 shadow-sm">
+              <AlertCircle className="w-8 h-8 text-red-500 mb-3" />
+              <p className="text-red-600 text-center px-4 mb-3 text-sm">{errorUserApplications}</p>
+              <Button onClick={fetchUserApplications} variant="outline" className="border-red-500 text-red-500 hover:bg-red-50">
+                Retry
+              </Button>
+            </Card>
+          )}
+
+          {!loadingUserApplications && !errorUserApplications && userApplications.length === 0 ? (
+            <Card className="min-h-[150px] flex flex-col items-center justify-center border-0 shadow-sm bg-background/80">
+              <Briefcase className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+              <h3 className="text-lg font-semibold mb-1">No applications found</h3>
+              <p className="text-muted-foreground text-sm">You haven't applied for any internships yet.</p>
+            </Card>
+          ) : !loadingUserApplications && !errorUserApplications && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {userApplications.map((app) => (
+                <Card key={app.submission_id} className="relative hover:shadow-lg transition-shadow duration-200">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 to-orange-400"></div>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg">{app.title}</CardTitle>
+                      <Badge className={`px-2 py-0.5 text-xs font-semibold ${getStatusBadgeStyle(app.status)}`}>
+                        {app.status}
+                      </Badge>
+                    </div>
+                    <CardDescription className="text-sm">at {app.company}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="text-sm space-y-2">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-muted-foreground">
+                      <div className="flex items-center space-x-1">
+                        <MapPin className="w-4 h-4 text-orange-500" />
+                        <span>{app.location}</span>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <Clock className="w-4 h-4 text-orange-500" />
+                        <span>{app.duration}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                        <Badge variant={app.type.toLowerCase() === "paid" ? "default" : "secondary"}
+                               className={app.type.toLowerCase() === "paid" ? "bg-gradient-to-r from-orange-500 to-orange-400 text-white border-0" : "border-orange-200 text-orange-600 hover:bg-orange-50"}>
+                          {app.type}
+                        </Badge>
+                        <Badge variant="outline" className="border-orange-200 text-orange-600 hover:bg-orange-50">
+                          {app.level}
+                        </Badge>
+                    </div>
+                    <p className="text-muted-foreground mt-2">{app.description.substring(0, 100)}{app.description.length > 100 ? '...' : ''}</p>
+                    <div className="flex justify-between items-center pt-2 border-t border-gray-100 dark:border-gray-700 mt-2">
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Calendar className="w-3 h-3"/> Applied: {formatDateForDisplay(app.submitted_at)}
+                        </span>
+                        <Button variant="ghost" size="sm" asChild>
+                            <a href={app.resume_url} target="_blank" rel="noopener noreferrer" className="flex items-center text-orange-500 hover:text-orange-600">
+                                <LinkIcon className="w-4 h-4 mr-1" /> Resume
+                            </a>
+                        </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Browse All Internships Section */}
+        <section className="py-8"> {/* Adjusted padding for embedding */}
+          <h2 className="text-2xl font-bold mb-4">Browse All Internships</h2>
 
           {/* Search and Filters */}
-          <div className="max-w-4xl mx-auto">
-            <div className="grid md:grid-cols-4 gap-4 mb-8">
+          <div className="max-w-4xl mb-8">
+            <div className="grid md:grid-cols-4 gap-4 mb-4">
               <div className="relative">
                 <Search className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
                 <Input
@@ -284,7 +456,7 @@ const Internships: React.FC = () => {
               </div>
               <Select value={locationFilter} onValueChange={setLocationFilter}>
                 <SelectTrigger className="border-orange-200 focus:border-orange-500 focus:ring-orange-500">
-                  <MapPin className="w-4 h-4 mr-2" />
+                  <MapPin className="w-4 h-4 mr-2 text-muted-foreground" />
                   <SelectValue placeholder="Location" />
                 </SelectTrigger>
                 <SelectContent>
@@ -295,7 +467,7 @@ const Internships: React.FC = () => {
               </Select>
               <Select value={typeFilter} onValueChange={setTypeFilter}>
                 <SelectTrigger className="border-orange-200 focus:border-orange-500 focus:ring-orange-500">
-                  <Filter className="w-4 h-4 mr-2" />
+                  <Filter className="w-4 h-4 mr-2 text-muted-foreground" />
                   <SelectValue placeholder="Type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -317,32 +489,23 @@ const Internships: React.FC = () => {
               </Select>
             </div>
           </div>
-        </div>
 
-        {/* Floating background elements */}
-        <div className="absolute top-20 left-10 w-32 h-32 bg-orange-400/10 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-20 right-10 w-24 h-24 bg-orange-500/10 rounded-full blur-2xl animate-pulse delay-1000"></div>
-      </section>
-
-      {/* Internships Grid */}
-      <section className="py-20 flex-grow bg-gradient-to-br from-orange-50/30 via-background to-orange-100/20">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          {loading && (
+          {loadingAllInternships && (
             <div className="text-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
-              <p className="text-muted-foreground">Loading internships...</p>
+              <p className="text-muted-foreground">Loading available internships...</p>
             </div>
           )}
 
-          {error && (
+          {errorAllInternships && (
             <div className="text-center py-12 text-red-600">
               <AlertCircle className="w-12 h-12 mx-auto mb-4" />
-              <p>{error}</p>
-              <Button onClick={() => window.location.reload()} className="mt-4">Retry Loading</Button>
+              <p>{errorAllInternships}</p>
+              <Button onClick={fetchAllInternships} className="mt-4">Retry Loading</Button>
             </div>
           )}
 
-          {!loading && !error && filteredInternships.length > 0 ? (
+          {!loadingAllInternships && !errorAllInternships && filteredInternships.length > 0 ? (
             <div className="space-y-6">
               {filteredInternships.map((internship) => (
                 <Card key={internship.id} className="group hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-0 bg-background/90 backdrop-blur-sm hover:bg-white relative overflow-hidden">
@@ -381,10 +544,11 @@ const Internships: React.FC = () => {
                       </div>
                       <Button
                         onClick={() => handleApplyClick(internship)}
-                        disabled={internship.spots_available <= 0} // Disable if no spots
+                        disabled={internship.spots_available <= 0 || isApplied(internship.id)}
                         className="md:self-start bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-300"
                       >
-                        {internship.spots_available <= 0 ? "No Spots Left" : "Apply Now"}
+                        {isApplied(internship.id) ? "Applied" :
+                         internship.spots_available <= 0 ? "No Spots Left" : "Apply Now"}
                       </Button>
                     </div>
                   </CardHeader>
@@ -450,7 +614,7 @@ const Internships: React.FC = () => {
                 </Card>
               ))}
             </div>
-          ) : !loading && !error && (
+          ) : !loadingAllInternships && !errorAllInternships && (
             <div className="text-center py-12">
               <div className="w-16 h-16 bg-gradient-to-br from-orange-500 to-orange-400 rounded-xl flex items-center justify-center mx-auto mb-4">
                 <Briefcase className="w-8 h-8 text-white" />
@@ -461,10 +625,8 @@ const Internships: React.FC = () => {
               </p>
             </div>
           )}
-        </div>
-      </section>
-
-      <Footer />
+        </section>
+      </main>
 
       {/* Internship Application Modal */}
       <Dialog open={isApplyModalOpen} onOpenChange={setIsApplyModalOpen}>
@@ -539,7 +701,7 @@ const Internships: React.FC = () => {
                 <Input
                   id="resume_url"
                   name="resume_url"
-                  type="url" // Use type="url" for better validation
+                  type="url"
                   value={applicationFormData.resume_url}
                   onChange={handleApplicationFormChange}
                   required
@@ -576,5 +738,3 @@ const Internships: React.FC = () => {
     </div>
   );
 }
-
-export default Internships;

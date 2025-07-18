@@ -1,6 +1,7 @@
 // src/hooks/use-auth.tsx
 import React, { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 
+// Define the User interface here as the source of truth for user structure
 interface User {
   id: number;
   email: string;
@@ -20,6 +21,7 @@ interface User {
 
 interface AuthContextType {
   user: User | null;
+  token: string | null; // <--- ADDED: The authentication token
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
@@ -43,20 +45,39 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null); // <--- ADDED: State for the token
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const initAuth = async () => {
       try {
-        const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+        const storedToken = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
         const userData = localStorage.getItem('userData') || sessionStorage.getItem('userData');
         
-        if (token && userData) {
+        if (storedToken && userData) {
           const parsedUser = JSON.parse(userData);
-          setUser(parsedUser);
+          // Basic validation for parsedUser to ensure it's valid
+          if (parsedUser && typeof parsedUser.id === 'number' && typeof parsedUser.email === 'string') {
+            setUser(parsedUser);
+            setToken(storedToken); // <--- SET TOKEN ON INITIAL LOAD
+          } else {
+            // Clear invalid data if user data is malformed
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('userData');
+            sessionStorage.removeItem('authToken');
+            sessionStorage.removeItem('userData');
+            console.warn("Invalid user data found in storage, cleared.");
+          }
         }
       } catch (error) {
         console.error('Auth initialization error:', error);
+        // Ensure to clear invalid data and set states to null if parsing fails
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('userData');
+        sessionStorage.removeItem('authToken');
+        sessionStorage.removeItem('userData');
+        setUser(null);
+        setToken(null); // <--- ENSURE TOKEN IS CLEARED ON ERROR
       } finally {
         setLoading(false);
       }
@@ -90,6 +111,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         localStorage.setItem('authToken', data.token);
         localStorage.setItem('userData', JSON.stringify(data.user));
         setUser(data.user);
+        setToken(data.token); // <--- SET TOKEN ON LOGIN SUCCESS
       }
     } catch (error) {
       throw error;
@@ -102,22 +124,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     sessionStorage.removeItem('authToken');
     sessionStorage.removeItem('userData');
     setUser(null);
+    setToken(null); // <--- CLEAR TOKEN ON LOGOUT
   };
 
   const updateUser = (userData: Partial<User>) => {
     if (user) {
       const updatedUser = { ...user, ...userData };
       setUser(updatedUser);
-      localStorage.setItem('userData', JSON.stringify(updatedUser));
+      // Ensure the user data in storage is also updated if it's there
+      if (localStorage.getItem('userData')) {
+        localStorage.setItem('userData', JSON.stringify(updatedUser));
+      } else if (sessionStorage.getItem('userData')) {
+        sessionStorage.setItem('userData', JSON.stringify(updatedUser));
+      }
     }
   };
 
-  const isAuthenticated = !!user;
+  const isAuthenticated = !!user && !!token; // <--- RECOMMENDED: Authenticated implies both user data AND token
 
   return (
     <AuthContext.Provider 
       value={{
         user,
+        token, // <--- EXPOSE THE TOKEN HERE
         loading,
         login,
         logout,

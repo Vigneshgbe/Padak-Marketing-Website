@@ -3,7 +3,7 @@ import React from 'react';
 import { User, UserStats } from '../../lib/types';
 
 interface DashboardHomeProps {
-  user: User;
+  user: User; 
   stats: UserStats;
 }
 
