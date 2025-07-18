@@ -426,9 +426,8 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
   }
 });
 
-// --- STUDENT DASHBOARD SPECIFIC ENDPOINTS (MODIFIED FROM YOUR PROVIDED SNIPPETS) ---
+// ============ STUDENT DASHBOARD SPECIFIC ENDPOINTS  ====================
 
-// MODIFIED: From /api/courses/enrolled to /api/users/:userId/enrollments
 // This fetches all enrolled courses for a specific user, including course details
 app.get('/api/users/:userId/enrollments', authenticateToken, async (req, res) => {
   const userId = req.user.id; // User ID is from the authenticated token
@@ -496,6 +495,148 @@ app.get('/api/users/:userId/internship-submissions', authenticateToken, async (r
   }
 });
 
+// =============== NEW PROFESSIONAL DASHBOARD ENDPOINTS ====================
+
+// Assumes a 'services' table with detailed service info, joined with 'service_categories'
+app.get('/api/services', authenticateToken, async (req, res) => {
+  try {
+    const [services] = await pool.execute(
+      `SELECT
+          s.id,
+          s.name,          -- The specific service name (e.g., "Advanced SEO Package")
+          sc.id AS category_id, -- The ID of the category
+          sc.name AS categoryName, -- The category name (e.g., "SEO")
+          s.description,
+          s.price,
+          s.duration,
+          s.rating,
+          s.reviews,
+          s.features,      -- Assuming this is still a JSON string in 'services' table
+          s.popular
+       FROM services s  -- This 'services' table is assumed to contain detailed service offerings
+       JOIN service_categories sc ON s.category_id = sc.id
+       WHERE sc.is_active = 1 -- Only fetch services belonging to active categories
+       ORDER BY s.popular DESC, s.name ASC`
+    );
+
+    // Parse JSON fields from database strings to JavaScript arrays/objects
+    const parsedServices = services.map(service => ({
+      ...service,
+      features: JSON.parse(service.features || '[]')
+    }));
+
+    res.json(parsedServices);
+  } catch (error) {
+    console.error('Error fetching available services:', error);
+    res.status(500).json({ message: 'Failed to fetch available services.', error: error.message });
+  }
+});
+
+// ADJUSTED: GET /api/users/:userId/service-requests - Fetch a user's submitted service requests
+app.get('/api/users/:userId/service-requests', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+
+  if (parseInt(req.params.userId, 10) !== userId) {
+    return res.status(403).json({ message: 'Forbidden: You can only access your own service requests.' });
+  }
+
+  try {
+    const [requests] = await pool.execute(
+      `SELECT
+          sr.id,
+          sr.user_id AS userId,
+          sr.subcategory_id AS categoryId, -- Maps to categoryId on frontend
+          sc.name AS categoryName,         -- Fetched from service_categories.name
+          sr.full_name AS fullName,
+          sr.email,
+          sr.phone,
+          sr.company,
+          sr.website,
+          sr.project_details AS projectDetails, -- Maps to projectDetails on frontend
+          sr.budget_range AS budgetRange,     -- Maps to budgetRange on frontend
+          sr.timeline,                        -- Maps to timeline on frontend
+          sr.contact_method AS contactMethod,
+          sr.additional_requirements AS additionalRequirements,
+          sr.status,
+          sr.created_at AS requestDate,       -- Maps to requestDate on frontend
+          sr.updated_at AS updatedAt          -- Optional, for display if needed
+       FROM service_requests sr
+       JOIN service_categories sc ON sr.subcategory_id = sc.id -- Join with service_categories
+       WHERE sr.user_id = ?
+       ORDER BY sr.created_at DESC`,
+      [userId]
+    );
+
+    res.json(requests);
+  } catch (error) {
+    console.error('Error fetching user service requests:', error);
+    res.status(500).json({ message: 'Failed to fetch your service requests.', error: error.message });
+  }
+});
+
+// ADJUSTED: POST /api/service-requests - Submit a new service request
+app.post('/api/service-requests', authenticateToken, async (req, res) => {
+  const userId = req.user.id; // User ID from authenticated token
+  const {
+    categoryId, // Comes from selectedService.category_id
+    fullName,
+    email,
+    phone,
+    company,
+    website,
+    projectDetails, // Changed from description
+    budgetRange,    // Changed from budget
+    timeline,       // Changed from deadline
+    contactMethod,
+    additionalRequirements
+  } = req.body;
+
+  // Validate required fields based on your 'service_requests' table schema
+  if (!userId || !categoryId || !fullName || !email || !phone || !projectDetails || !budgetRange || !timeline || !contactMethod) {
+    return res.status(400).json({ message: 'Missing required fields for service request. Please fill in all necessary details.' });
+  }
+
+  try {
+    const [result] = await pool.execute(
+      `INSERT INTO service_requests (
+         user_id,
+         subcategory_id,
+         full_name,
+         email,
+         phone,
+         company,
+         website,
+         project_details,
+         budget_range,
+         timeline,
+         contact_method,
+         additional_requirements,
+         status
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`, // New requests are 'pending' by default
+      [
+        userId,
+        categoryId,
+        fullName,
+        email,
+        phone,
+        company || null, // Allow NULL for optional fields if not provided
+        website || null,
+        projectDetails,
+        budgetRange,
+        timeline,
+        contactMethod,
+        additionalRequirements || null
+      ]
+    );
+
+    // Return the ID of the newly created request
+    res.status(201).json({ message: 'Service request submitted successfully!', id: result.insertId });
+  } catch (error) {
+    console.error('Error submitting service request:', error);
+    res.status(500).json({ message: 'Failed to submit service request. An internal server error occurred.', error: error.message });
+  }
+});
 
 // ==================== CALENDER EVENTS ROUTES ====================
 
