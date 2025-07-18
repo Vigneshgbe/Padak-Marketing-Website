@@ -426,6 +426,77 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
   }
 });
 
+// --- STUDENT DASHBOARD SPECIFIC ENDPOINTS (MODIFIED FROM YOUR PROVIDED SNIPPETS) ---
+
+// MODIFIED: From /api/courses/enrolled to /api/users/:userId/enrollments
+// This fetches all enrolled courses for a specific user, including course details
+app.get('/api/users/:userId/enrollments', authenticateToken, async (req, res) => {
+  const userId = req.user.id; // User ID is from the authenticated token
+
+  // Security check: Ensure the user requesting data matches the user ID in the URL parameter
+  // unless you have admin roles that can view other users' data.
+  if (parseInt(req.params.userId, 10) !== userId) {
+    return res.status(403).json({ message: 'Forbidden: You can only access your own enrollment data.' });
+  }
+
+  try {
+    const [enrollments] = await pool.execute(`
+      SELECT
+        e.id,
+        e.progress,
+        e.status,
+        e.enrollment_date,
+        e.completion_date,
+        c.id AS course_id,
+        c.title AS courseTitle,             -- Alias for frontend
+        c.instructor_name AS instructorName, -- Alias for frontend (assuming column exists)
+        c.duration_weeks AS durationWeeks    -- Alias for frontend (assuming column exists)
+      FROM enrollments e
+      JOIN courses c ON e.course_id = c.id
+      WHERE e.user_id = ?
+      ORDER BY e.enrollment_date DESC
+    `, [userId]); // Use userId from token
+
+    // The data is already aliased correctly for the frontend in the SQL query
+    res.json(enrollments);
+  } catch (error) {
+    console.error('Error fetching user enrollments for dashboard:', error);
+    res.status(500).json({ error: 'Internal server error while fetching enrolled courses.' });
+  }
+});
+
+// GET /api/users/:userId/internship-submissions
+app.get('/api/users/:userId/internship-submissions', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+
+  if (parseInt(req.params.userId, 10) !== userId) {
+    return res.status(403).json({ message: 'Forbidden: You can only access your own internship submissions.' });
+  }
+
+  try {
+    const [applications] = await pool.query( // Using pool.query or pool.execute is fine, just be consistent
+      `SELECT
+         sub.id,
+         sub.internship_id,
+         sub.status AS applicationStatus,
+         sub.submitted_at AS applicationDate, 
+         i.title AS internshipTitle,
+         i.company AS companyName
+       FROM internship_submissions sub
+       JOIN internships i ON sub.internship_id = i.id
+       WHERE sub.user_id = ?
+       ORDER BY sub.submitted_at DESC`, 
+      [userId]
+    );
+
+    res.json(applications);
+  } catch (error) {
+    console.error('Error fetching user internship applications for dashboard:', error); // <--- CHECK THIS IN YOUR BACKEND CONSOLE
+    res.status(500).json({ message: 'Internal server error while fetching your applications.' });
+  }
+});
+
+
 // ==================== CALENDER EVENTS ROUTES ====================
 
 // GET /api/calendar/events - Get all calendar events for current user
