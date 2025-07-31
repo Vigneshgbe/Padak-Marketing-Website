@@ -16,7 +16,7 @@ const ServiceSubcategoryCard: React.FC<ServiceSubcategoryCardProps> = ({ subcate
       <h4 className="font-medium mb-2">{subcategory.name}</h4>
       <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{subcategory.description}</p>
       <p className="text-sm font-semibold text-orange-600 dark:text-orange-400">
-        Starting from ₹{subcategory.basePrice.toLocaleString()}
+        Starting from ₹{subcategory.base_price.toLocaleString()}
       </p>
     </div>
   );

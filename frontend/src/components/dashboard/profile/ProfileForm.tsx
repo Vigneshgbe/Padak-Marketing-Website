@@ -11,8 +11,8 @@ interface ProfileFormProps {
 
 const ProfileForm: React.FC<ProfileFormProps> = ({ user, onSubmit, loading }) => {
   const [formData, setFormData] = useState({
-    firstName: user.firstName,
-    lastName: user.lastName,
+    firstName: user.first_name,
+    lastName: user.last_name,
     email: user.email,
     phone: user.phone || '',
     company: user.company || '',

@@ -21,7 +21,7 @@ const ServiceRequestForm: React.FC<ServiceRequestFormProps> = ({
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    fullName: `${user.firstName} ${user.lastName}`,
+    fullName: `${user.first_name} ${user.last_name}`,
     email: user.email,
     phone: user.phone || '',
     company: user.company || '',
@@ -82,7 +82,7 @@ const ServiceRequestForm: React.FC<ServiceRequestFormProps> = ({
           Category: {category.name} - {category.description}
         </p>
         <p className="text-sm text-orange-600 dark:text-orange-400 font-semibold mt-1">
-          Starting from ₹{service.basePrice.toLocaleString()}
+          Starting from ₹{service.base_price.toLocaleString()}
         </p>
       </div>
       
@@ -171,11 +171,11 @@ const ServiceRequestForm: React.FC<ServiceRequestFormProps> = ({
               className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-300"
             >
               <option value="">Select budget range</option>
-              <option value="<10k">Less than ₹10,000</option>
+              <option value="<100">Less than ₹100</option>
+              <option value="100-1k">₹100 - ₹1,000</option>
+              <option value="1k-10k">₹1,000 - ₹10,000</option>
               <option value="10k-50k">₹10,000 - ₹50,000</option>
-              <option value="50k-1L">₹50,000 - ₹1,00,000</option>
-              <option value="1L-5L">₹1,00,000 - ₹5,00,000</option>
-              <option value=">5L">More than ₹5,00,000</option>
+              <option value=">50k">More than ₹50,000</option>
             </select>
           </div>
           <div>
