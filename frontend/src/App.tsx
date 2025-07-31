@@ -18,6 +18,7 @@ import PrivacyPolicy from "./pages/Policy";
 import TermsConditions from "./pages/Terms";
 import CookiePolicy from "./pages/Cookie";
 import { About } from "./pages/About";
+import { Team } from "./pages/Team";
 
 // Import protected route component
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -43,6 +44,7 @@ const App = () => {
               <Route path="/about" element={<About />} />
               <Route path="/courses" element={<Courses />} />
               <Route path="/internships" element={<Internships />} />
+              <Route path="/team" element={<Team />} />
 
               {/* Protected Dashboard Routes */}
               <Route 
