@@ -32,21 +32,21 @@ export const Team = () => {
 
   const teamMembers = [
     {
-      name: "Sarah Johnson",
+      name: "Thikilan P",
       role: "CEO & Founder",
-      bio: "15+ years in digital marketing",
+      bio: "2+ years in digital marketing",
       linkedin: "#",
-      email: "sarah@padak.com",
-      imageUrl: "https://example.com/sarah.jpg"
-    },
-    {
-      name: "Michael Chen",
-      role: "Head of SEO",
-      bio: "SEO expert with proven track record",
-      linkedin: "#",
-      email: "michael@padak.com",
-      imageUrl: "https://example.com/michael.jpg"
-    }
+      email: "padak.service@gmail.com",
+      imageUrl: "https://github.com/Sweety-Vigneshg/Padak-Marketing-Website/blob/main/frontend/src/assets/ThikilanP.jpeg?raw=true"
+    } //,
+    // {
+    //   name: "Vignesh G",
+    //   role: "Developer",
+    //   bio: "Professional web developer",
+    //   linkedin: "#",
+    //   email: "padak.service@gmail.com",
+    //   imageUrl: "https://github.com/Sweety-Vigneshg/Padak-Marketing-Website/blob/main/frontend/src/assets/VigneshG.jpg?raw=true"
+    // }
   ];
 
   return (
