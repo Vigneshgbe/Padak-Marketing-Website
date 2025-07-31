@@ -42,22 +42,22 @@ export const Contact = () => {
     {
       icon: MapPin,
       title: "Office Location",
-      details: ["123 Business District", "Digital City, DC 12345"]
+      details: ["Colombo", "Sri Lanka"]
     },
     {
       icon: Phone,
       title: "Phone Number",
-      details: ["+1 (555) 123-4567", "+1 (555) 987-6543"]
+      details: ["+94 774433757"]
     },
     {
       icon: Mail,
       title: "Email Address",
-      details: ["info@padak.com", "support@padak.com"]
+      details: ["padak.service@gmail.com"]
     },
     {
       icon: Clock,
       title: "Business Hours",
-      details: ["Mon - Fri: 9:00 AM - 6:00 PM", "Sat: 10:00 AM - 4:00 PM"]
+      details: ["Mon - Fri : 9:00 AM - 6:00 PM", "Sat : 10:00 AM - 4:00 PM"]
     }
   ];
 
@@ -86,7 +86,7 @@ export const Contact = () => {
     if (!formData.lastName.trim()) {
       newErrors.lastName = "Last name is required";
     } else if (formData.lastName.trim().length < 1) {
-      newErrors.lastName = "Last name must be at least 2 characters";
+      newErrors.lastName = "Last name must be at least 1 characters";
     }
 
     // Email validation
