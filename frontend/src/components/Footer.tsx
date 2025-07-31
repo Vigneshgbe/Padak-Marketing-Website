@@ -16,7 +16,7 @@ import { Link } from "react-router-dom";
 
 export const Footer = () => {
   const quickLinks = [
-    { name: "About Us", href: "#about" },
+    { name: "About Us", href: "/about" },
     { name: "Services", href: "#services" },
     { name: "Courses", href: "/courses" },
     { name: "Internships", href: "/internships" },
@@ -32,11 +32,11 @@ export const Footer = () => {
   ];
 
   const socialLinks = [
-    { icon: Facebook, href: "#", label: "Facebook" },
-    { icon: Twitter, href: "#", label: "Twitter" },
-    { icon: Instagram, href: "#", label: "Instagram" },
+    { icon: Facebook, href: "https://www.facebook.com/people/PadakOfficial/61577970876846/", label: "Facebook" },
+    { icon: Twitter, href: "https://x.com/padak_official", label: "Twitter" },
+    { icon: Instagram, href: "https://www.instagram.com/padak.official/", label: "Instagram" },
     { icon: Linkedin, href: "#", label: "LinkedIn" },
-    { icon: Youtube, href: "#", label: "YouTube" }
+    { icon: Youtube, href: "https://www.youtube.com/channel/UCSLDckLJZ3WjOH_kiUxNcUQ", label: "YouTube" }
   ];
 
   return (
@@ -57,7 +57,7 @@ export const Footer = () => {
               />
               <div>
                 <h1 className="text-2xl font-bold text-white">Padak</h1>
-                <p className="text-xs text-orange-400">Your Digital Marketing Partner</p>
+                <p className="text-xs text-orange-400">Your Branding Partner</p>
               </div>
             </div>
             
@@ -71,19 +71,19 @@ export const Footer = () => {
                 <div className="w-8 h-8 bg-orange-500/20 rounded-lg flex items-center justify-center group-hover:bg-orange-500/30 transition-colors">
                   <Mail className="w-4 h-4 text-orange-400" />
                 </div>
-                <span className="text-sm group-hover:text-white transition-colors">info@padak.com</span>
+                <span className="text-sm group-hover:text-white transition-colors">padak.service@gmail.com</span>
               </div>
               <div className="flex items-center space-x-3 group">
                 <div className="w-8 h-8 bg-orange-500/20 rounded-lg flex items-center justify-center group-hover:bg-orange-500/30 transition-colors">
                   <Phone className="w-4 h-4 text-orange-400" />
                 </div>
-                <span className="text-sm group-hover:text-white transition-colors">+1 (555) 123-4567</span>
+                <span className="text-sm group-hover:text-white transition-colors">+94 774433757</span>
               </div>
               <div className="flex items-center space-x-3 group">
                 <div className="w-8 h-8 bg-orange-500/20 rounded-lg flex items-center justify-center group-hover:bg-orange-500/30 transition-colors">
                   <MapPin className="w-4 h-4 text-orange-400" />
                 </div>
-                <span className="text-sm group-hover:text-white transition-colors">123 Business District, Digital City</span>
+                <span className="text-sm group-hover:text-white transition-colors">Colombo, Sri Lanka</span>
               </div>
             </div>
           </div>
@@ -185,15 +185,15 @@ export const Footer = () => {
               </p>
             </div>
             <div className="flex space-x-6 text-sm">
-              <a href="#" className="text-gray-400 hover:text-orange-400 transition-colors">
+              <a href="/Policy" className="text-gray-400 hover:text-orange-400 transition-colors">
                 Privacy Policy
               </a>
               <span className="text-gray-600">•</span>
-              <a href="#" className="text-gray-400 hover:text-orange-400 transition-colors">
+              <a href="/Terms" className="text-gray-400 hover:text-orange-400 transition-colors">
                 Terms of Service
               </a>
               <span className="text-gray-600">•</span>
-              <a href="#" className="text-gray-400 hover:text-orange-400 transition-colors">
+              <a href="/Cookie" className="text-gray-400 hover:text-orange-400 transition-colors">
                 Cookie Policy
               </a>
             </div>

@@ -27,11 +27,11 @@ export const Hero = () => {
             {/* Stats */}
             <div className="grid grid-cols-3 gap-6">
               <div className="text-center">
-                <div className="text-2xl font-bold text-orange-600">500+</div>
+                <div className="text-2xl font-bold text-orange-600">40+</div>
                 <div className="text-sm text-muted-foreground">Happy Clients</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-orange-600">99%</div>
+                <div className="text-2xl font-bold text-orange-600">98.4%</div>
                 <div className="text-sm text-muted-foreground">Success Rate</div>
               </div>
               <div className="text-center">

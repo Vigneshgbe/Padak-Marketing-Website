@@ -16,6 +16,7 @@ import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 import PrivacyPolicy from "./pages/Policy";
 import TermsConditions from "./pages/Terms";
+import CookiePolicy from "./pages/Cookie";
 import { About } from "./pages/About";
 
 // Import protected route component
@@ -38,6 +39,7 @@ const App = () => {
               <Route path="/register" element={<Register />} />
               <Route path="/terms" element={<TermsConditions />} />
               <Route path="/policy" element={<PrivacyPolicy />} />
+              <Route path="/cookie" element={<CookiePolicy />} />
               <Route path="/about" element={<About />} />
               <Route path="/courses" element={<Courses />} />
               <Route path="/internships" element={<Internships />} />
