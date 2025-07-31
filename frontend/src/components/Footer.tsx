@@ -17,6 +17,7 @@ import { Link } from "react-router-dom";
 export const Footer = () => {
   const quickLinks = [
     { name: "About Us", href: "/about" },
+    { name: "Our Team", href: "/team" },
     { name: "Services", href: "#services" },
     { name: "Courses", href: "/courses" },
     { name: "Internships", href: "/internships" },
@@ -24,11 +25,13 @@ export const Footer = () => {
   ];
 
   const services = [
-    { name: "SEO Optimization", href: "#services" },
-    { name: "Social Media Marketing", href: "#services" },
-    { name: "PPC Advertising", href: "#services" },
+    { name: "Digital Marketing", href: "#services" },
+    { name: "Graphics Design", href: "#services" },
+    { name: "Video Editing", href: "#services" },
     { name: "Web Development", href: "#services" },
-    { name: "Content Marketing", href: "#services" }
+    { name: "Android Development", href: "#services" },
+    { name: "Hosting Service", href: "#services" },
+    { name: "Social Media Handling", href: "#services" }
   ];
 
   const socialLinks = [

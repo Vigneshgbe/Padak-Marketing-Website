@@ -24,10 +24,6 @@ const API_BASE = '/api'; // Replace with your actual API base URL
 
 const fetchCourses = async () => {
   try {
-    // Replace with actual API call
-    // const response = await fetch(`${API_BASE}/courses`);
-    // return await response.json();
-    
     // Mock data for demonstration
     return [
       {
@@ -134,15 +130,7 @@ const fetchCourses = async () => {
 };
 
 const enrollInCourse = async (courseId, userId) => {
-  try {
-    // Replace with actual API call
-    // const response = await fetch(`${API_BASE}/enrollments`, {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({ course_id: courseId, user_id: userId })
-    // });
-    // return await response.json();
-    
+  try {  
     console.log(`Enrolled in course ${courseId}`);
     return { success: true, message: 'Successfully enrolled!' };
   } catch (error) {
