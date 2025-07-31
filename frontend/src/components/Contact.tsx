@@ -260,10 +260,10 @@ export const Contact = () => {
     <section id="contact" className="py-20 bg-gradient-to-br from-orange-50/50 via-background to-orange-100/30 relative overflow-hidden">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
-          <div className="inline-flex items-center gap-2 bg-orange-100 text-orange-600 px-4 py-2 rounded-full text-sm font-medium mb-6">
+          {/* <div className="inline-flex items-center gap-2 bg-orange-100 text-orange-600 px-4 py-2 rounded-full text-sm font-medium mb-6">
             <MessageSquare className="w-4 h-4" />
             Contact Us
-          </div>
+          </div> */}
           <h2 className="text-3xl lg:text-4xl font-bold mb-4">
             Let's Start Your{" "}
             <span className="bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
