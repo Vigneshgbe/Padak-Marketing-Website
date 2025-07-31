@@ -7,11 +7,11 @@ export const Header = () => {
 
   const navItems = [
     { name: "Home", href: "/" },
-    { name: "Services", href: "#services" },
+    { name: "Services", href: "/#services" },
     { name: "About", href: "/about" },
     { name: "Courses", href: "/courses" },
     { name: "Internships", href: "/internships" },
-    { name: "Contact", href: "#contact" }
+    { name: "Contact", href: "/#contact" }
   ];
 
   // Logo component using the actual Padak logo image
@@ -38,7 +38,7 @@ export const Header = () => {
               <h1 className="text-xl font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
                 Padak
               </h1>
-              <p className="text-xs text-muted-foreground -mt-1">Your Digital Marketing Partner</p>
+              <p className="text-xs text-muted-foreground -mt-1">Your Branding Partner</p>
             </div>
           </div>
 
