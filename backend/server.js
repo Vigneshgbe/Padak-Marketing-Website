@@ -428,7 +428,7 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
 
 // =============== SOCIAL FEED POST ENDPOINTS ====================
 // Get all posts with engagement data
-router.get('/', authenticateToken, async (req, res) => {
+app.get('/', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
     
