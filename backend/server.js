@@ -426,6 +426,150 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
   }
 });
 
+// =============== SOCIAL FEED POST ENDPOINTS ====================
+// Get all posts with engagement data
+router.get('/', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const postsQuery = `
+      SELECT 
+        p.id, p.content, p.image_url, p.created_at,
+        u.id AS user_id, u.first_name, u.last_name, u.profile_image, u.account_type,
+        (SELECT COUNT(*) FROM social_activities WHERE activity_type = 'comment' AND target_id = p.id) AS comment_count,
+        (SELECT COUNT(*) FROM social_activities WHERE activity_type = 'like' AND target_id = p.id) AS like_count,
+        EXISTS(SELECT 1 FROM social_activities WHERE activity_type = 'like' AND target_id = p.id AND user_id = $1) AS has_liked,
+        EXISTS(SELECT 1 FROM social_activities WHERE activity_type = 'bookmark' AND target_id = p.id AND user_id = $1) AS has_bookmarked
+      FROM social_activities p
+      JOIN users u ON p.user_id = u.id
+      WHERE p.activity_type = 'post'
+      ORDER BY p.created_at DESC
+    `;
+    
+    const postsResult = await pool.query(postsQuery, [userId]);
+    
+    // Get comments for each post
+    for (const post of postsResult.rows) {
+      const commentsQuery = `
+        SELECT 
+          c.id, c.content, c.created_at,
+          u.id AS user_id, u.first_name, u.last_name, u.profile_image
+        FROM social_activities c
+        JOIN users u ON c.user_id = u.id
+        WHERE c.activity_type = 'comment' AND c.target_id = $1
+        ORDER BY c.created_at ASC
+      `;
+      
+      const commentsResult = await pool.query(commentsQuery, [post.id]);
+      post.comments = commentsResult.rows;
+    }
+    
+    res.json(postsResult.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Create new post
+router.post('/', authenticateToken, upload.single('image'), async (req, res) => {
+  try {
+    const { content } = req.body;
+    const userId = req.user.id;
+    let imageUrl = null;
+    
+    if (req.file) {
+      imageUrl = `/uploads/${req.file.filename}`;
+    }
+    
+    const result = await pool.query(
+      `INSERT INTO social_activities 
+        (user_id, activity_type, content, image_url) 
+       VALUES ($1, 'post', $2, $3)
+       RETURNING *`,
+      [userId, content, imageUrl]
+    );
+    
+    const userResult = await pool.query(
+      'SELECT id, first_name, last_name, profile_image, account_type FROM users WHERE id = $1',
+      [userId]
+    );
+    
+    const newPost = {
+      ...result.rows[0],
+      user: userResult.rows[0],
+      comments: [],
+      likes: 0,
+      has_liked: false,
+      has_bookmarked: false
+    };
+    
+    res.status(201).json(newPost);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Add engagement (comment, like, bookmark)
+router.post('/:id/engagement', authenticateToken, async (req, res) => {
+  try {
+    const { type, content } = req.body;
+    const postId = parseInt(req.params.id);
+    const userId = req.user.id;
+    
+    if (!['comment', 'like', 'bookmark'].includes(type)) {
+      return res.status(400).json({ error: 'Invalid engagement type' });
+    }
+    
+    if (type === 'comment' && !content) {
+      return res.status(400).json({ error: 'Comment content required' });
+    }
+    
+    // Handle like/bookmark toggling
+    if (type === 'like' || type === 'bookmark') {
+      const existing = await pool.query(
+        `SELECT id FROM social_activities 
+         WHERE user_id = $1 AND activity_type = $2 AND target_id = $3`,
+        [userId, type, postId]
+      );
+      
+      if (existing.rows.length > 0) {
+        // Remove engagement
+        await pool.query(
+          `DELETE FROM social_activities 
+           WHERE id = $1`,
+          [existing.rows[0].id]
+        );
+        return res.json({ action: 'removed' });
+      }
+    }
+    
+    // Add new engagement
+    const result = await pool.query(
+      `INSERT INTO social_activities 
+        (user_id, activity_type, content, target_id) 
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [userId, type, content, postId]
+    );
+    
+    if (type === 'comment') {
+      const userResult = await pool.query(
+        'SELECT id, first_name, last_name, profile_image FROM users WHERE id = $1',
+        [userId]
+      );
+      
+      result.rows[0].user = userResult.rows[0];
+    }
+    
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ============ STUDENT DASHBOARD SPECIFIC ENDPOINTS  ====================
 
 // This fetches all enrolled courses for a specific user, including course details
