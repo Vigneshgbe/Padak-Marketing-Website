@@ -457,10 +457,9 @@ const socialUpload = multer({
     }
     cb(new Error('Error: File upload only supports the following filetypes - ' + filetypes));
   },
-}).single('image'); // 'image' should match the FormData key from the frontend
+}).single('image'); 
 
-
-// --- The Bulletproof Helper Function ---
+// Helper function to get full URL for images (SIMPLIFIED)
 const getFullImageUrl = (req, imagePath) => {
   if (!imagePath) {
       return null;
@@ -474,14 +473,6 @@ const getFullImageUrl = (req, imagePath) => {
   }
   return `${req.protocol}://${req.get('host')}${cleanPath}`;
 }
-
-// // Helper function to get full URL for images (SIMPLIFIED)
-// const getFullImageUrl = (req, imagePath) => {
-//   if (!imagePath) return null;
-//   // If imagePath is already a full URL, return it. Otherwise, build it.
-//   if (imagePath.startsWith('http')) return imagePath;
-//   return `${req.protocol}://${req.get('host')}${imagePath}`;
-// }
 
 // --- GET All Posts (with Pagination, Likes, Comments, etc.) ---
 app.get('/api/posts', authenticateToken, async (req, res) => {
