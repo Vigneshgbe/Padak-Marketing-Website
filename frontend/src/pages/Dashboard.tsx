@@ -91,6 +91,8 @@ const Dashboard: React.FC = () => {
 
     // Render other views
     switch (activeView) {
+      case 'social':
+        return <SocialFeed />;
       case 'courses':
         return <MyCourses />;
       case 'internships':

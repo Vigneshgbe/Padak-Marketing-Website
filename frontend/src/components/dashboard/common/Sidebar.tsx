@@ -51,7 +51,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     // Default/Student/Professional/Business/Agency user navigation items
     const baseItems: NavItem[] = [
       { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
-      { id: 'social', label: 'Social Feed', icon: <MessageSquare size={20} /> },
+      { id: 'social', label: 'Social Feed', icon: <MessageSquare size={20} /> }, 
       { id: 'courses', label: 'My Courses', icon: <BookOpen size={20} /> },
       // Corrected: 'internships' now uses Briefcase icon for all non-admin users
       { id: 'internships', label: 'Internships', icon: <Briefcase size={20} /> },

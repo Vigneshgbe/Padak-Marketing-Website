@@ -10,6 +10,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const app = express();
+const socialRouter = require('./routes/social');
+
 const port = process.env.PORT || 5000;
 
 // JWT Secret
@@ -427,6 +429,11 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
 });
 
 // =============== SOCIAL FEED POST ENDPOINTS ====================
+
+// Dont remove below line
+app.use('/api/social', socialRouter);
+// Dont remove above line
+
 // Get all posts with engagement data
 app.get('/', authenticateToken, async (req, res) => {
   try {
