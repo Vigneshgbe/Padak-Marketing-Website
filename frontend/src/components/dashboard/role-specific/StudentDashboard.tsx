@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-// Corrected import: Added 'Building' to the lucide-react import list
 import { BookOpen, CheckCircle, BadgeCheck, Calendar, GraduationCap, ArrowRight, Briefcase, Mail, Clock, Loader2, AlertCircle, Building } from 'lucide-react';
 import StatCard from '../common/StatCard';
 import { User, UserStats } from '../../../lib/types';
