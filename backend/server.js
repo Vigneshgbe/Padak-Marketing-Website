@@ -472,7 +472,7 @@ app.get('/', authenticateToken, async (req, res) => {
 });
 
 // Create new post
-router.post('/', authenticateToken, upload.single('image'), async (req, res) => {
+app.post('/', authenticateToken, upload.single('image'), async (req, res) => {
   try {
     const { content } = req.body;
     const userId = req.user.id;
@@ -512,7 +512,7 @@ router.post('/', authenticateToken, upload.single('image'), async (req, res) => 
 });
 
 // Add engagement (comment, like, bookmark)
-router.post('/:id/engagement', authenticateToken, async (req, res) => {
+app.post('/:id/engagement', authenticateToken, async (req, res) => {
   try {
     const { type, content } = req.body;
     const postId = parseInt(req.params.id);
