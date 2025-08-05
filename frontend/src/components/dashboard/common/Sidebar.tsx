@@ -35,7 +35,8 @@ const Sidebar: React.FC<SidebarProps> = ({
     // Admin navigation items
     if (user?.accountType === 'admin') {
       return [
-        { id: 'dashboard', label: 'Admin Dashboard', icon: <LayoutDashboard size={20} /> }, // Changed to LayoutDashboard for general dashboard view
+        { id: 'dashboard', label: 'Admin Dashboard', icon: <LayoutDashboard size={20} /> }, 
+        { id: 'social', label: 'Social Feed', icon: <MessageSquare size={20} /> },
         { id: 'manage-courses', label: 'Manage Courses', icon: <BookOpen size={20} /> },
         { id: 'manage-users', label: 'Manage Users', icon: <Users size={20} /> },
         // Admin manages internships, so GraduationCap is appropriate for this context.
