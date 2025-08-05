@@ -1,47 +1,36 @@
-// src/components/dashboard/social/SocialFeed.tsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   MessageSquare, Heart, Share2, Bookmark, MoreHorizontal, 
-  Send, Smile, Image as ImageIcon, X, Loader2, AlertCircle 
+  Send, Image as ImageIcon, X, Loader2, AlertCircle 
 } from 'lucide-react';
 import { useAuth } from '../../../hooks/use-auth';
 import { formatDistanceToNow } from 'date-fns';
 
-interface Post {
+interface SocialActivity {
   id: number;
   user_id: number;
+  activity_type: string;
   content: string;
   image_url: string | null;
+  target_id: number | null;
   created_at: string;
-  user: {
+  user?: {
     id: number;
-    firstName: string;
-    lastName: string;
-    profileImage: string | null;
-    accountType: string;
+    first_name: string;
+    last_name: string;
+    profile_image: string | null;
+    account_type: string;
   };
-  likes: number;
-  comments: Comment[];
-  hasLiked: boolean;
-  hasBookmarked: boolean;
-}
-
-interface Comment {
-  id: number;
-  user_id: number;
-  content: string;
-  created_at: string;
-  user: {
-    id: number;
-    firstName: string;
-    lastName: string;
-    profileImage: string | null;
-  };
+  comments?: SocialActivity[];
+  likes?: number;
+  has_liked?: boolean;
+  has_bookmarked?: boolean;
+  comment_count?: number;
 }
 
 const SocialFeed: React.FC = () => {
   const { user, token } = useAuth();
-  const [posts, setPosts] = useState<Post[]>([]);
+  const [posts, setPosts] = useState<SocialActivity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [newPostContent, setNewPostContent] = useState('');
@@ -49,59 +38,46 @@ const SocialFeed: React.FC = () => {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
-  const fetchPosts = useCallback(async () => {
+  const fetchPosts = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:5000/api/posts', {
+      const response = await fetch('http://localhost:5000/api/social', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
       
-      if (!response.ok) {
-        throw new Error('Failed to fetch posts');
-      }
-      
-      const data: Post[] = await response.json();
+      if (!response.ok) throw new Error('Failed to fetch posts');
+      const data = await response.json();
       setPosts(data);
     } catch (err) {
-      console.error('Error fetching posts:', err);
       setError('Failed to load posts. Please try again later.');
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  };
 
   useEffect(() => {
-    if (token) {
-      fetchPosts();
-    }
-  }, [token, fetchPosts]);
+    if (token) fetchPosts();
+  }, [token]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
+    if (e.target.files?.[0]) {
       const file = e.target.files[0];
       setSelectedImage(file);
       setImagePreview(URL.createObjectURL(file));
     }
   };
 
-  const removeImage = () => {
-    setSelectedImage(null);
-    setImagePreview(null);
-  };
-
   const handleCreatePost = async () => {
     if (!newPostContent.trim() && !selectedImage) return;
 
-    try {
-      const formData = new FormData();
-      formData.append('content', newPostContent);
-      if (selectedImage) {
-        formData.append('image', selectedImage);
-      }
+    const formData = new FormData();
+    formData.append('content', newPostContent);
+    if (selectedImage) formData.append('image', selectedImage);
 
-      const response = await fetch('http://localhost:5000/api/posts', {
+    try {
+      const response = await fetch('http://localhost:5000/api/social', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -109,103 +85,73 @@ const SocialFeed: React.FC = () => {
         body: formData
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to create post');
-      }
-
+      if (!response.ok) throw new Error('Failed to create post');
       const newPost = await response.json();
+      
       setPosts([newPost, ...posts]);
       setNewPostContent('');
       setSelectedImage(null);
       setImagePreview(null);
     } catch (err) {
-      console.error('Error creating post:', err);
       setError('Failed to create post. Please try again.');
     }
   };
 
-  const handleAddComment = async (postId: number) => {
-    const content = newCommentContent[postId]?.trim();
-    if (!content) return;
-
+  const handleEngagement = async (postId: number, type: string, content = '') => {
     try {
-      const response = await fetch(`http://localhost:5000/api/posts/${postId}/comments`, {
+      const response = await fetch(`http://localhost:5000/api/social/${postId}/engagement`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ content })
+        body: JSON.stringify({ type, content })
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to add comment');
-      }
-
-      const newComment = await response.json();
-      setPosts(posts.map(post => 
-        post.id === postId 
-          ? { ...post, comments: [...post.comments, newComment] } 
-          : post
-      ));
-      setNewCommentContent({...newCommentContent, [postId]: ''});
-    } catch (err) {
-      console.error('Error adding comment:', err);
-      setError('Failed to add comment. Please try again.');
-    }
-  };
-
-  const handleLikePost = async (postId: number) => {
-    try {
-      const response = await fetch(`http://localhost:5000/api/posts/${postId}/like`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to like post');
-      }
-
+      if (!response.ok) throw new Error('Failed to process engagement');
       const result = await response.json();
-      setPosts(posts.map(post => 
-        post.id === postId 
-          ? { 
-              ...post, 
-              likes: result.action === 'like' ? post.likes + 1 : post.likes - 1,
-              hasLiked: result.action === 'like'
-            } 
-          : post
-      ));
-    } catch (err) {
-      console.error('Error liking post:', err);
-      setError('Failed to like post. Please try again.');
-    }
-  };
 
-  const handleBookmarkPost = async (postId: number) => {
-    try {
-      const response = await fetch(`http://localhost:5000/api/posts/${postId}/bookmark`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
+      setPosts(prevPosts => prevPosts.map(post => {
+        if (post.id !== postId) return post;
+        
+        const updatedPost = { ...post };
+        
+        switch (type) {
+          case 'like':
+            updatedPost.likes = result.action === 'removed' 
+              ? (post.likes || 0) - 1 
+              : (post.likes || 0) + 1;
+            updatedPost.has_liked = result.action !== 'removed';
+            break;
+            
+          case 'bookmark':
+            updatedPost.has_bookmarked = result.action !== 'removed';
+            break;
+            
+          case 'comment':
+            if (result.action !== 'removed' && result.user) {
+              updatedPost.comments = [
+                ...(post.comments || []),
+                {
+                  ...result,
+                  activity_type: 'comment',
+                  user: result.user
+                }
+              ];
+              updatedPost.comment_count = (post.comment_count || 0) + 1;
+            }
+            break;
         }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to bookmark post');
+        
+        return updatedPost;
+      }));
+      
+      // Clear comment input
+      if (type === 'comment' && result.action !== 'removed') {
+        setNewCommentContent(prev => ({ ...prev, [postId]: '' }));
       }
-
-      const result = await response.json();
-      setPosts(posts.map(post => 
-        post.id === postId 
-          ? { ...post, hasBookmarked: result.action === 'bookmark' } 
-          : post
-      ));
     } catch (err) {
-      console.error('Error bookmarking post:', err);
-      setError('Failed to bookmark post. Please try again.');
+      setError('Failed to process engagement. Please try again.');
     }
   };
 
@@ -232,16 +178,16 @@ const SocialFeed: React.FC = () => {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-4 mb-6">
         <div className="flex items-start space-x-3">
           <div className="flex-shrink-0">
-            {user?.profileImage ? (
+            {user?.profile_image ? (
               <img 
-                src={user.profileImage} 
+                src={user.profile_image} 
                 alt="Profile" 
                 className="w-10 h-10 rounded-full object-cover" 
               />
             ) : (
               <div className="bg-gray-200 dark:bg-gray-700 border-2 border-dashed rounded-full w-10 h-10 flex items-center justify-center">
                 <span className="text-lg font-semibold text-gray-400">
-                  {user?.firstName?.charAt(0) || 'U'}
+                  {user?.first_name?.charAt(0) || 'U'}
                 </span>
               </div>
             )}
@@ -263,7 +209,10 @@ const SocialFeed: React.FC = () => {
                   className="rounded-lg max-h-80 object-contain mx-auto"
                 />
                 <button 
-                  onClick={removeImage}
+                  onClick={() => {
+                    setSelectedImage(null);
+                    setImagePreview(null);
+                  }}
                   className="absolute top-2 right-2 bg-gray-800 bg-opacity-75 rounded-full p-1 text-white"
                 >
                   <X size={18} />
@@ -272,20 +221,15 @@ const SocialFeed: React.FC = () => {
             )}
             
             <div className="flex items-center justify-between mt-3">
-              <div className="flex space-x-3">
-                <label className="cursor-pointer text-gray-500 hover:text-orange-500 transition-colors">
-                  <input 
-                    type="file" 
-                    accept="image/*" 
-                    className="hidden" 
-                    onChange={handleImageChange}
-                  />
-                  <ImageIcon size={20} />
-                </label>
-                <button className="text-gray-500 hover:text-orange-500 transition-colors">
-                  <Smile size={20} />
-                </button>
-              </div>
+              <label className="cursor-pointer text-gray-500 hover:text-orange-500 transition-colors">
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  className="hidden" 
+                  onChange={handleImageChange}
+                />
+                <ImageIcon size={20} />
+              </label>
               
               <button
                 onClick={handleCreatePost}
@@ -317,16 +261,16 @@ const SocialFeed: React.FC = () => {
               <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
                 <div className="flex items-start space-x-3">
                   <div className="flex-shrink-0">
-                    {post.user.profileImage ? (
+                    {post.user?.profile_image ? (
                       <img 
-                        src={post.user.profileImage} 
-                        alt={post.user.firstName} 
+                        src={post.user.profile_image} 
+                        alt={post.user.first_name} 
                         className="w-10 h-10 rounded-full object-cover" 
                       />
                     ) : (
                       <div className="bg-gray-200 dark:bg-gray-700 border-2 border-dashed rounded-full w-10 h-10 flex items-center justify-center">
                         <span className="text-lg font-semibold text-gray-400">
-                          {post.user.firstName.charAt(0)}
+                          {post.user?.first_name?.charAt(0) || 'U'}
                         </span>
                       </div>
                     )}
@@ -334,8 +278,8 @@ const SocialFeed: React.FC = () => {
                   
                   <div>
                     <h3 className="font-semibold text-gray-900 dark:text-gray-100">
-                      {post.user.firstName} {post.user.lastName}
-                      {post.user.accountType === 'admin' && (
+                      {post.user?.first_name} {post.user?.last_name}
+                      {post.user?.account_type === 'admin' && (
                         <span className="ml-2 bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full">
                           Admin
                         </span>
@@ -371,49 +315,45 @@ const SocialFeed: React.FC = () => {
                 <div className="flex items-center justify-between text-gray-500 text-sm mt-4">
                   <div className="flex items-center space-x-2">
                     <div className="flex items-center">
-                      <Heart className="fill-red-500 text-red-500" size={16} />
-                      <span>{post.likes}</span>
+                      <Heart className={`${post.has_liked ? 'fill-red-500 text-red-500' : ''}`} size={16} />
+                      <span>{post.likes || 0}</span>
                     </div>
-                    <span>{post.comments.length} comments</span>
+                    <span>{post.comment_count || 0} comments</span>
                   </div>
-                  
-                  <span>0 shares</span>
                 </div>
               </div>
               
               {/* Post Actions */}
-              <div className="border-t border-gray-200 dark:border-gray-700 grid grid-cols-4">
+              <div className="border-t border-gray-200 dark:border-gray-700 grid grid-cols-3">
                 <button
-                  onClick={() => handleLikePost(post.id)}
+                  onClick={() => handleEngagement(post.id, 'like')}
                   className={`py-3 flex items-center justify-center space-x-2 text-sm font-medium ${
-                    post.hasLiked 
+                    post.has_liked 
                       ? 'text-red-500' 
                       : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
                   }`}
                 >
-                  <Heart className={post.hasLiked ? 'fill-red-500' : ''} size={18} />
+                  <Heart className={post.has_liked ? 'fill-red-500' : ''} size={18} />
                   <span>Like</span>
                 </button>
                 
-                <button className="py-3 flex items-center justify-center space-x-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-sm font-medium">
+                <button
+                  onClick={() => document.getElementById(`comment-input-${post.id}`)?.focus()}
+                  className="py-3 flex items-center justify-center space-x-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-sm font-medium"
+                >
                   <MessageSquare size={18} />
                   <span>Comment</span>
                 </button>
                 
-                <button className="py-3 flex items-center justify-center space-x-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-sm font-medium">
-                  <Share2 size={18} />
-                  <span>Share</span>
-                </button>
-                
                 <button
-                  onClick={() => handleBookmarkPost(post.id)}
+                  onClick={() => handleEngagement(post.id, 'bookmark')}
                   className={`py-3 flex items-center justify-center space-x-2 text-sm font-medium ${
-                    post.hasBookmarked 
+                    post.has_bookmarked 
                       ? 'text-orange-500' 
                       : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
                   }`}
                 >
-                  <Bookmark className={post.hasBookmarked ? 'fill-orange-500' : ''} size={18} />
+                  <Bookmark className={post.has_bookmarked ? 'fill-orange-500' : ''} size={18} />
                   <span>Save</span>
                 </button>
               </div>
@@ -421,19 +361,19 @@ const SocialFeed: React.FC = () => {
               {/* Comments Section */}
               <div className="border-t border-gray-200 dark:border-gray-700 p-4">
                 <div className="space-y-4 mb-4 max-h-96 overflow-y-auto pr-2">
-                  {post.comments.map((comment) => (
+                  {(post.comments || []).map((comment) => (
                     <div key={comment.id} className="flex items-start space-x-3">
                       <div className="flex-shrink-0">
-                        {comment.user.profileImage ? (
+                        {comment.user?.profile_image ? (
                           <img 
-                            src={comment.user.profileImage} 
-                            alt={comment.user.firstName} 
+                            src={comment.user.profile_image} 
+                            alt={comment.user.first_name} 
                             className="w-8 h-8 rounded-full object-cover" 
                           />
                         ) : (
                           <div className="bg-gray-200 dark:bg-gray-700 border-2 border-dashed rounded-full w-8 h-8 flex items-center justify-center">
                             <span className="text-sm font-semibold text-gray-400">
-                              {comment.user.firstName.charAt(0)}
+                              {comment.user?.first_name?.charAt(0) || 'U'}
                             </span>
                           </div>
                         )}
@@ -442,7 +382,7 @@ const SocialFeed: React.FC = () => {
                       <div className="bg-gray-100 dark:bg-gray-700 rounded-2xl px-4 py-2 flex-1">
                         <div className="flex items-baseline">
                           <h4 className="font-semibold text-sm text-gray-900 dark:text-gray-100">
-                            {comment.user.firstName} {comment.user.lastName}
+                            {comment.user?.first_name} {comment.user?.last_name}
                           </h4>
                           <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
                             {formatDistanceToNow(new Date(comment.created_at))} ago
@@ -457,22 +397,23 @@ const SocialFeed: React.FC = () => {
                 </div>
                 
                 <div className="flex items-center space-x-2">
-                  {user?.profileImage ? (
+                  {user?.profile_image ? (
                     <img 
-                      src={user.profileImage} 
+                      src={user.profile_image} 
                       alt="Your profile" 
                       className="w-8 h-8 rounded-full object-cover" 
                     />
                   ) : (
                     <div className="bg-gray-200 dark:bg-gray-700 border-2 border-dashed rounded-full w-8 h-8 flex items-center justify-center">
                       <span className="text-sm font-semibold text-gray-400">
-                        {user?.firstName?.charAt(0) || 'U'}
+                        {user?.first_name?.charAt(0) || 'U'}
                       </span>
                     </div>
                   )}
                   
                   <div className="flex-1 flex bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
                     <input
+                      id={`comment-input-${post.id}`}
                       type="text"
                       value={newCommentContent[post.id] || ''}
                       onChange={(e) => setNewCommentContent({
@@ -484,13 +425,13 @@ const SocialFeed: React.FC = () => {
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                           e.preventDefault();
-                          handleAddComment(post.id);
+                          handleEngagement(post.id, 'comment', newCommentContent[post.id]);
                         }
                       }}
                     />
                     
                     <button
-                      onClick={() => handleAddComment(post.id)}
+                      onClick={() => handleEngagement(post.id, 'comment', newCommentContent[post.id])}
                       disabled={!newCommentContent[post.id]?.trim()}
                       className={`px-3 ${
                         newCommentContent[post.id]?.trim()

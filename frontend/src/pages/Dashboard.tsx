@@ -11,6 +11,7 @@ import BusinessDashboard from '../components/dashboard/role-specific/BusinessDas
 import AgencyDashboard from '../components/dashboard/role-specific/AgencyDashboard';
 import AdminDashboard from '../components/dashboard/role-specific/AdminDashboard';
 import DashboardHome from './dashboard/DashboardHome';
+import SocialFeed from '../components/dashboard/social/SocialFeed';
 import MyCourses from './dashboard/MyCourses';
 import Assignments from './dashboard/Assignments';
 import Certificates from './dashboard/Certificates';
