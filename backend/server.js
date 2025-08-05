@@ -96,7 +96,7 @@ app.use(cors({
 // Middleware
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
 // ======== AUTHENTICATION MIDDLEWARE ========
 
@@ -460,206 +460,207 @@ const socialUpload = multer({
 }).single('image'); // 'image' should match the FormData key from the frontend
 
 
-// --- Helper function to get full URL for images ---
+// --- The Bulletproof Helper Function ---
 const getFullImageUrl = (req, imagePath) => {
-    if (!imagePath) return null;
-    if (imagePath.startsWith('http')) return imagePath;
-    return `${req.protocol}://${req.get('host')}${imagePath.startsWith('/') ? '' : '/'}${imagePath.replace('public/', '')}`;
+  if (!imagePath) {
+      return null;
+  }
+  if (imagePath.startsWith('http')) {
+      return imagePath;
+  }
+  let cleanPath = imagePath.replace(/^public\//, '');
+  if (!cleanPath.startsWith('/')) {
+      cleanPath = '/' + cleanPath;
+  }
+  return `${req.protocol}://${req.get('host')}${cleanPath}`;
 }
 
-// --- GET All Posts (with Pagination, Likes, Comments, etc.) ---
-// --- REVISED AND FIXED ---
-app.get('/api/posts', authenticateToken, async (req, res) => {
-  const userId = req.user.id;
-  const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || 10;
-  const offset = (page - 1) * limit;
+// // Helper function to get full URL for images (SIMPLIFIED)
+// const getFullImageUrl = (req, imagePath) => {
+//   if (!imagePath) return null;
+//   // If imagePath is already a full URL, return it. Otherwise, build it.
+//   if (imagePath.startsWith('http')) return imagePath;
+//   return `${req.protocol}://${req.get('host')}${imagePath}`;
+// }
 
-  try {
-    // Step 1: Get the total count of visible posts for pagination
-    const [[{ totalPosts }]] = await pool.execute(`
-      SELECT COUNT(DISTINCT p.id) as totalPosts FROM social_activities p
-      WHERE p.activity_type = 'post'
-      AND (
-        p.visibility = 'public'
-        OR (p.visibility = 'private' AND p.user_id = ?)
-        OR (p.visibility = 'connections' AND (p.user_id = ? OR p.user_id IN (
+// --- GET All Posts (with Pagination, Likes, Comments, etc.) ---
+app.get('/api/posts', authenticateToken, async (req, res) => {
+const userId = req.user.id;
+const page = parseInt(req.query.page, 10) || 1;
+const limit = parseInt(req.query.limit, 10) || 10;
+const offset = (page - 1) * limit;
+
+try {
+  // Step 1: Get total count (no changes here)
+  const [[{ totalPosts }]] = await pool.execute(`
+    SELECT COUNT(DISTINCT p.id) as totalPosts FROM social_activities p
+    WHERE p.activity_type = 'post'
+    AND (
+      p.visibility = 'public' OR (p.visibility = 'private' AND p.user_id = ?) OR
+      (p.visibility = 'connections' AND (p.user_id = ? OR p.user_id IN (
+          SELECT user_id_2 FROM user_connections WHERE user_id_1 = ? AND status = 'accepted'
+          UNION
+          SELECT user_id_1 FROM user_connections WHERE user_id_2 = ? AND status = 'accepted'
+      )))
+    )
+  `, [userId, userId, userId, userId]);
+
+  const totalPages = Math.ceil(totalPosts / limit);
+
+  // Step 2: Fetch paginated posts (no changes here)
+  const [posts] = await pool.execute(`
+    SELECT
+      p.id, p.user_id, p.content, p.image_url, p.created_at, p.updated_at,
+      p.visibility, p.achievement, p.share_count,
+      u.first_name, u.last_name, u.profile_image, u.account_type,
+      (SELECT COUNT(*) FROM social_activities WHERE activity_type = 'like' AND target_id = p.id) AS likes,
+      (SELECT COUNT(*) FROM social_activities WHERE activity_type = 'comment' AND target_id = p.id) AS comment_count,
+      EXISTS(SELECT 1 FROM social_activities WHERE activity_type = 'like' AND target_id = p.id AND user_id = ?) AS has_liked,
+      EXISTS(SELECT 1 FROM social_activities WHERE activity_type = 'bookmark' AND target_id = p.id AND user_id = ?) AS has_bookmarked
+    FROM social_activities p JOIN users u ON p.user_id = u.id
+    WHERE p.activity_type = 'post'
+    AND (
+        p.visibility = 'public' OR (p.visibility = 'private' AND p.user_id = ?) OR
+        (p.visibility = 'connections' AND (p.user_id = ? OR p.user_id IN (
             SELECT user_id_2 FROM user_connections WHERE user_id_1 = ? AND status = 'accepted'
             UNION
             SELECT user_id_1 FROM user_connections WHERE user_id_2 = ? AND status = 'accepted'
         )))
-      )
-    `, [userId, userId, userId, userId]);
-
-    const totalPages = Math.ceil(totalPosts / limit);
-
-    // Step 2: Fetch the paginated list of posts with all necessary data
-    const [posts] = await pool.execute(`
-      SELECT
-        p.id, p.user_id, p.content, p.image_url, p.created_at, p.updated_at,
-        p.visibility, p.achievement, p.share_count,
-        u.first_name, u.last_name, u.profile_image, u.account_type,
-        (SELECT COUNT(*) FROM social_activities WHERE activity_type = 'like' AND target_id = p.id) AS likes,
-        (SELECT COUNT(*) FROM social_activities WHERE activity_type = 'comment' AND target_id = p.id) AS comment_count,
-        EXISTS(SELECT 1 FROM social_activities WHERE activity_type = 'like' AND target_id = p.id AND user_id = ?) AS has_liked,
-        EXISTS(SELECT 1 FROM social_activities WHERE activity_type = 'bookmark' AND target_id = p.id AND user_id = ?) AS has_bookmarked
-      FROM social_activities p
-      JOIN users u ON p.user_id = u.id
-      WHERE
-        p.activity_type = 'post'
-        AND (
-            p.visibility = 'public'
-            OR (p.visibility = 'private' AND p.user_id = ?)
-            OR (p.visibility = 'connections' AND (p.user_id = ? OR p.user_id IN (
-                SELECT user_id_2 FROM user_connections WHERE user_id_1 = ? AND status = 'accepted'
-                UNION
-                SELECT user_id_1 FROM user_connections WHERE user_id_2 = ? AND status = 'accepted'
-            )))
-        )
-      ORDER BY p.created_at DESC
-      LIMIT ?
-      OFFSET ?
-    `, [userId, userId, userId, userId, userId, userId, limit, offset]);
-    
-    // ============================ FIX STARTS HERE ============================
-
-    // If no posts are returned for the current page, exit early.
-    // This prevents the error when postIds is an empty array.
-    if (posts.length === 0) {
-        return res.json({
-            posts: [],
-            pagination: { page, totalPages, totalPosts }
-        });
-    }
-
-    // Step 3: Fetch comments for the retrieved posts in a single query
-    const postIds = posts.map(p => p.id);
-    let comments = [];
-
-    // Only query for comments if there are posts to fetch comments for.
-    if (postIds.length > 0) {
-        const [fetchedComments] = await pool.execute(`
-            SELECT
-                c.id, c.user_id, c.content, c.created_at, c.target_id,
-                u.first_name, u.last_name, u.profile_image, u.account_type
-            FROM social_activities c
-            JOIN users u ON c.user_id = u.id
-            WHERE c.activity_type = 'comment' AND c.target_id IN (?)
-            ORDER BY c.created_at ASC
-        `, [postIds]); // Pass the array directly, mysql2 handles the expansion.
-        comments = fetchedComments;
-    }
-    
-    // ============================= FIX ENDS HERE =============================
-
-    // Step 4: Map comments to their respective posts
-    const postsWithData = posts.map(post => {
-      const postComments = comments
-        .filter(comment => comment.target_id === post.id)
-        .map(c => ({
-          ...c,
-          user: {
-            id: c.user_id,
-            first_name: c.first_name,
-            last_name: c.last_name,
-            profile_image: getFullImageUrl(req, c.profile_image),
-            account_type: c.account_type,
-          }
-        }));
-
-      return {
-        ...post,
-        has_liked: !!post.has_liked,
-        has_bookmarked: !!post.has_bookmarked,
-        image_url: getFullImageUrl(req, post.image_url),
-        user: {
-          id: post.user_id,
-          first_name: post.first_name,
-          last_name: post.last_name,
-          profile_image: getFullImageUrl(req, post.profile_image),
-          account_type: post.account_type,
-        },
-        comments: postComments,
-      };
-    });
-
-    res.json({
-      posts: postsWithData,
-      pagination: {
-        page,
-        totalPages,
-        totalPosts,
-      }
-    });
-
-  } catch (error) {
-    console.error('Error fetching posts:', error);
-    res.status(500).json({ error: 'Failed to fetch posts.' });
+    )
+    ORDER BY p.created_at DESC LIMIT ? OFFSET ?
+  `, [userId, userId, userId, userId, userId, userId, limit, offset]);
+  
+  if (posts.length === 0) {
+      return res.json({ posts: [], pagination: { page, totalPages, totalPosts } });
   }
+
+  // Step 3: Fetch comments for the retrieved posts
+  const postIds = posts.map(p => p.id);
+  let comments = [];
+
+  // ============================ SQL FIX IS HERE ============================
+  // We construct the query string by safely escaping the array of IDs.
+  // This correctly generates WHERE ... IN (1, 2, 3) and prevents the error.
+  const commentsQuery = `
+    SELECT
+      c.id, c.user_id, c.content, c.created_at, c.target_id,
+      u.first_name, u.last_name, u.profile_image, u.account_type
+    FROM social_activities c JOIN users u ON c.user_id = u.id
+    WHERE c.activity_type = 'comment' AND c.target_id IN (${pool.escape(postIds)})
+    ORDER BY c.created_at ASC
+  `;
+  const [fetchedComments] = await pool.query(commentsQuery); // Use .query for non-prepared statements
+  comments = fetchedComments;
+  // ============================= SQL FIX ENDS HERE =============================
+  
+  // Step 4: Map comments and format image URLs
+  const postsWithData = posts.map(post => {
+    const postComments = comments
+      .filter(comment => comment.target_id === post.id)
+      .map(c => ({
+        ...c,
+        user: {
+          id: c.user_id,
+          first_name: c.first_name,
+          last_name: c.last_name,
+          // Use the simplified helper for comment author images
+          profile_image: getFullImageUrl(req, c.profile_image),
+          account_type: c.account_type,
+        }
+      }));
+
+    return {
+      ...post,
+      has_liked: !!post.has_liked,
+      has_bookmarked: !!post.has_bookmarked,
+      // Use the simplified helper for post images
+      image_url: getFullImageUrl(req, post.image_url),
+      user: {
+        id: post.user_id,
+        first_name: post.first_name,
+        last_name: post.last_name,
+        // Use the simplified helper for post author images
+        profile_image: getFullImageUrl(req, post.profile_image),
+        account_type: post.account_type,
+      },
+      comments: postComments,
+    };
+  });
+
+  res.json({
+    posts: postsWithData,
+    pagination: { page, totalPages, totalPosts }
+  });
+
+} catch (error) {
+  console.error('Error fetching posts:', error);
+  res.status(500).json({ error: 'Failed to fetch posts.' });
+}
 });
 
 
 // --- POST a new post ---
+// --- CORRECTED IMAGE PATH SAVING ---
 app.post('/api/posts', authenticateToken, (req, res) => {
-    socialUpload(req, res, async (err) => {
-        if (err) {
-            console.error('Multer error:', err);
-            return res.status(400).json({ error: err.message });
-        }
-        
-        try {
-            const { content, achievement, visibility } = req.body;
-            const userId = req.user.id;
+  socialUpload(req, res, async (err) => {
+      if (err) {
+          console.error('Multer error:', err);
+          return res.status(400).json({ error: err.message });
+      }
+      
+      try {
+          const { content, achievement, visibility } = req.body;
+          const userId = req.user.id;
 
-            if (!content && !req.file) {
-                return res.status(400).json({ error: 'Post must have content or an image.' });
-            }
+          if (!content && !req.file) {
+              return res.status(400).json({ error: 'Post must have content or an image.' });
+          }
 
-            const imageUrl = req.file ? `public/uploads/social/${req.file.filename}` : null;
-            const isAchievement = achievement === 'true';
+          // ============================ IMAGE PATH FIX IS HERE ============================
+          // Save a clean URL path instead of a filesystem path.
+          const imageUrl = req.file ? `/uploads/social/${req.file.filename}` : null;
+          // ============================ IMAGE PATH FIX ENDS HERE ==========================
 
-            const [result] = await pool.execute(
-                `INSERT INTO social_activities 
-                    (user_id, activity_type, content, image_url, achievement, visibility) 
-                VALUES (?, 'post', ?, ?, ?, ?)`,
-                [userId, content || '', imageUrl, isAchievement, visibility]
-            );
+          const isAchievement = achievement === 'true';
 
-            const postId = result.insertId;
+          const [result] = await pool.execute(
+              `INSERT INTO social_activities 
+                  (user_id, activity_type, content, image_url, achievement, visibility) 
+              VALUES (?, 'post', ?, ?, ?, ?)`,
+              [userId, content || '', imageUrl, isAchievement, visibility]
+          );
 
-            // Fetch the newly created post with all user info to return to the frontend
-            const [[newPost]] = await pool.execute(`
-                SELECT
-                    p.*,
-                    u.first_name, u.last_name, u.profile_image, u.account_type
-                FROM social_activities p
-                JOIN users u ON p.user_id = u.id
-                WHERE p.id = ?
-            `, [postId]);
+          const postId = result.insertId;
 
-            res.status(201).json({
-                ...newPost,
-                has_liked: false,
-                has_bookmarked: false,
-                likes: 0,
-                comment_count: 0,
-                image_url: getFullImageUrl(req, newPost.image_url),
-                user: {
-                  id: newPost.user_id,
-                  first_name: newPost.first_name,
-                  last_name: newPost.last_name,
-                  profile_image: getFullImageUrl(req, newPost.profile_image),
-                  account_type: newPost.account_type,
-                },
-                comments: [],
-            });
-        } catch (error) {
-            console.error('Error creating post:', error);
-            res.status(500).json({ error: 'Failed to create post.' });
-        }
-    });
+          // Fetch the newly created post to return to the frontend
+          const [[newPost]] = await pool.execute(`
+              SELECT p.*, u.first_name, u.last_name, u.profile_image, u.account_type
+              FROM social_activities p JOIN users u ON p.user_id = u.id
+              WHERE p.id = ?
+          `, [postId]);
+
+          res.status(201).json({
+              ...newPost,
+              has_liked: false,
+              has_bookmarked: false,
+              likes: 0,
+              comment_count: 0,
+              image_url: getFullImageUrl(req, newPost.image_url),
+              user: {
+                id: newPost.user_id,
+                first_name: newPost.first_name,
+                last_name: newPost.last_name,
+                profile_image: getFullImageUrl(req, newPost.profile_image),
+                account_type: newPost.account_type,
+              },
+              comments: [],
+          });
+      } catch (error) {
+          console.error('Error creating post:', error);
+          res.status(500).json({ error: 'Failed to create post.' });
+      }
+  });
 });
-
 
 // --- PUT (edit) a post ---
 app.put('/api/posts/:id', authenticateToken, async (req, res) => {
