@@ -41,17 +41,28 @@ const SocialFeed: React.FC = () => {
   const fetchPosts = async () => {
     try {
       setLoading(true);
+      setError(null);
+      console.log("Fetching posts with token:", token?.slice(0, 10) + "..."); // Debug token
+      
       const response = await fetch('http://localhost:5000/api/social', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
       
-      if (!response.ok) throw new Error('Failed to fetch posts');
+      console.log("API Response Status:", response.status); // Debug response
+      
+      if (!response.ok) {
+        const errorBody = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorBody || 'Unknown error'}`);
+      }
+      
       const data = await response.json();
+      console.log("API Response Data:", data); // Debug data
       setPosts(data);
-    } catch (err) {
-      setError('Failed to load posts. Please try again later.');
+    } catch (err: any) {
+      console.error('Error fetching posts:', err);
+      setError(`Failed to load posts: ${err.message}`);
     } finally {
       setLoading(false);
     }
