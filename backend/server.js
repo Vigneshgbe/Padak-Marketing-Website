@@ -426,148 +426,202 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
   }
 });
 
-// =============== SOCIAL FEED POST ENDPOINTS ====================
+// ======== SOCIAL FEED FUNCTIONALITY ========
+
+// Create social_activities table if not exists
+const createSocialTable = async () => {
+  try {
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS social_activities (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        activity_type ENUM('post', 'comment', 'like', 'bookmark') NOT NULL,
+        content TEXT,
+        image_url VARCHAR(255),
+        target_id INT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (target_id) REFERENCES social_activities(id) ON DELETE CASCADE
+      )
+    `);
+    console.log('Social activities table created/verified');
+  } catch (error) {
+    console.error('Error creating social activities table:', error);
+  }
+};
+
+createSocialTable();
+
+// Multer configuration for social images
+const socialStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const dir = path.join(__dirname, 'uploads', 'social');
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    cb(null, dir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'social-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const socialUpload = multer({ 
+  storage: socialStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: function (req, file, cb) {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'));
+    }
+  }
+});
 
 // Get all posts with engagement data
-app.get('/', authenticateToken, async (req, res) => {
+app.get('/api/social', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
     
-    const postsQuery = `
+    // Query to get all posts
+    const [posts] = await pool.execute(`
       SELECT 
-        p.id, p.content, p.image_url, p.created_at,
+        sa.id, sa.content, sa.image_url, sa.created_at,
         u.id AS user_id, u.first_name, u.last_name, u.profile_image, u.account_type,
-        (SELECT COUNT(*) FROM social_activities WHERE activity_type = 'comment' AND target_id = p.id) AS comment_count,
-        (SELECT COUNT(*) FROM social_activities WHERE activity_type = 'like' AND target_id = p.id) AS like_count,
-        EXISTS(SELECT 1 FROM social_activities WHERE activity_type = 'like' AND target_id = p.id AND user_id = $1) AS has_liked,
-        EXISTS(SELECT 1 FROM social_activities WHERE activity_type = 'bookmark' AND target_id = p.id AND user_id = $1) AS has_bookmarked
-      FROM social_activities p
-      JOIN users u ON p.user_id = u.id
-      WHERE p.activity_type = 'post'
-      ORDER BY p.created_at DESC
-    `;
-    
-    const postsResult = await pool.query(postsQuery, [userId]);
-    
+        (SELECT COUNT(*) FROM social_activities WHERE activity_type = 'comment' AND target_id = sa.id) AS comment_count,
+        (SELECT COUNT(*) FROM social_activities WHERE activity_type = 'like' AND target_id = sa.id) AS like_count,
+        (SELECT COUNT(*) > 0 FROM social_activities WHERE activity_type = 'like' AND target_id = sa.id AND user_id = ?) AS has_liked,
+        (SELECT COUNT(*) > 0 FROM social_activities WHERE activity_type = 'bookmark' AND target_id = sa.id AND user_id = ?) AS has_bookmarked
+      FROM social_activities sa
+      JOIN users u ON sa.user_id = u.id
+      WHERE sa.activity_type = 'post'
+      ORDER BY sa.created_at DESC
+    `, [userId, userId]);
+
     // Get comments for each post
-    for (const post of postsResult.rows) {
-      const commentsQuery = `
+    for (const post of posts) {
+      const [comments] = await pool.execute(`
         SELECT 
           c.id, c.content, c.created_at,
           u.id AS user_id, u.first_name, u.last_name, u.profile_image
         FROM social_activities c
         JOIN users u ON c.user_id = u.id
-        WHERE c.activity_type = 'comment' AND c.target_id = $1
+        WHERE c.activity_type = 'comment' AND c.target_id = ?
         ORDER BY c.created_at ASC
-      `;
+      `, [post.id]);
       
-      const commentsResult = await pool.query(commentsQuery, [post.id]);
-      post.comments = commentsResult.rows;
+      post.comments = comments;
     }
-    
-    res.json(postsResult.rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
+
+    res.json(posts);
+  } catch (error) {
+    console.error('Error fetching social posts:', error);
+    res.status(500).json({ error: 'Failed to load posts. Please try again later.' });
   }
 });
 
-// Create new post
-app.post('/', authenticateToken, upload.single('image'), async (req, res) => {
+// Create a new post
+app.post('/api/social', authenticateToken, socialUpload.single('image'), async (req, res) => {
   try {
     const { content } = req.body;
     const userId = req.user.id;
-    let imageUrl = null;
-    
-    if (req.file) {
-      imageUrl = `/uploads/${req.file.filename}`;
-    }
-    
-    const result = await pool.query(
+    const imageUrl = req.file ? `/uploads/social/${req.file.filename}` : null;
+
+    // Insert new post
+    const [result] = await pool.execute(
       `INSERT INTO social_activities 
         (user_id, activity_type, content, image_url) 
-       VALUES ($1, 'post', $2, $3)
-       RETURNING *`,
+       VALUES (?, 'post', ?, ?)`,
       [userId, content, imageUrl]
     );
-    
-    const userResult = await pool.query(
-      'SELECT id, first_name, last_name, profile_image, account_type FROM users WHERE id = $1',
-      [userId]
-    );
-    
-    const newPost = {
-      ...result.rows[0],
-      user: userResult.rows[0],
-      comments: [],
-      likes: 0,
-      has_liked: false,
-      has_bookmarked: false
-    };
-    
-    res.status(201).json(newPost);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
+
+    // Get the newly created post with user info
+    const [newPost] = await pool.execute(`
+      SELECT 
+        sa.id, sa.content, sa.image_url, sa.created_at,
+        u.id AS user_id, u.first_name, u.last_name, u.profile_image, u.account_type,
+        0 AS comment_count, 0 AS like_count, 0 AS has_liked, 0 AS has_bookmarked
+      FROM social_activities sa
+      JOIN users u ON sa.user_id = u.id
+      WHERE sa.id = ?
+    `, [result.insertId]);
+
+    res.status(201).json(newPost[0]);
+  } catch (error) {
+    console.error('Error creating post:', error);
+    res.status(500).json({ error: 'Failed to create post. Please try again.' });
   }
 });
 
-// Add engagement (comment, like, bookmark)
-app.post('/:id/engagement', authenticateToken, async (req, res) => {
+// Handle post engagement (like, bookmark, comment)
+app.post('/api/social/:postId/engagement', authenticateToken, async (req, res) => {
   try {
-    const { type, content } = req.body;
-    const postId = parseInt(req.params.id);
+    const postId = req.params.postId;
     const userId = req.user.id;
-    
-    if (!['comment', 'like', 'bookmark'].includes(type)) {
+    const { type, content } = req.body;
+
+    if (!['like', 'bookmark', 'comment'].includes(type)) {
       return res.status(400).json({ error: 'Invalid engagement type' });
     }
-    
+
     if (type === 'comment' && !content) {
-      return res.status(400).json({ error: 'Comment content required' });
+      return res.status(400).json({ error: 'Comment content is required' });
     }
-    
-    // Handle like/bookmark toggling
+
+    // Check if engagement already exists
+    const [existing] = await pool.execute(
+      `SELECT id FROM social_activities 
+       WHERE user_id = ? AND activity_type = ? AND target_id = ?`,
+      [userId, type, postId]
+    );
+
+    // For like/bookmark - toggle functionality
     if (type === 'like' || type === 'bookmark') {
-      const existing = await pool.query(
-        `SELECT id FROM social_activities 
-         WHERE user_id = $1 AND activity_type = $2 AND target_id = $3`,
-        [userId, type, postId]
-      );
-      
-      if (existing.rows.length > 0) {
+      if (existing.length > 0) {
         // Remove engagement
-        await pool.query(
+        await pool.execute(
           `DELETE FROM social_activities 
-           WHERE id = $1`,
-          [existing.rows[0].id]
+           WHERE id = ?`,
+          [existing[0].id]
         );
         return res.json({ action: 'removed' });
+      } else {
+        // Add new engagement
+        await pool.execute(
+          `INSERT INTO social_activities 
+            (user_id, activity_type, target_id) 
+           VALUES (?, ?, ?)`,
+          [userId, type, postId]
+        );
+        return res.json({ action: 'added' });
       }
     }
-    
-    // Add new engagement
-    const result = await pool.query(
-      `INSERT INTO social_activities 
-        (user_id, activity_type, content, target_id) 
-       VALUES ($1, $2, $3, $4)
-       RETURNING *`,
-      [userId, type, content, postId]
-    );
-    
+
+    // Handle comment creation
     if (type === 'comment') {
-      const userResult = await pool.query(
-        'SELECT id, first_name, last_name, profile_image FROM users WHERE id = $1',
-        [userId]
+      const [result] = await pool.execute(
+        `INSERT INTO social_activities 
+          (user_id, activity_type, target_id, content) 
+         VALUES (?, 'comment', ?, ?)`,
+        [userId, postId, content]
       );
-      
-      result.rows[0].user = userResult.rows[0];
+
+      // Get the newly created comment with user info
+      const [newComment] = await pool.execute(`
+        SELECT 
+          c.id, c.content, c.created_at,
+          u.id AS user_id, u.first_name, u.last_name, u.profile_image
+        FROM social_activities c
+        JOIN users u ON c.user_id = u.id
+        WHERE c.id = ?
+      `, [result.insertId]);
+
+      return res.status(201).json(newComment[0]);
     }
-    
-    res.status(201).json(result.rows[0]);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
+  } catch (error) {
+    console.error('Error processing engagement:', error);
+    res.status(500).json({ error: 'Failed to process engagement. Please try again.' });
   }
 });
 
