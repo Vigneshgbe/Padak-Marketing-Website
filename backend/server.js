@@ -430,11 +430,6 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
 // ============== ENHANCED SOCIAL FEED FUNCTIONALITY ===============
 // =================================================================
 
-// Ensure you have multer for file uploads: npm install multer
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-
 // --- Multer Configuration for Social Post Images ---
 const socialUploadDir = 'public/uploads/social';
 if (!fs.existsSync(socialUploadDir)) {
