@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+// src/components/dashboard/social/SocialFeed.tsx
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  MessageSquare, Heart, Bookmark, MoreVertical,
+  MessageSquare, Heart, Share2, Bookmark, MoreVertical,
   Send, Image as ImageIcon, X, Loader2, AlertCircle, BadgeCheck,
-  Edit, Trash, Share2, Smile, ChevronDown, Globe, Lock, Users, Check
+  Edit2, Trash2, Plus, Camera, Smile, Hash, AtSign, ChevronDown,
+  Globe, Lock, Users, Check
 } from 'lucide-react';
 import { useAuth } from '../../../hooks/use-auth';
 import { formatDistanceToNow } from 'date-fns';
@@ -520,8 +522,8 @@ const SocialFeed: React.FC = () => {
                   <button
                     onClick={() => setIsAchievement(!isAchievement)}
                     className={`p-2 rounded-lg transition-colors ${isAchievement
-                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                      : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400'
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                        : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400'
                       }`}
                   >
                     <BadgeCheck size={20} />
@@ -532,8 +534,8 @@ const SocialFeed: React.FC = () => {
                   onClick={handleCreatePost}
                   disabled={(!newPostContent.trim() && !selectedImage) || isPosting}
                   className={`px-6 py-2 rounded-full font-medium transition-all duration-200 ${newPostContent.trim() || selectedImage
-                    ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:shadow-lg transform hover:scale-105'
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
+                      ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:shadow-lg transform hover:scale-105'
+                      : 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
                     }`}
                 >
                   {isPosting ? (
@@ -725,19 +727,19 @@ const SocialFeed: React.FC = () => {
                 )}
               </div>
 
-              {/* Fixed Post Stats Section */}
+              {/* Post Stats */}
               {(post.likes > 0 || post.comment_count > 0 || post.share_count > 0) && (
                 <div className="px-4 pb-3 flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
-                  <div className="flex items-center space-x-4 min-w-0">
+                  <div className="flex items-center space-x-4">
                     {post.likes > 0 && (
-                      <div className="flex items-center space-x-1">
+                      <span className="flex items-center space-x-1">
                         <div className="flex -space-x-1">
                           <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center">
                             <Heart size={12} className="text-white fill-white" />
                           </div>
                         </div>
                         <span>{post.likes}</span>
-                      </div>
+                      </span>
                     )}
                   </div>
                   <div className="flex items-center space-x-4">
@@ -751,14 +753,13 @@ const SocialFeed: React.FC = () => {
                 </div>
               )}
 
-
               {/* Post Actions */}
               <div className="border-t border-gray-100 dark:border-gray-700 px-2 py-1 flex items-center justify-around">
                 <button
                   onClick={() => handleEngagement(post.id, 'like')}
                   className={`flex-1 flex items-center justify-center space-x-2 py-3 rounded-lg transition-colors ${post.has_liked
-                    ? 'text-red-500'
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                      ? 'text-red-500'
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50'
                     }`}
                 >
                   <Heart size={20} className={post.has_liked ? 'fill-red-500' : ''} />
@@ -787,8 +788,8 @@ const SocialFeed: React.FC = () => {
                 <button
                   onClick={() => handleEngagement(post.id, 'bookmark')}
                   className={`flex-1 flex items-center justify-center space-x-2 py-3 rounded-lg transition-colors ${post.has_bookmarked
-                    ? 'text-orange-500'
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                      ? 'text-orange-500'
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50'
                     }`}
                 >
                   <Bookmark size={20} className={post.has_bookmarked ? 'fill-orange-500' : ''} />
@@ -873,8 +874,8 @@ const SocialFeed: React.FC = () => {
                       onClick={() => handleEngagement(post.id, 'comment', newCommentContent[post.id])}
                       disabled={!newCommentContent[post.id]?.trim()}
                       className={`ml-2 p-1.5 rounded-full transition-colors ${newCommentContent[post.id]?.trim()
-                        ? 'text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20'
-                        : 'text-gray-400 cursor-not-allowed'
+                          ? 'text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20'
+                          : 'text-gray-400 cursor-not-allowed'
                         }`}
                     >
                       <Send size={16} />
