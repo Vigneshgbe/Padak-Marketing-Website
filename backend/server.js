@@ -428,6 +428,41 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
 
 // ======== SOCIAL FEED FUNCTIONALITY ========
 
+// Create post endpoint
+app.post('/api/social', authenticateToken, async (req, res) => {
+  try {
+    const { content, achievement } = req.body;
+    const userId = req.user.id;
+    const imageUrl = req.file ? `/uploads/social/${req.file.filename}` : null;
+    const isAchievement = achievement === 'true';
+
+    // Insert new post
+    const [result] = await pool.execute(
+      `INSERT INTO social_activities 
+        (user_id, activity_type, content, image_url, achievement) 
+       VALUES (?, 'post', ?, ?, ?)`,
+      [userId, content, imageUrl, isAchievement]
+    );
+
+    // Get the newly created post with user info
+    const [newPost] = await pool.execute(`
+      SELECT 
+        sa.id, sa.content, sa.image_url, sa.created_at, sa.achievement,
+        u.id AS user_id, u.first_name, u.last_name, u.profile_image, u.account_type,
+        0 AS comment_count, 0 AS like_count, 0 AS has_liked, 0 AS has_bookmarked
+      FROM social_activities sa
+      JOIN users u ON sa.user_id = u.id
+      WHERE sa.id = ?
+    `, [result.insertId]);
+
+    res.status(201).json(newPost[0]);
+  } catch (error) {
+    console.error('Error creating post:', error);
+    res.status(500).json({ error: 'Failed to create post. Please try again.' });
+  }
+});
+
+
 // Create social_activities table if not exists
 const createSocialTable = async () => {
   try {

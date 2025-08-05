@@ -1,7 +1,8 @@
+// src/components/dashboard/social/SocialFeed.tsx
 import React, { useState, useEffect } from 'react';
 import { 
   MessageSquare, Heart, Share2, Bookmark, MoreHorizontal, 
-  Send, Image as ImageIcon, X, Loader2, AlertCircle 
+  Send, Image as ImageIcon, X, Loader2, AlertCircle, BadgeCheck
 } from 'lucide-react';
 import { useAuth } from '../../../hooks/use-auth';
 import { formatDistanceToNow } from 'date-fns';
@@ -26,6 +27,7 @@ interface SocialActivity {
   has_liked?: boolean;
   has_bookmarked?: boolean;
   comment_count?: number;
+  achievement?: boolean; // New field for achievement posts
 }
 
 const SocialFeed: React.FC = () => {
@@ -37,6 +39,7 @@ const SocialFeed: React.FC = () => {
   const [newCommentContent, setNewCommentContent] = useState<{[key: number]: string}>({});
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isAchievement, setIsAchievement] = useState(false); // For achievement toggle
 
   const fetchPosts = async () => {
     try {
@@ -81,6 +84,7 @@ const SocialFeed: React.FC = () => {
 
     const formData = new FormData();
     formData.append('content', newPostContent);
+    formData.append('achievement', String(isAchievement)); // Add achievement flag
     if (selectedImage) formData.append('image', selectedImage);
 
     try {
@@ -99,6 +103,7 @@ const SocialFeed: React.FC = () => {
       setNewPostContent('');
       setSelectedImage(null);
       setImagePreview(null);
+      setIsAchievement(false); // Reset achievement flag
     } catch (err) {
       setError('Failed to create post. Please try again.');
     }
@@ -162,6 +167,13 @@ const SocialFeed: React.FC = () => {
     }
   };
 
+  // Helper to get full image URL
+  const getImageUrl = (path: string | null) => {
+    if (!path) return '';
+    if (path.startsWith('http')) return path;
+    return `http://localhost:5000${path}`;
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -187,7 +199,7 @@ const SocialFeed: React.FC = () => {
           <div className="flex-shrink-0">
             {user?.profile_image ? (
               <img 
-                src={user.profile_image} 
+                src={getImageUrl(user.profile_image)} 
                 alt="Profile" 
                 className="w-10 h-10 rounded-full object-cover" 
               />
@@ -228,15 +240,29 @@ const SocialFeed: React.FC = () => {
             )}
             
             <div className="flex items-center justify-between mt-3">
-              <label className="cursor-pointer text-gray-500 hover:text-orange-500 transition-colors">
-                <input 
-                  type="file" 
-                  accept="image/*" 
-                  className="hidden" 
-                  onChange={handleImageChange}
-                />
-                <ImageIcon size={20} />
-              </label>
+              <div className="flex space-x-3">
+                <label className="cursor-pointer text-gray-500 hover:text-orange-500 transition-colors">
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    className="hidden" 
+                    onChange={handleImageChange}
+                  />
+                  <ImageIcon size={20} />
+                </label>
+                
+                <button
+                  onClick={() => setIsAchievement(!isAchievement)}
+                  className={`flex items-center space-x-1 text-sm px-3 py-1 rounded-full ${
+                    isAchievement
+                      ? 'bg-green-100 text-green-700'
+                      : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  }`}
+                >
+                  <BadgeCheck size={18} />
+                  <span>Achievement</span>
+                </button>
+              </div>
               
               <button
                 onClick={handleCreatePost}
@@ -263,14 +289,19 @@ const SocialFeed: React.FC = () => {
           </div>
         ) : (
           posts.map((post) => (
-            <div key={post.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden">
+            <div 
+              key={post.id} 
+              className={`bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden ${
+                post.achievement ? 'border-l-4 border-green-500' : ''
+              }`}
+            >
               {/* Post Header */}
               <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
                 <div className="flex items-start space-x-3">
                   <div className="flex-shrink-0">
                     {post.user?.profile_image ? (
                       <img 
-                        src={post.user.profile_image} 
+                        src={getImageUrl(post.user.profile_image)} 
                         alt={post.user.first_name} 
                         className="w-10 h-10 rounded-full object-cover" 
                       />
@@ -289,6 +320,11 @@ const SocialFeed: React.FC = () => {
                       {post.user?.account_type === 'admin' && (
                         <span className="ml-2 bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full">
                           Admin
+                        </span>
+                      )}
+                      {post.achievement && (
+                        <span className="ml-2 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full flex items-center">
+                          <BadgeCheck size={14} className="mr-1" /> Achievement
                         </span>
                       )}
                     </h3>
@@ -312,7 +348,7 @@ const SocialFeed: React.FC = () => {
                 {post.image_url && (
                   <div className="my-3 rounded-lg overflow-hidden">
                     <img 
-                      src={post.image_url} 
+                      src={getImageUrl(post.image_url)} 
                       alt="Post content" 
                       className="w-full max-h-96 object-contain"
                     />
@@ -373,7 +409,7 @@ const SocialFeed: React.FC = () => {
                       <div className="flex-shrink-0">
                         {comment.user?.profile_image ? (
                           <img 
-                            src={comment.user.profile_image} 
+                            src={getImageUrl(comment.user.profile_image)} 
                             alt={comment.user.first_name} 
                             className="w-8 h-8 rounded-full object-cover" 
                           />
@@ -406,7 +442,7 @@ const SocialFeed: React.FC = () => {
                 <div className="flex items-center space-x-2">
                   {user?.profile_image ? (
                     <img 
-                      src={user.profile_image} 
+                      src={getImageUrl(user.profile_image)} 
                       alt="Your profile" 
                       className="w-8 h-8 rounded-full object-cover" 
                     />
