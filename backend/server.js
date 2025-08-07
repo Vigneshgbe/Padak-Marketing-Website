@@ -79,7 +79,6 @@ testConnection();
 // });
 
 // ===== AVATAR MULTER CONFIGURATION  =====
-
 const avatarStorage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, avatarsDir);
@@ -479,15 +478,22 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
 });
 
 // Upload avatar (UNIFIED)
-app.post('/api/auth/avatar', authenticateToken, avatarUpload.single('avatar'), async (req, res) => {
+app.post('/api/auth/avatar', authenticateToken, (req, res, next) => {
+  // Handle multer errors properly
+  avatarUpload.single('avatar')(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    next();
+  });
+}, async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
     const userId = req.user.id;
-    const filename = req.file.filename;
-    const profileImage = `/uploads/avatars/${filename}`;
+    const profileImage = `/uploads/avatars/${req.file.filename}`;
 
     // Delete old avatar if exists
     if (req.user.profile_image) {
@@ -503,8 +509,8 @@ app.post('/api/auth/avatar', authenticateToken, avatarUpload.single('avatar'), a
       [profileImage, userId]
     );
 
-    // Return the relative path - frontend will handle absolute URL
-    res.json({ profileImage });
+    // Send success response with plain text
+    res.status(200).send(profileImage);
 
   } catch (error) {
     console.error('Avatar upload error:', error);

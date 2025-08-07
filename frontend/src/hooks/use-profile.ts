@@ -2,7 +2,6 @@
 import { useState } from 'react';
 import { useAuth } from './use-auth';
 import { useToast } from './use-toast';
-import { apiService } from '../lib/api'; // Import apiService directly
 
 export const useProfile = () => {
   const { user, updateUser } = useAuth();
@@ -11,11 +10,24 @@ export const useProfile = () => {
 
   const updateProfile = async (data: any) => {
     if (!user) return;
-
     setLoading(true);
+    
     try {
-      // Use apiService directly for profile update
-      const updatedUser = await apiService.put('/auth/profile', data);
+      const response = await fetch('/api/auth/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+        },
+        body: JSON.stringify(data)
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to update profile');
+      }
+
+      const updatedUser = await response.json();
       updateUser(updatedUser);
       toast({
         title: "Success",
@@ -41,7 +53,7 @@ export const useProfile = () => {
       formData.append('avatar', file);
       
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/avatar`,
+        `http://localhost:5000/api/auth/avatar`,
         {
           method: 'POST',
           headers: {
@@ -52,16 +64,17 @@ export const useProfile = () => {
       );
   
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to upload avatar');
+        // Handle text response for errors
+        const errorText = await response.text();
+        throw new Error(errorText || 'Failed to upload avatar');
       }
   
-      const { profileImage } = await response.json();
+      // Handle text response for success
+      const profileImage = await response.text();
       
       // Update user context with new absolute URL
       updateUser({ profileImage });
       
-      // SUCCESS: Show toast notification
       toast({
         title: "Success",
         description: "Avatar updated successfully!",
@@ -75,8 +88,6 @@ export const useProfile = () => {
         errorMessage = "Invalid server response";
       } else if (error.message) {
         errorMessage = error.message;
-      } else if (error instanceof TypeError) {
-        errorMessage = "Network error - please check your connection";
       }
       
       toast({
@@ -89,7 +100,7 @@ export const useProfile = () => {
       setLoading(false);
     }
   };
-  
+
   return {
     user,
     loading,

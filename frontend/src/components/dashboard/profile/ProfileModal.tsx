@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Camera, Save, User } from 'lucide-react';
 import { useProfile } from '../../../hooks/use-profile';
-import AvatarUpload from './AvatarUpload';
+import AvatarUpload from './AvatarUpload'; // Keep this import as is
 import ProfileForm from './ProfileForm';
 
 interface ProfileModalProps {
