@@ -352,19 +352,21 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
   }
 });
 
+// ==================== PROFILE SECTION ROUTES ==================== 
+
 // Upload avatar
-app.post('/api/auth/avatar', authenticateToken, upload.single('avatar'), async (req, res) => {
+app.post('/api/auth/avatar', authenticateToken, avatarUpload.single('avatar'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
     const userId = req.user.id;
-    const profileImage = `/uploads/${req.file.filename}`;
+    const avatarPath = `/uploads/avatars/${req.file.filename}`;
 
     // Delete old avatar if exists
     if (req.user.profile_image) {
-      const oldPath = path.join(__dirname, req.user.profile_image);
+      const oldPath = path.join(avatarsDir, path.basename(req.user.profile_image));
       if (fs.existsSync(oldPath)) {
         fs.unlinkSync(oldPath);
       }
@@ -372,18 +374,16 @@ app.post('/api/auth/avatar', authenticateToken, upload.single('avatar'), async (
 
     await pool.execute(
       'UPDATE users SET profile_image = ?, updated_at = NOW() WHERE id = ?',
-      [profileImage, userId]
+      [avatarPath, userId]
     );
 
-    res.json({ profileImage });
+    res.json({ profileImage: avatarPath });
 
   } catch (error) {
     console.error('Avatar upload error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
-
-// ==================== PROFILE SECTION ROUTES ==================== 
 
 // Get user profile
 app.get('/api/user/profile', authenticateToken, async (req, res) => {
@@ -459,69 +459,15 @@ app.put('/api/user/profile', authenticateToken, async (req, res) => {
   }
 });
 
-// Update user avatar (FIXED: resolved "Unexpected field" error)
-app.post('/api/user/avatar', 
-  authenticateToken,
-  avatarUpload.single('avatar'), // Consistent field name
-  async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ error: 'No file uploaded' });
-      }
-
-      const userId = req.user.id;
-      const avatarPath = `/uploads/avatars/${req.file.filename}`;
-
-      // Get current avatar to delete old file
-      const [current] = await pool.query(
-        'SELECT profile_image FROM users WHERE id = ?',
-        [userId]
-      );
-      
-      // Delete old avatar if exists
-      if (current[0] && current[0].profile_image) {
-        const oldPath = path.join(__dirname, current[0].profile_image);
-        if (fs.existsSync(oldPath)) {
-          fs.unlinkSync(oldPath);
-        }
-      }
-
-      // Update database with new avatar path
-      await pool.query(
-        'UPDATE users SET profile_image = ?, updated_at = CURRENT_TIMESTAMP() WHERE id = ?',
-        [avatarPath, userId]
-      );
-
-      res.json({ 
-        success: true,
-        profileImage: avatarPath 
-      });
-    } catch (error) {
-      // Clean up uploaded file if DB update fails
-      if (req.file) {
-        const filePath = path.join(avatarsDir, req.file.filename);
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-        }
-      }
-      
-      console.error('Error updating avatar:', error);
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  }
-);
-
-// Error handling middleware (for multer errors)
+// Error handling middleware
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
-    // Handle multer errors
     return res.status(400).json({ 
       error: err.code === 'LIMIT_FILE_SIZE' 
         ? 'File size exceeds 5MB limit' 
         : 'File upload error' 
     });
   } else if (err) {
-    // Handle other errors
     console.error(err);
     return res.status(500).json({ error: 'Internal server error' });
   }

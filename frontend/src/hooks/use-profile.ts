@@ -33,7 +33,7 @@ export const useProfile = () => {
 
   const uploadAvatar = async (file: File) => {
     if (!user) return;
-
+  
     setLoading(true);
     try {
       const { profileImage } = await authService.uploadAvatar(file);
