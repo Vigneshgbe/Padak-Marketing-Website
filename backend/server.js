@@ -15,11 +15,11 @@ const port = process.env.PORT || 5000;
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-secret-key';
 
-// Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, 'uploads', 'assignments');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+// Create necessary directories
+const assignmentsDir = path.join(__dirname, 'uploads', 'assignments');
+const avatarsDir = path.join(__dirname, 'uploads', 'avatars');
+if (!fs.existsSync(assignmentsDir)) fs.mkdirSync(assignmentsDir, { recursive: true });
+if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
 
 // Database connection pool
 const pool = mysql.createPool({
