@@ -31,6 +31,17 @@ const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { user, logout } = useAuth(); // Assuming useAuth provides user object with accountType
 
+  // Padak Logo component using the actual logo image
+  const PadakLogo = () => (
+    <img 
+      src="https://github.com/Sweety-Vigneshg/Padak-Marketing-Website/blob/main/frontend/src/assets/padak_p.png?raw=true" 
+      alt="Padak Logo" 
+      width="28" 
+      height="28" 
+      className="object-contain"
+    />
+  );
+
   const getNavItems = (): NavItem[] => {
     // Admin navigation items
     if (user?.accountType === 'admin') {
@@ -83,12 +94,18 @@ const Sidebar: React.FC<SidebarProps> = ({
     <aside className="fixed lg:static z-30 h-screen w-64 bg-white dark:bg-gray-800 shadow-lg">
       <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center space-x-2">
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-orange-500 to-orange-400 flex items-center justify-center">
-            <span className="text-white font-bold">P</span>
+          {/* Padak Logo and Brand */}
+          <div className="hidden lg:flex items-center space-x-3 mr-6">
+            <div className="flex items-center justify-center">
+              <PadakLogo />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
+                Padak
+              </h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400 -mt-1">Dashboard</p>
+            </div>
           </div>
-          <span className="text-xl font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
-            Padak
-          </span>
         </div>
       </div>
 
