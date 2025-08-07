@@ -32,40 +32,31 @@ export const useProfile = () => {
 
   const uploadAvatar = async (file: File) => {
     if (!user) return;
-  
+    
     setLoading(true);
     try {
-      const formData = new FormData();
-      formData.append('avatar', file); // Changed from 'file' to 'avatar'
-      
-      const response = await fetch('/api/auth/avatar', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        },
-        body: formData
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to upload avatar');
-      }
-
-      const { profileImage } = await response.json();
-      
-      // Update user context with new profile image
+      const { profileImage } = await authService.uploadAvatar(file);
       updateUser({ profileImage });
-      
       toast({
         title: "Success",
         description: "Avatar updated successfully",
       });
-      
       return profileImage;
     } catch (error: any) {
+      let errorMessage = "Failed to upload avatar";
+      
+      // Handle server JSON errors
+      if (error instanceof SyntaxError) {
+        errorMessage = "Invalid server response";
+      } 
+      // Handle server error messages
+      else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast({
         title: "Error",
-        description: error.message || "Failed to upload avatar",
+        description: errorMessage,
         variant: "destructive",
       });
       throw error;
