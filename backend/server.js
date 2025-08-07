@@ -77,13 +77,7 @@ testConnection();
 //   }
 // });
 
-// Create avatars directory if it doesn't exist
-const avatarsDir = path.join(__dirname, 'uploads', 'avatars');
-if (!fs.existsSync(avatarsDir)) {
-  fs.mkdirSync(avatarsDir, { recursive: true });
-}
-
-// Multer configuration for avatars
+// ===== Multer Configuration for Avatars =====
 const avatarStorage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, avatarsDir);
@@ -94,19 +88,18 @@ const avatarStorage = multer.diskStorage({
   }
 });
 
-const avatarUpload = multer({ 
+const avatarUpload = multer({
   storage: avatarStorage,
-  limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
-  },
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB limit
   fileFilter: function (req, file, cb) {
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);
     } else {
-      cb(new Error('Only image files are allowed'));
+      cb(new Error('Only image files are allowed for avatars'));
     }
   }
 });
+
 
 // CORS configuration
 const allowedOrigins = [
