@@ -7,46 +7,51 @@ interface AvatarUploadProps {
   user: UserType;
 }
 
-const AvatarUpload: React.FC<AvatarUploadProps> = ({ user }) => {
+const AvatarUpload: React.FC<AvatarUploadProps> = ({ user, onSuccess }) => {
   const { uploadAvatar, loading } = useProfile();
   const [preview, setPreview] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null); // Added error state
+  const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
     
-    setError(null); // Reset error
+    setError(null);
     
     try {
       // Validate file type
       if (!file.type.startsWith('image/')) {
         throw new Error('Please select an image file (JPG, PNG, GIF)');
       }
-  
+
       // Validate file size
       if (file.size > 5 * 1024 * 1024) {
         throw new Error('File size must be less than 5MB');
       }
-  
+
       // Create preview
       const reader = new FileReader();
       reader.onload = (e) => {
         setPreview(e.target?.result as string);
       };
       reader.readAsDataURL(file);
-  
+
       // Upload file
       const newProfileImage = await uploadAvatar(file);
-      setPreview(newProfileImage); // Use the URL from server response
-        
+      setPreview(newProfileImage);
+      
+      // Call success callback if provided
+      if (onSuccess) {
+        onSuccess();
+      }
+      
     } catch (error) {
       console.error('Upload error:', error);
       setError(error instanceof Error ? error.message : 'Upload failed');
       setPreview(null);
       if (fileInputRef.current) {
-        fileInputRef.current.value = ''; // Reset file input
+        fileInputRef.current.value = '';
       }
     }
   };
@@ -56,18 +61,25 @@ const AvatarUpload: React.FC<AvatarUploadProps> = ({ user }) => {
     fileInputRef.current?.click();
   };
 
-  const currentImage = preview || user.profileImage;
+  const currentImage = preview || (user.profileImage 
+  ? `${user.profileImage}?t=${new Date().getTime()}` // Add timestamp to prevent caching
+  : null);
 
-  return (
-    <div className="text-center">
-      <div className="mb-6">
-        <div className="relative inline-block">
-          {currentImage ? (
-            <img 
-              src={currentImage} 
-              alt="Profile" 
-              className="w-32 h-32 rounded-full object-cover border-4 border-gray-200 dark:border-gray-600"
-            />
+return (
+  <div className="text-center">
+    <div className="mb-6">
+      <div className="relative inline-block">
+        {currentImage ? (
+          <img 
+            src={currentImage} 
+            alt="Profile" 
+            className="w-32 h-32 rounded-full object-cover border-4 border-gray-200 dark:border-gray-600"
+            onError={(e) => {
+              // Fallback to default avatar if image fails to load
+              e.currentTarget.onerror = null;
+              e.currentTarget.src = '/default-avatar.png';
+            }}
+          />
           ) : (
             <div className="w-32 h-32 rounded-full bg-gray-200 dark:bg-gray-600 border-4 border-gray-300 dark:border-gray-500 flex items-center justify-center">
               {user.accountType === 'admin' ? (

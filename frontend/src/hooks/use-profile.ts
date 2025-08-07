@@ -61,14 +61,30 @@ export const useProfile = () => {
       // Update user context with new absolute URL
       updateUser({ profileImage });
       
+      // SUCCESS: Show toast notification
       toast({
         title: "Success",
-        description: "Avatar updated successfully",
+        description: "Avatar updated successfully!",
       });
       
       return profileImage;
     } catch (error: any) {
-      // ... error handling remains the same ...
+      let errorMessage = "Failed to upload avatar";
+      
+      if (error instanceof SyntaxError) {
+        errorMessage = "Invalid server response";
+      } else if (error.message) {
+        errorMessage = error.message;
+      } else if (error instanceof TypeError) {
+        errorMessage = "Network error - please check your connection";
+      }
+      
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      throw error;
     } finally {
       setLoading(false);
     }

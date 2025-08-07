@@ -489,11 +489,6 @@ app.post('/api/auth/avatar', authenticateToken, avatarUpload.single('avatar'), a
     const filename = req.file.filename;
     const profileImage = `/uploads/avatars/${filename}`;
 
-    // Create absolute URL
-    const protocol = req.protocol;
-    const host = req.get('host');
-    const absoluteUrl = `${protocol}://${host}${profileImage}`;
-
     // Delete old avatar if exists
     if (req.user.profile_image) {
       const oldFilename = path.basename(req.user.profile_image);
@@ -505,17 +500,17 @@ app.post('/api/auth/avatar', authenticateToken, avatarUpload.single('avatar'), a
 
     await pool.execute(
       'UPDATE users SET profile_image = ?, updated_at = NOW() WHERE id = ?',
-      [profileImage, userId] // Store relative path in DB
+      [profileImage, userId]
     );
 
-    res.json({ profileImage: absoluteUrl }); // Return absolute URL to frontend
+    // Return the relative path - frontend will handle absolute URL
+    res.json({ profileImage });
 
   } catch (error) {
     console.error('Avatar upload error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
-
 
 // ==================== DASHBOARD ROUTES ====================
 
