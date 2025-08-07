@@ -17,8 +17,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-secret-key';
 
 // Create necessary directories
 const assignmentsDir = path.join(__dirname, 'uploads', 'assignments');
-const avatarsDir = path.join(__dirname, 'uploads', 'avatars');
 if (!fs.existsSync(assignmentsDir)) fs.mkdirSync(assignmentsDir, { recursive: true });
+
+const avatarsDir = path.join(__dirname, 'uploads', 'avatars');
 if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
 
 // Database connection pool
@@ -78,8 +79,6 @@ testConnection();
 // });
 
 // ===== AVATAR MULTER CONFIGURATION  =====
-const avatarsDir = path.join(__dirname, 'uploads', 'avatars');
-if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
 
 const avatarStorage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -152,6 +151,7 @@ app.use(cors({
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
+app.use('/uploads/avatars', express.static(avatarsDir));
 
 // ======== AUTHENTICATION MIDDLEWARE ========
 
@@ -486,11 +486,13 @@ app.post('/api/auth/avatar', authenticateToken, avatarUpload.single('avatar'), a
     }
 
     const userId = req.user.id;
+    // Use the correct path format that matches your static file serving
     const profileImage = `/uploads/avatars/${req.file.filename}`;
 
     // Delete old avatar if exists
     if (req.user.profile_image) {
-      const oldPath = path.join(__dirname, 'uploads', 'avatars', path.basename(req.user.profile_image));
+      const oldFilename = path.basename(req.user.profile_image);
+      const oldPath = path.join(avatarsDir, oldFilename);
       if (fs.existsSync(oldPath)) {
         fs.unlinkSync(oldPath);
       }
@@ -2907,7 +2909,7 @@ app.get('/api/internships', async (req, res) => {
 
 // GET /api/user/internship-applications - Fetch applications for the authenticated user
 app.get('/api/user/internship-applications', authenticateToken, async (req, res) => {
-  const userId = req.user.id; // User ID is attached by authenticateToken middleware
+  const userId = req.user.id; 
 
   if (!userId) {
     return res.status(400).json({ message: 'User ID not found in token.' });
