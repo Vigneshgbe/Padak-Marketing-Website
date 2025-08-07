@@ -90,7 +90,7 @@ const avatarStorage = multer.diskStorage({
 
 const avatarUpload = multer({
   storage: avatarStorage,
-  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB limit
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: function (req, file, cb) {
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);
@@ -487,7 +487,7 @@ app.post('/api/auth/avatar', authenticateToken, avatarUpload.single('avatar'), a
 
     // Delete old avatar if exists
     if (req.user.profile_image) {
-      const oldPath = path.join(__dirname, 'public', req.user.profile_image);
+      const oldPath = path.join(__dirname, 'uploads', 'avatars', path.basename(req.user.profile_image));
       if (fs.existsSync(oldPath)) {
         fs.unlinkSync(oldPath);
       }
@@ -507,7 +507,7 @@ app.post('/api/auth/avatar', authenticateToken, avatarUpload.single('avatar'), a
 });
 
 // Serve static avatar files
-app.use('/uploads/avatars', express.static(path.join(__dirname, 'uploads', 'avatars')));
+//app.use('/uploads/avatars', express.static(path.join(__dirname, 'uploads', 'avatars')));
 
 // ==================== DASHBOARD ROUTES ====================
 
