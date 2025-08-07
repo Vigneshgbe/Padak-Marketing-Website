@@ -3,196 +3,171 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { 
   FileText, 
-  Handshake, 
-  CreditCard, 
-  Shield, 
-  AlertTriangle, 
-  Scale,
-  RefreshCw,
-  Ban,
-  Gavel,
+  Cookie,
+  Eye,
   Users,
+  Settings,
   ChevronDown,
   ChevronUp,
   CheckCircle,
   Clock,
-  Globe
+  Globe,
+  AlertTriangle,
+  Gavel
 } from "lucide-react";
 
-const termsSection = [
+const cookieSections = [
   {
-    icon: Handshake,
-    title: "Acceptance of Terms",
-    description: "By accessing and using our services, you agree to be bound by these terms and conditions.",
+    icon: Cookie,
+    title: "Introduction to Cookies",
+    description: "Understanding what cookies are and how we use them on our platforms.",
     content: [
       {
-        subtitle: "Agreement Formation",
-        details: "These Terms and Conditions constitute a legally binding agreement between you and Padak Digital Marketing Partner. By accessing our website or using our services, you acknowledge that you have read, understood, and agree to be bound by these terms."
+        subtitle: "What Are Cookies?",
+        details: "Cookies are small text files that are placed on your device when you visit a website. They are widely used to make websites work more efficiently, as well as to provide information to website owners about how users interact with their sites. Cookies do not typically contain personally identifiable information but may be used in combination with other information to identify users."
       },
       {
-        subtitle: "Capacity to Contract",
-        details: "You represent that you are at least 18 years old and have the legal capacity to enter into this agreement. If you are accepting these terms on behalf of a company or organization, you warrant that you have the authority to bind that entity."
+        subtitle: "Our Use of Cookies",
+        details: "At Padak Digital Marketing Partner, we use cookies to enhance your experience on our website, analyze site traffic, personalize content, and support our marketing efforts. Cookies help us understand how visitors interact with our services, which allows us to improve functionality and provide more relevant content."
       },
       {
-        subtitle: "Updates and Changes",
-        details: "We reserve the right to modify these terms at any time. We will notify you of significant changes, and continued use of our services after such modifications constitutes acceptance of the updated terms."
+        subtitle: "Cookie Consent",
+        details: "By using our website, you consent to the use of cookies as described in this policy. When you first visit our site, you'll see a cookie consent banner where you can manage your preferences for non-essential cookies. You can change these preferences at any time through our Cookie Settings."
+      }
+    ]
+  },
+  {
+    icon: Eye,
+    title: "Types of Cookies We Use",
+    description: "Categories of cookies used on our website and their purposes.",
+    content: [
+      {
+        subtitle: "Essential Cookies",
+        details: "These cookies are necessary for the website to function properly. They enable basic functions like page navigation and access to secure areas of the website. The website cannot function properly without these cookies. They are typically set in response to actions made by you such as setting your privacy preferences, logging in, or filling in forms."
+      },
+      {
+        subtitle: "Performance Cookies",
+        details: "These cookies allow us to count visits and traffic sources so we can measure and improve the performance of our site. They help us know which pages are the most and least popular and see how visitors move around the site. All information these cookies collect is aggregated and therefore anonymous."
+      },
+      {
+        subtitle: "Functionality Cookies",
+        details: "These cookies enable the website to provide enhanced functionality and personalization. They may be set by us or by third-party providers whose services we have added to our pages. If you do not allow these cookies, then some or all of these services may not function properly."
+      },
+      {
+        subtitle: "Targeting Cookies",
+        details: "These cookies may be set through our site by our advertising partners. They may be used by those companies to build a profile of your interests and show you relevant advertisements on other sites. They work by uniquely identifying your browser and internet device. If you do not allow these cookies, you will experience less targeted advertising."
       }
     ]
   },
   {
     icon: Users,
-    title: "Service Description",
-    description: "Overview of the digital marketing services we provide and their scope.",
+    title: "Third-Party Cookies",
+    description: "Information about cookies set by third-party services on our site.",
     content: [
       {
-        subtitle: "Digital Marketing Services",
-        details: "Padak provides comprehensive digital marketing services including but not limited to SEO optimization, social media marketing, PPC advertising, web development, content marketing, analytics, email marketing, and video marketing services."
+        subtitle: "Analytics Services",
+        details: "We use Google Analytics to collect information about how visitors use our website. The cookies collect information in an anonymous form, including the number of visitors to the site, where visitors have come from, and the pages they visited. We use this information to compile reports and to help us improve the site."
       },
       {
-        subtitle: "Service Customization",
-        details: "Our services are tailored to meet your specific business needs. The exact scope, deliverables, and timeline for each project will be outlined in separate service agreements or statements of work."
+        subtitle: "Advertising Partners",
+        details: "Our advertising partners may use cookies to deliver personalized advertisements. These companies may use information about your visits to this and other websites to provide relevant advertisements about goods and services that may interest you. They may also use technology to measure the effectiveness of advertisements."
       },
       {
-        subtitle: "Performance Standards",
-        details: "While we strive to deliver optimal results, digital marketing outcomes can vary based on market conditions, competition, and other factors beyond our control. We commit to industry best practices and professional standards."
+        subtitle: "Social Media Cookies",
+        details: "We use social media plugins that allow you to connect with your social network in various ways. These plugins may set cookies that can track your browsing activity. We recommend reviewing the respective privacy policies of these social networks for information about their cookies."
+      },
+      {
+        subtitle: "Embedded Content",
+        details: "Our site may include embedded content (e.g., videos, maps, etc.) from other websites. Embedded content behaves in the exact same way as if the visitor has visited the other website. These websites may collect data about you, use cookies, embed additional third-party tracking, and monitor your interaction with that embedded content."
       }
     ]
   },
   {
-    icon: CreditCard,
-    title: "Payment Terms",
-    description: "Billing, payment schedules, and financial obligations for our services.",
+    icon: Settings,
+    title: "Managing Your Preferences",
+    description: "How you can control and manage cookie settings.",
     content: [
       {
-        subtitle: "Payment Schedule",
-        details: "Payment terms will be specified in your service agreement. Generally, we require payment upon project completion for one-time services, or monthly/quarterly for ongoing services. All payments are due within 30 days of invoice date."
+        subtitle: "Browser Settings",
+        details: "Most web browsers allow you to control cookies through their settings preferences. You can set your browser to refuse all cookies or to indicate when a cookie is being sent. However, if you do not accept cookies, you may not be able to use some portions of our service. Each browser is different, so check the 'Help' menu of your browser to learn how to change your cookie preferences."
       },
       {
-        subtitle: "Accepted Payment Methods",
-        details: "We accept various payment methods including bank transfers, credit cards, and digital payment platforms. All payments must be made in the currency specified in your invoice."
+        subtitle: "Cookie Consent Tool",
+        details: "We provide a cookie consent management tool that allows you to customize your cookie preferences. You can access this tool at any time by clicking the 'Cookie Settings' link in our website footer. The tool allows you to enable or disable different categories of cookies according to your preferences."
       },
       {
-        subtitle: "Late Payment Policy",
-        details: "Late payments may incur additional fees as specified in your service agreement. We reserve the right to suspend services for accounts that are more than 30 days overdue until payment is received."
+        subtitle: "Opt-Out Options",
+        details: "For third-party advertising cookies, you can opt-out through the following resources: Digital Advertising Alliance (www.aboutads.info), Network Advertising Initiative (www.networkadvertising.org), and European Interactive Digital Advertising Alliance (www.youronlinechoices.eu). Please note that opting out does not mean you will no longer receive online advertising, but rather that the ads you see will not be personalized."
+      },
+      {
+        subtitle: "Do Not Track Signals",
+        details: "Our website does not currently respond to 'Do Not Track' browser settings or signals. However, you can control tracking through the cookie settings as described above. We are monitoring developments around DNT browser technology and may implement a solution in the future."
       }
     ]
   },
   {
-    icon: Shield,
-    title: "Client Responsibilities",
-    description: "Your obligations and responsibilities when working with our team.",
+    icon: Clock,
+    title: "Cookie Duration & Retention",
+    description: "Information about how long cookies remain on your device.",
     content: [
       {
-        subtitle: "Information Provision",
-        details: "You agree to provide accurate, complete, and timely information necessary for us to perform our services. This includes access to relevant accounts, data, and materials required for campaign execution."
+        subtitle: "Session Cookies",
+        details: "Session cookies are temporary cookies that remain on your device until you close your web browser. We use session cookies to support specific functionality during your browsing session, such as maintaining your logged-in status or remembering items in your shopping cart. These cookies are automatically deleted when you close your browser."
       },
       {
-        subtitle: "Approval and Feedback",
-        details: "You are responsible for reviewing and approving deliverables within the timeframes specified in your service agreement. Delays in approval may impact project timelines and costs."
+        subtitle: "Persistent Cookies",
+        details: "Persistent cookies remain on your device for a set period specified in the cookie. We use persistent cookies to remember your preferences when you return to our website. The lifespan of persistent cookies varies: some expire after a few days, while others may remain for several years unless manually deleted."
       },
       {
-        subtitle: "Compliance with Laws",
-        details: "You warrant that your business, products, and services comply with all applicable laws and regulations. You are responsible for ensuring that all content and campaigns meet legal requirements in your jurisdiction."
+        subtitle: "Cookie Lifespan by Category",
+        details: "The lifespan of our cookies varies based on their purpose: Essential cookies typically last for the duration of your session; Performance cookies are usually retained for 1-2 years; Functionality cookies may remain for up to 1 year; Targeting cookies are generally stored for 1-2 years. You can see the specific lifespan of each cookie in our detailed cookie list."
       }
     ]
   },
   {
     icon: AlertTriangle,
-    title: "Limitations of Liability",
-    description: "Legal limitations on our liability and responsibility for service outcomes.",
+    title: "Important Considerations",
+    description: "Additional information you should know about our cookie usage.",
     content: [
       {
-        subtitle: "Service Limitations",
-        details: "Digital marketing results are subject to various external factors including algorithm changes, market conditions, and competition. We cannot guarantee specific outcomes, rankings, or conversion rates."
+        subtitle: "Cookie Security",
+        details: "We take appropriate security measures to protect cookies from unauthorized access. Our cookies do not store sensitive personal information such as credit card details. However, we recommend that you take steps to protect your personal information online, including using strong passwords and keeping your login credentials confidential."
       },
       {
-        subtitle: "Liability Cap",
-        details: "Our total liability for any claims related to our services shall not exceed the amount paid by you for the specific services that gave rise to the claim during the 12 months preceding the claim."
+        subtitle: "Children's Privacy",
+        details: "Our website is not directed to children under 16. We do not knowingly collect personal information from children under 16. If we become aware that a child under 16 has provided us with personal information, we will take steps to delete such information. If you believe we might have any information from a child under 16, please contact us."
       },
       {
-        subtitle: "Excluded Damages",
-        details: "We shall not be liable for any indirect, incidental, special, consequential, or punitive damages, including but not limited to loss of profits, data, or business opportunities, even if we have been advised of the possibility of such damages."
-      }
-    ]
-  },
-  {
-    icon: RefreshCw,
-    title: "Cancellation & Refunds",
-    description: "Policies regarding service cancellation, termination, and refund procedures.",
-    content: [
-      {
-        subtitle: "Cancellation Policy",
-        details: "Either party may terminate services with written notice as specified in the service agreement. For ongoing services, typically 30 days' notice is required. One-time projects may have different cancellation terms."
-      },
-      {
-        subtitle: "Refund Policy",
-        details: "Refunds are generally not available for completed work or ongoing services already provided. In exceptional circumstances, partial refunds may be considered on a case-by-case basis for unused portions of prepaid services."
-      },
-      {
-        subtitle: "Work Product",
-        details: "Upon termination, you will receive all completed work and have the right to use materials created specifically for your business. We retain the right to use general methodologies and non-confidential knowledge gained."
-      }
-    ]
-  },
-  {
-    icon: Ban,
-    title: "Prohibited Uses",
-    description: "Activities and uses that are not permitted when using our services.",
-    content: [
-      {
-        subtitle: "Illegal Activities",
-        details: "You may not use our services for any illegal activities, including but not limited to fraud, money laundering, or violation of intellectual property rights. We reserve the right to terminate services immediately for any illegal use."
-      },
-      {
-        subtitle: "Harmful Content",
-        details: "We do not provide services for content that is defamatory, discriminatory, threatening, or otherwise harmful. This includes adult content, gambling, and other industries that may violate platform policies."
-      },
-      {
-        subtitle: "Spam and Abuse",
-        details: "You may not engage in spamming, abuse of marketing channels, or any activities that violate platform terms of service or best practices. Such activities may result in immediate service termination."
-      }
-    ]
-  },
-  {
-    icon: Scale,
-    title: "Dispute Resolution",
-    description: "How conflicts and disputes will be handled and resolved.",
-    content: [
-      {
-        subtitle: "Governing Law",
-        details: "These terms shall be governed by and construed in accordance with the laws of [Your Jurisdiction]. Any disputes arising from these terms or our services shall be subject to the jurisdiction of the courts in [Your Jurisdiction]."
-      },
-      {
-        subtitle: "Mediation First",
-        details: "Before pursuing formal legal action, both parties agree to attempt resolution through good faith negotiations and, if necessary, mediation with a mutually agreed-upon mediator."
-      },
-      {
-        subtitle: "Arbitration",
-        details: "If mediation fails, disputes may be resolved through binding arbitration in accordance with the rules of [Arbitration Body]. The arbitration shall be conducted in [Location] and the decision shall be final and binding."
+        subtitle: "Policy Updates",
+        details: "We may update this Cookie Policy from time to time to reflect changes in our practices or for other operational, legal, or regulatory reasons. When we make significant changes, we will notify you through our website or by other means prior to the change becoming effective. We encourage you to periodically review this page for the latest information on our cookie practices."
       }
     ]
   }
 ];
 
 export default function CookiePolicy() {
-  const [expandedSection, setExpandedSection] = useState(null);
+  const [expandedSections, setExpandedSections] = useState([]);
 
   const toggleSection = (index) => {
-    setExpandedSection(expandedSection === index ? null : index);
+    if (expandedSections.includes(index)) {
+      setExpandedSections(expandedSections.filter(i => i !== index));
+    } else {
+      setExpandedSections([...expandedSections, index]);
+    }
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50/50 via-background to-orange-100/30 relative">
-      {/* Header Section */}
-      <section className="py-16 relative overflow-hidden">
+      {/* Header with reduced top space */}
+      <section className="py-10 md:py-12 relative overflow-hidden">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-3 mb-6">
-              <div className="w-16 h-16 bg-gradient-to-br from-orange-500 to-orange-400 rounded-xl flex items-center justify-center shadow-lg">
-                <FileText className="w-8 h-8 text-white" />
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center gap-3 mb-4">
+              <div className="w-14 h-14 bg-gradient-to-br from-orange-500 to-orange-400 rounded-xl flex items-center justify-center shadow-lg">
+                <Cookie className="w-7 h-7 text-white" />
               </div>
               <div>
-                <h1 className="text-4xl lg:text-5xl font-bold mb-2">
+                <h1 className="text-3xl md:text-4xl font-bold mb-2">
                   Cookie &{" "}
                   <span className="bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
                     Policy
@@ -200,21 +175,21 @@ export default function CookiePolicy() {
                 </h1>
               </div>
             </div>
-            <p className="text-xl text-muted-foreground max-w-3xl mx-auto mb-8">
-              These cookie policy outline the rules and regulations for the use of Padak's 
-              digital marketing services. Please read them carefully before engaging with our services.
+            <p className="text-lg md:text-xl text-muted-foreground max-w-3xl mx-auto mb-6">
+              This Cookie Policy outlines how Padak Digital Marketing Partner uses cookies and similar 
+              technologies on our website. Please read this policy to understand our practices.
             </p>
-            <div className="flex flex-wrap items-center justify-center gap-4 text-sm text-muted-foreground">
+            <div className="flex flex-wrap items-center justify-center gap-3 text-xs md:text-sm text-muted-foreground">
               <div className="flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-green-500" />
+                <CheckCircle className="w-3 h-3 md:w-4 md:h-4 text-green-500" />
                 <span>Last Updated: January 2025</span>
               </div>
               <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-blue-500" />
+                <Clock className="w-3 h-3 md:w-4 md:h-4 text-blue-500" />
                 <span>Effective Immediately</span>
               </div>
               <div className="flex items-center gap-2">
-                <Globe className="w-4 h-4 text-purple-500" />
+                <Globe className="w-3 h-3 md:w-4 md:h-4 text-purple-500" />
                 <span>Applicable Worldwide</span>
               </div>
             </div>
@@ -222,62 +197,68 @@ export default function CookiePolicy() {
         </div>
         
         {/* Floating background elements */}
-        <div className="absolute top-20 left-10 w-32 h-32 bg-orange-400/10 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-20 right-10 w-24 h-24 bg-orange-500/10 rounded-full blur-2xl animate-pulse delay-1000"></div>
+        <div className="absolute top-10 left-10 w-32 h-32 bg-orange-400/10 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-10 right-10 w-24 h-24 bg-orange-500/10 rounded-full blur-2xl animate-pulse delay-1000"></div>
       </section>
 
-      {/* Terms Sections */}
-      <section className="py-16">
+      {/* Cookie Policy Sections */}
+      <section className="py-10 md:py-12">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto">
-            {termsSection.map((section, index) => (
+            {cookieSections.map((section, index) => (
               <Card 
                 key={index} 
-                className="mb-6 group hover:shadow-xl transition-all duration-300 border-0 bg-background/90 backdrop-blur-sm hover:bg-white relative overflow-hidden"
+                className="mb-5 group hover:shadow-xl transition-all duration-300 border-0 bg-background/90 backdrop-blur-sm hover:bg-white relative overflow-hidden"
               >
                 {/* Orange accent line */}
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 to-orange-400 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300"></div>
                 
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-orange-400 rounded-xl flex items-center justify-center group-hover:scale-110 group-hover:rotate-3 transition-all duration-300 shadow-lg flex-shrink-0">
-                      <section.icon className="w-6 h-6 text-white" />
+                <CardHeader 
+                  onClick={() => toggleSection(index)}
+                  className="pb-3 cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-400 rounded-xl flex items-center justify-center group-hover:scale-110 group-hover:rotate-3 transition-all duration-300 shadow-lg flex-shrink-0">
+                      <section.icon className="w-5 h-5 text-white" />
                     </div>
                     <div className="flex-1">
-                      <CardTitle className="text-xl group-hover:text-orange-600 transition-colors">
+                      <CardTitle className="text-lg md:text-xl group-hover:text-orange-600 transition-colors">
                         {section.title}
                       </CardTitle>
-                      <CardDescription className="text-base leading-relaxed">
+                      <CardDescription className="text-sm md:text-base leading-relaxed">
                         {section.description}
                       </CardDescription>
                     </div>
                     <Button
-                      onClick={() => toggleSection(index)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleSection(index);
+                      }}
                       variant="ghost"
                       size="sm"
                       className="text-orange-500 hover:text-orange-600 hover:bg-orange-50"
                     >
-                      {expandedSection === index ? (
-                        <ChevronUp className="w-5 h-5" />
+                      {expandedSections.includes(index) ? (
+                        <ChevronUp className="w-4 h-4 md:w-5 md:h-5" />
                       ) : (
-                        <ChevronDown className="w-5 h-5" />
+                        <ChevronDown className="w-4 h-4 md:w-5 md:h-5" />
                       )}
                     </Button>
                   </div>
                 </CardHeader>
                 
-                {expandedSection === index && (
+                {expandedSections.includes(index) && (
                   <CardContent className="pt-0 border-t border-orange-100">
-                    <div className="space-y-6 mt-6">
+                    <div className="space-y-4 mt-4">
                       {section.content.map((item, itemIndex) => (
-                        <div key={itemIndex} className="space-y-3">
-                          <h4 className="font-semibold text-foreground flex items-center gap-2">
+                        <div key={itemIndex} className="space-y-2">
+                          <h4 className="font-semibold text-foreground flex items-center gap-2 text-base">
                             <div className="w-2 h-2 bg-gradient-to-r from-orange-500 to-orange-400 rounded-full"></div>
                             {item.subtitle}
                           </h4>
-                          <p className="text-muted-foreground leading-relaxed pl-4">
+                          <div className="text-muted-foreground leading-relaxed pl-4 text-sm md:text-base">
                             {item.details}
-                          </p>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -285,7 +266,7 @@ export default function CookiePolicy() {
                 )}
                 
                 {/* Subtle background pattern */}
-                <div className="absolute -bottom-2 -right-2 w-20 h-20 bg-orange-400/5 rounded-full blur-xl group-hover:bg-orange-400/10 transition-all duration-300"></div>
+                <div className="absolute -bottom-1 -right-1 w-16 h-16 bg-orange-400/5 rounded-full blur-xl group-hover:bg-orange-400/10 transition-all duration-300"></div>
               </Card>
             ))}
           </div>
@@ -293,21 +274,21 @@ export default function CookiePolicy() {
       </section>
 
       {/* Important Notice */}
-      <section className="py-8 bg-gradient-to-r from-orange-500/5 to-orange-400/5 border-t border-orange-200/50">
+      <section className="py-6 bg-gradient-to-r from-orange-500/5 to-orange-400/5 border-t border-orange-200/50">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto">
             <Card className="border-orange-200 bg-orange-50/50 backdrop-blur-sm">
-              <CardContent className="p-6">
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-400 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <AlertTriangle className="w-5 h-5 text-white" />
+              <CardContent className="p-4 md:p-6">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 md:w-10 md:h-10 bg-gradient-to-br from-orange-500 to-orange-400 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <AlertTriangle className="w-4 h-4 md:w-5 md:h-5 text-white" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-orange-800 mb-2">Important Notice</h3>
-                    <p className="text-orange-700 text-sm leading-relaxed">
-                      These terms and conditions are legally binding. If you do not agree with any part of these terms, 
-                      please do not use our services. For questions or clarifications about these terms, please contact 
-                      our legal team before proceeding with any services.
+                    <h3 className="font-semibold text-orange-800 mb-1 text-base md:text-lg">Important Notice</h3>
+                    <p className="text-orange-700 text-xs md:text-sm leading-relaxed">
+                      By continuing to use our website, you consent to our use of cookies as described in this policy. 
+                      If you do not agree with our cookie practices, you can adjust your preferences using the Cookie Settings 
+                      or refrain from using our website.
                     </p>
                   </div>
                 </div>
@@ -318,39 +299,42 @@ export default function CookiePolicy() {
       </section>
 
       {/* Contact Section */}
-      <section className="py-16 bg-gradient-to-r from-orange-500/10 to-orange-400/10 relative">
+      <section className="py-12 md:py-14 bg-gradient-to-r from-orange-500/10 to-orange-400/10 relative">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl mx-auto text-center">
-            <div className="inline-flex items-center gap-3 mb-6">
-              <div className="w-14 h-14 bg-gradient-to-br from-orange-500 to-orange-400 rounded-xl flex items-center justify-center shadow-lg">
-                <Gavel className="w-7 h-7 text-white" />
+            <div className="inline-flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-orange-500 to-orange-400 rounded-xl flex items-center justify-center shadow-lg">
+                <Gavel className="w-5 h-5 md:w-6 md:h-6 text-white" />
               </div>
-              <h2 className="text-3xl font-bold">
-                Legal{" "}
+              <h2 className="text-2xl md:text-3xl font-bold">
+                Privacy{" "}
                 <span className="bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
                   Questions?
                 </span>
               </h2>
             </div>
-            <p className="text-xl text-muted-foreground mb-8">
-              If you have any questions about these Terms and Conditions or need clarification 
-              on any provisions, our legal team is here to help.
+            <p className="text-lg md:text-xl text-muted-foreground mb-6 max-w-2xl mx-auto">
+              If you have any questions about our Cookie Policy or privacy practices, 
+              our privacy team is here to assist you.
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Button 
+                asChild
                 size="lg" 
                 className="bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500 text-white shadow-lg hover:shadow-xl transition-all duration-300"
               >
-                <Gavel className="w-5 h-5 mr-2" />
-                Contact Legal Team
+                <a href="mailto:privacy@padak.com">
+                  <Gavel className="w-4 h-4 md:w-5 md:h-5 mr-2" />
+                  Contact Privacy Team
+                </a>
               </Button>
               <Button 
                 size="lg" 
                 variant="outline"
                 className="border-orange-500 text-orange-600 hover:bg-orange-500 hover:text-white transition-all duration-300"
               >
-                <FileText className="w-5 h-5 mr-2" />
-                Download Terms
+                <FileText className="w-4 h-4 md:w-5 md:h-5 mr-2" />
+                Download Policy
               </Button>
             </div>
           </div>
