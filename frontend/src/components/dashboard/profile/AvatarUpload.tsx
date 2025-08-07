@@ -1,4 +1,3 @@
-// src/components/dashboard/profile/AvatarUpload.tsx
 import React, { useState, useRef } from 'react';
 import { Camera, Upload, User, Shield } from 'lucide-react';
 import { useProfile } from '../../../hooks/use-profile';
@@ -11,21 +10,24 @@ interface AvatarUploadProps {
 const AvatarUpload: React.FC<AvatarUploadProps> = ({ user }) => {
   const { uploadAvatar, loading } = useProfile();
   const [preview, setPreview] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null); // Added error state
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
+    if (!file) return;
+    
+    setError(null); // Reset error
+    
+    try {
       // Validate file type
       if (!file.type.startsWith('image/')) {
-        alert('Please select an image file');
-        return;
+        throw new Error('Please select an image file (JPG, PNG, GIF)');
       }
 
-      // Validate file size (max 5MB)
+      // Validate file size
       if (file.size > 5 * 1024 * 1024) {
-        alert('File size must be less than 5MB');
-        return;
+        throw new Error('File size must be less than 5MB');
       }
 
       // Create preview
@@ -36,11 +38,20 @@ const AvatarUpload: React.FC<AvatarUploadProps> = ({ user }) => {
       reader.readAsDataURL(file);
 
       // Upload file
-      uploadAvatar(file);
+      await uploadAvatar(file);
+      
+    } catch (error) {
+      console.error('Upload error:', error);
+      setError(error instanceof Error ? error.message : 'Upload failed');
+      setPreview(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''; // Reset file input
+      }
     }
   };
 
   const handleUploadClick = () => {
+    setError(null); // Reset error on new upload attempt
     fileInputRef.current?.click();
   };
 
@@ -82,6 +93,7 @@ const AvatarUpload: React.FC<AvatarUploadProps> = ({ user }) => {
         accept="image/*"
         onChange={handleFileSelect}
         className="hidden"
+        disabled={loading}
       />
 
       <button
@@ -92,6 +104,13 @@ const AvatarUpload: React.FC<AvatarUploadProps> = ({ user }) => {
         <Upload size={18} className="mr-2" />
         {loading ? 'Uploading...' : 'Upload New Avatar'}
       </button>
+
+      {/* Error message display */}
+      {error && (
+        <div className="mt-3 text-red-500 text-sm">
+          {error}
+        </div>
+      )}
 
       <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
         Supported formats: JPG, PNG, GIF. Max size: 5MB

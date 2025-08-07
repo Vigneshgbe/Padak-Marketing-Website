@@ -383,162 +383,153 @@ app.post('/api/auth/avatar', authenticateToken, upload.single('avatar'), async (
   }
 });
 
-// ==================== PROFILE SECTION ROUTES ====================
+// ==================== PROFILE SECTION ROUTES ==================== //
 
-// 1. Get User Profile (Read)
+// Get user profile (FIXED: match database field names to frontend expectations)
 app.get('/api/user/profile', authenticateToken, async (req, res) => {
   try {
-    // req.user is already populated by authenticateToken middleware with camelCase keys
-    res.json(req.user);
+    const [rows] = await pool.query(
+      `SELECT 
+        id,
+        first_name AS firstName, 
+        last_name AS lastName,
+        email,
+        phone,
+        account_type AS accountType,
+        profile_image AS profileImage,
+        company,
+        website,
+        bio
+      FROM users WHERE id = ?`,
+      [req.user.id]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json(rows[0]);
   } catch (error) {
     console.error('Error fetching user profile:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// 2. Update User Profile (Update)
-app.patch('/api/user/profile', authenticateToken, async (req, res) => {
-  const userId = req.user.id; // Get user ID from authenticated token
+// Update user profile
+app.put('/api/user/profile', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
   const { firstName, lastName, email, phone, company, website, bio } = req.body;
 
-  // Basic validation (can be enhanced with a validation library)
-  if (!firstName || !lastName || !email) {
-    return res.status(400).json({ message: 'First name, last name, and email are required.' });
-  }
-
   try {
-    const [result] = await pool.execute(
-      `UPDATE users SET
-         first_name = ?,
-         last_name = ?,
-         email = ?,
-         phone = ?,
-         company = ?,
-         website = ?,
-         bio = ?,
-         updated_at = CURRENT_TIMESTAMP
+    await pool.query(
+      `UPDATE users 
+       SET 
+        first_name = ?, 
+        last_name = ?, 
+        email = ?, 
+        phone = ?, 
+        company = ?, 
+        website = ?, 
+        bio = ?,
+        updated_at = CURRENT_TIMESTAMP()
        WHERE id = ?`,
-      [firstName, lastName, email, phone || null, company || null, website || null, bio || null, userId]
+      [firstName, lastName, email, phone, company, website, bio, userId]
     );
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ message: 'User not found or no changes made.' });
-    }
-
-    // After updating, re-fetch the user to send the most current data back to the client
-    // This also ensures profileImage is updated if the avatar was recently changed
-    const [updatedRows] = await pool.execute(
-      `SELECT id, first_name, last_name, email, phone, account_type, profile_image, company, website, bio
-       FROM users WHERE id = ?`,
+    // Fetch updated user data
+    const [updatedUser] = await pool.query(
+      `SELECT 
+        id,
+        first_name AS firstName, 
+        last_name AS lastName,
+        email,
+        phone,
+        profile_image AS profileImage,
+        company,
+        website,
+        bio
+      FROM users WHERE id = ?`,
       [userId]
     );
-
-    const updatedUserFromDb = updatedRows[0];
-    const updatedUserForFrontend = {
-      id: updatedUserFromDb.id,
-      firstName: updatedUserFromDb.first_name,
-      lastName: updatedUserFromDb.last_name,
-      email: updatedUserFromDb.email,
-      phone: updatedUserFromDb.phone,
-      accountType: updatedUserFromDb.account_type,
-      profileImage: updatedUserFromDb.profile_image ? `${process.env.APP_URL}/uploads/${updatedUserFromDb.profile_image}` : null,
-      company: updatedUserFromDb.company,
-      website: updatedUserFromDb.website,
-      bio: updatedUserFromDb.bio,
-    };
-
-    res.json({ message: 'Profile updated successfully!', user: updatedUserForFrontend });
-
+    
+    res.json(updatedUser[0]);
   } catch (error) {
     console.error('Error updating user profile:', error);
-    // Handle specific errors like duplicate email if needed
-    if (error.code === 'ER_DUP_ENTRY') {
-        return res.status(409).json({ message: 'Email already in use.' });
-    }
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// 3. Upload User Avatar (Create/Update)
-app.post('/api/user/profile/avatar', authenticateToken, upload.single('avatar'), async (req, res) => {
-  const userId = req.user.id;
-  const newProfileImageFilename = req.file ? req.file.filename : null;
-
-  if (!newProfileImageFilename) {
-    return res.status(400).json({ message: 'No image file provided.' });
-  }
-
-  try {
-    // Get the current profile image path to delete the old one
-    const [currentImageRows] = await pool.execute(
-      `SELECT profile_image FROM users WHERE id = ?`,
-      [userId]
-    );
-
-    let oldProfileImageFilename = null;
-    if (currentImageRows.length > 0 && currentImageRows[0].profile_image) {
-        oldProfileImageFilename = currentImageRows[0].profile_image;
+// Update user avatar (FIXED: resolve "Unexpected field" error)
+app.post('/api/user/avatar', 
+  authenticateToken,
+  upload.single('avatar'), // Match the field name expected by multer
+  async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    // Update the database with the new image path
-    const [result] = await pool.execute(
-      `UPDATE users SET profile_image = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-      [newProfileImageFilename, userId]
-    );
+    const userId = req.user.id;
+    const avatarPath = `/uploads/avatars/${req.file.filename}`;
 
-    if (result.affectedRows === 0) {
-      // If user not found, delete the uploaded file as it won't be used
-      if (req.file) {
-        fs.unlink(req.file.path, (err) => {
-          if (err) console.error('Error deleting orphaned file:', err);
-        });
+    try {
+      // Get current avatar to delete old file
+      const [current] = await pool.query(
+        'SELECT profile_image FROM users WHERE id = ?',
+        [userId]
+      );
+      
+      // Delete old avatar if exists
+      if (current[0] && current[0].profile_image) {
+        const oldPath = path.join(__dirname, current[0].profile_image);
+        if (fs.existsSync(oldPath)) {
+          fs.unlinkSync(oldPath);
+        }
       }
-      return res.status(404).json({ message: 'User not found for avatar update.' });
-    }
 
-    // If there was an old profile image, delete it from the server
-    if (oldProfileImageFilename && oldProfileImageFilename !== newProfileImageFilename) {
-      const oldImagePath = path.join(UPLOADS_DIR, oldProfileImageFilename);
-      fs.unlink(oldImagePath, (err) => {
-        if (err) console.error('Error deleting old avatar:', err);
+      // Update database with new avatar path
+      await pool.query(
+        'UPDATE users SET profile_image = ?, updated_at = CURRENT_TIMESTAMP() WHERE id = ?',
+        [avatarPath, userId]
+      );
+
+      res.json({ 
+        success: true,
+        profileImage: avatarPath 
       });
+    } catch (error) {
+      // Clean up uploaded file if DB update fails
+      if (req.file) {
+        const filePath = path.join(__dirname, 'uploads/avatars', req.file.filename);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      }
+      
+      console.error('Error updating avatar:', error);
+      res.status(500).json({ error: 'Internal server error' });
     }
-
-    // After updating, re-fetch the user to send the most current data back to the client
-    const [updatedRows] = await pool.execute(
-      `SELECT id, first_name, last_name, email, phone, account_type, profile_image, company, website, bio
-       FROM users WHERE id = ?`,
-      [userId]
-    );
-
-    const updatedUserFromDb = updatedRows[0];
-    const updatedUserForFrontend = {
-      id: updatedUserFromDb.id,
-      firstName: updatedUserFromDb.first_name,
-      lastName: updatedUserFromDb.last_name,
-      email: updatedUserFromDb.email,
-      phone: updatedUserFromDb.phone,
-      accountType: updatedUserFromDb.account_type,
-      profileImage: updatedUserFromDb.profile_image ? `${process.env.APP_URL}/uploads/${updatedUserFromDb.profile_image}` : null, // Full URL for image
-      company: updatedUserFromDb.company,
-      website: updatedUserFromDb.website,
-      bio: updatedUserFromDb.bio,
-    };
-
-    res.json({ message: 'Avatar uploaded successfully!', user: updatedUserForFrontend });
-
-  } catch (error) {
-    console.error('Error uploading avatar:', error);
-    // If an error occurred during DB update, delete the uploaded file
-    if (req.file) {
-      fs.unlink(req.file.path, (err) => {
-        if (err) console.error('Error deleting failed upload file:', err);
-      });
-    }
-    res.status(500).json({ error: 'Internal server error' });
   }
-});
+);
 
+// Serve static avatar files
+app.use('/uploads/avatars', express.static(path.join(__dirname, 'uploads/avatars')));
+
+// Error handling middleware (for multer errors)
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    // Handle multer errors (e.g., file too large)
+    return res.status(400).json({ 
+      error: err.code === 'LIMIT_FILE_SIZE' 
+        ? 'File size exceeds 5MB limit' 
+        : 'File upload error' 
+    });
+  } else if (err) {
+    // Handle other errors
+    console.error(err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+  next();
+});
 
 // ==================== DASHBOARD ROUTES ====================
 
