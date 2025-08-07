@@ -46,7 +46,7 @@ export const Team = () => {
       bio: "Professional web developer with expertise in creating modern, responsive websites and applications.",
       linkedin: "#",
       email: "padak.service@gmail.com",
-      imageUrl: "https://github.com/Sweety-Vigneshg/Padak-Marketing-Website/blob/main/frontend/src/assets/VigneshG.jpg?raw=true"
+      imageUrl: "https://github.com/Sweety-Vigneshg/Padak-Marketing-Website/blob/main/frontend/src/assets/Vignesh_G.png?raw=true"
     }
   ];
 
