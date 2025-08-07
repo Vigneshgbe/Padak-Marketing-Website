@@ -44,7 +44,7 @@ export const Team = () => {
       name: "Vignesh G",
       role: "Developer",
       bio: "Professional web developer with expertise in creating modern, responsive websites and applications.",
-      linkedin: "#",
+      linkedin: "https://www.linkedin.com/in/vigneshgbe/",
       email: "padak.service@gmail.com",
       imageUrl: "https://github.com/Sweety-Vigneshg/Padak-Marketing-Website/blob/main/frontend/src/assets/Vignesh_G.png?raw=true"
     }
