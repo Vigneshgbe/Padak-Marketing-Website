@@ -77,7 +77,7 @@ testConnection();
 //   }
 // });
 
-// ===== Multer Configuration for Avatars =====
+// ===== AVATAR MULTER CONFIGURATION  =====
 const avatarStorage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, avatarsDir);
@@ -100,6 +100,34 @@ const avatarUpload = multer({
   }
 });
 
+// ===== ASSIGNMENT MULTER CONFIGURATION =====
+const assignmentStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadDir = path.join(__dirname, 'uploads', 'assignments');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `assignment-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+const assignmentUpload = multer({
+  storage: assignmentStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: function (req, file, cb) {
+    const allowedTypes = ['.pdf', '.doc', '.docx', '.txt', '.zip', '.rar'];
+    const fileExt = path.extname(file.originalname).toLowerCase();
+    if (allowedTypes.includes(fileExt)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, TXT, ZIP, RAR files are allowed.'));
+    }
+  }
+});
 
 // CORS configuration
 const allowedOrigins = [
@@ -2037,7 +2065,7 @@ app.get('/assignments/all', authenticateToken, (req, res) => {
 });
 
 // POST /assignments/submit - Submit assignment
-app.post('/assignments/submit', authenticateToken, upload.single('file'), (req, res) => {
+app.post('/assignments/submit', authenticateToken, assignmentUpload.single('file'), (req, res) => {
   const { assignment_id, content } = req.body;
   const file_path = req.file ? req.file.filename : null;
 
