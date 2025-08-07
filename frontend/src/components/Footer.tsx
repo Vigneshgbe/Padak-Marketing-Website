@@ -86,7 +86,7 @@ export const Footer = () => {
                 <div className="w-8 h-8 bg-orange-500/20 rounded-lg flex items-center justify-center group-hover:bg-orange-500/30 transition-colors">
                   <MapPin className="w-4 h-4 text-orange-400" />
                 </div>
-                <span className="text-sm group-hover:text-white transition-colors">Colombo, Sri Lanka</span>
+                <span className="text-sm group-hover:text-white transition-colors">India, Sri Lanka</span>
               </div>
             </div>
           </div>

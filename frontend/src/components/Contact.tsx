@@ -42,12 +42,12 @@ export const Contact = () => {
     {
       icon: MapPin,
       title: "Office Location",
-      details: ["Colombo", "Sri Lanka"]
+      details: ["No.10A, 1/1, Attidiya Road, Ratmalana, Colombo, Sri Lanka", "132/4, Santhiveerappapuram, Punjai Sangenthi, Trichy, Tamil Nadu, India"]
     },
     {
       icon: Phone,
       title: "Phone Number",
-      details: ["+94 774433757"]
+      details: ["+94 774433757", "Whatsapp Available"]
     },
     {
       icon: Mail,
