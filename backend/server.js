@@ -383,9 +383,9 @@ app.post('/api/auth/avatar', authenticateToken, upload.single('avatar'), async (
   }
 });
 
-// ==================== PROFILE SECTION ROUTES ==================== //
+// ==================== PROFILE SECTION ROUTES ==================== 
 
-// Get user profile (FIXED: match database field names to frontend expectations)
+// Get user profile
 app.get('/api/user/profile', authenticateToken, async (req, res) => {
   try {
     const [rows] = await pool.query(
@@ -459,19 +459,19 @@ app.put('/api/user/profile', authenticateToken, async (req, res) => {
   }
 });
 
-// Update user avatar (FIXED: resolve "Unexpected field" error)
+// Update user avatar (FIXED: resolved "Unexpected field" error)
 app.post('/api/user/avatar', 
   authenticateToken,
-  upload.single('avatar'), // Match the field name expected by multer
+  avatarUpload.single('avatar'), // Consistent field name
   async (req, res) => {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
-
-    const userId = req.user.id;
-    const avatarPath = `/uploads/avatars/${req.file.filename}`;
-
     try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
+
+      const userId = req.user.id;
+      const avatarPath = `/uploads/avatars/${req.file.filename}`;
+
       // Get current avatar to delete old file
       const [current] = await pool.query(
         'SELECT profile_image FROM users WHERE id = ?',
@@ -499,7 +499,7 @@ app.post('/api/user/avatar',
     } catch (error) {
       // Clean up uploaded file if DB update fails
       if (req.file) {
-        const filePath = path.join(__dirname, 'uploads/avatars', req.file.filename);
+        const filePath = path.join(avatarsDir, req.file.filename);
         if (fs.existsSync(filePath)) {
           fs.unlinkSync(filePath);
         }
@@ -511,13 +511,10 @@ app.post('/api/user/avatar',
   }
 );
 
-// Serve static avatar files
-app.use('/uploads/avatars', express.static(path.join(__dirname, 'uploads/avatars')));
-
 // Error handling middleware (for multer errors)
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
-    // Handle multer errors (e.g., file too large)
+    // Handle multer errors
     return res.status(400).json({ 
       error: err.code === 'LIMIT_FILE_SIZE' 
         ? 'File size exceeds 5MB limit' 
