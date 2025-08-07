@@ -24,22 +24,23 @@ const AvatarUpload: React.FC<AvatarUploadProps> = ({ user }) => {
       if (!file.type.startsWith('image/')) {
         throw new Error('Please select an image file (JPG, PNG, GIF)');
       }
-
+  
       // Validate file size
       if (file.size > 5 * 1024 * 1024) {
         throw new Error('File size must be less than 5MB');
       }
-
+  
       // Create preview
       const reader = new FileReader();
       reader.onload = (e) => {
         setPreview(e.target?.result as string);
       };
       reader.readAsDataURL(file);
-
+  
       // Upload file
-      await uploadAvatar(file);
-      
+      const newProfileImage = await uploadAvatar(file);
+      setPreview(newProfileImage); // Use the URL from server response
+        
     } catch (error) {
       console.error('Upload error:', error);
       setError(error instanceof Error ? error.message : 'Upload failed');

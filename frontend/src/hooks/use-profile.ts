@@ -1,62 +1,91 @@
 // src/hooks/use-profile.ts
-import { useState } from 'react';
-import { useAuth } from './use-auth';
-import { authService } from '../lib/auth';
-import { useToast } from './use-toast';
+import { useState, useContext } from 'react';
+import { User } from '../lib/types';
+import { AuthContext } from '../context/AuthContext';
+import { jwtDecode } from 'jwt-decode';
 
 export const useProfile = () => {
-  const { user, updateUser } = useAuth();
+  const { token, setUser } = useContext(AuthContext);
   const [loading, setLoading] = useState(false);
-  const { toast } = useToast();
-
-  const updateProfile = async (data: any) => {
-    if (!user) return;
-
-    setLoading(true);
-    try {
-      const updatedUser = await authService.updateProfile(data);
-      updateUser(updatedUser);
-      toast({
-        title: "Success",
-        description: "Profile updated successfully",
-      });
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update profile",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [error, setError] = useState<string | null>(null);
 
   const uploadAvatar = async (file: File) => {
-    if (!user) return;
-  
     setLoading(true);
+    setError(null);
+    
     try {
-      const { profileImage } = await authService.uploadAvatar(file);
-      updateUser({ profileImage });
-      toast({
-        title: "Success",
-        description: "Avatar updated successfully",
+      const formData = new FormData();
+      formData.append('avatar', file);  // Changed from 'file' to 'avatar'
+      
+      const response = await fetch('/api/auth/avatar', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
       });
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to upload avatar",
-        variant: "destructive",
-      });
+
+      if (!response.ok) {
+        throw new Error('Failed to upload avatar');
+      }
+
+      const data = await response.json();
+      
+      // Update user context with new profile image
+      if (token) {
+        const decoded: any = jwtDecode(token);
+        setUser({
+          ...decoded,
+          profileImage: data.profileImage
+        });
+      }
+
+      return data.profileImage;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed');
+      throw err;
     } finally {
       setLoading(false);
     }
   };
 
-  return {
-    user,
-    loading,
-    updateProfile,
-    uploadAvatar,
+  const updateProfile = async (profileData: any) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await fetch('/api/auth/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(profileData)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update profile');
+      }
+
+      const updatedUser = await response.json();
+      
+      // Update user context
+      if (token) {
+        const decoded: any = jwtDecode(token);
+        setUser({
+          ...decoded,
+          ...updatedUser
+        });
+      }
+
+      return updatedUser;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Update failed');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
   };
+
+  return { uploadAvatar, updateProfile, loading, error };
 };
