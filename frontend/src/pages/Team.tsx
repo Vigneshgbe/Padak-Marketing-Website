@@ -100,8 +100,7 @@ export const Team = () => {
                   {/* Background element */}
                   <div className="absolute -top-10 -right-10 w-32 h-32 bg-orange-500/10 rounded-full blur-xl group-hover:bg-orange-500/20 transition-all duration-300"></div>
                   
-                  {/* Image with fallback - larger size */}
-                  {/* Updated image container with aspect-square */}
+                  {/* Image with fallback - fixed aspect ratio */}
                   <div className="w-48 h-48 mx-auto mb-6 relative transition-transform duration-500 group-hover:scale-105 aspect-square">
                     {member.imageUrl && !imageErrors[index] ? (
                       <div className="rounded-full overflow-hidden border-4 border-white shadow-lg w-full h-full">
@@ -117,9 +116,6 @@ export const Team = () => {
                         {member.name.split(' ').map(n => n[0]).join('')}
                       </div>
                     )}
-                    
-                    {/* ... hover effect ... */}
-                  </div>
                     
                     {/* Hover effect */}
                     <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/20 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
