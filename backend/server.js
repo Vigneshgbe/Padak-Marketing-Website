@@ -383,6 +383,163 @@ app.post('/api/auth/avatar', authenticateToken, upload.single('avatar'), async (
   }
 });
 
+// ==================== PROFILE SECTION ROUTES ====================
+
+// 1. Get User Profile (Read)
+app.get('/api/user/profile', authenticateToken, async (req, res) => {
+  try {
+    // req.user is already populated by authenticateToken middleware with camelCase keys
+    res.json(req.user);
+  } catch (error) {
+    console.error('Error fetching user profile:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// 2. Update User Profile (Update)
+app.patch('/api/user/profile', authenticateToken, async (req, res) => {
+  const userId = req.user.id; // Get user ID from authenticated token
+  const { firstName, lastName, email, phone, company, website, bio } = req.body;
+
+  // Basic validation (can be enhanced with a validation library)
+  if (!firstName || !lastName || !email) {
+    return res.status(400).json({ message: 'First name, last name, and email are required.' });
+  }
+
+  try {
+    const [result] = await pool.execute(
+      `UPDATE users SET
+         first_name = ?,
+         last_name = ?,
+         email = ?,
+         phone = ?,
+         company = ?,
+         website = ?,
+         bio = ?,
+         updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [firstName, lastName, email, phone || null, company || null, website || null, bio || null, userId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'User not found or no changes made.' });
+    }
+
+    // After updating, re-fetch the user to send the most current data back to the client
+    // This also ensures profileImage is updated if the avatar was recently changed
+    const [updatedRows] = await pool.execute(
+      `SELECT id, first_name, last_name, email, phone, account_type, profile_image, company, website, bio
+       FROM users WHERE id = ?`,
+      [userId]
+    );
+
+    const updatedUserFromDb = updatedRows[0];
+    const updatedUserForFrontend = {
+      id: updatedUserFromDb.id,
+      firstName: updatedUserFromDb.first_name,
+      lastName: updatedUserFromDb.last_name,
+      email: updatedUserFromDb.email,
+      phone: updatedUserFromDb.phone,
+      accountType: updatedUserFromDb.account_type,
+      profileImage: updatedUserFromDb.profile_image ? `${process.env.APP_URL}/uploads/${updatedUserFromDb.profile_image}` : null,
+      company: updatedUserFromDb.company,
+      website: updatedUserFromDb.website,
+      bio: updatedUserFromDb.bio,
+    };
+
+    res.json({ message: 'Profile updated successfully!', user: updatedUserForFrontend });
+
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    // Handle specific errors like duplicate email if needed
+    if (error.code === 'ER_DUP_ENTRY') {
+        return res.status(409).json({ message: 'Email already in use.' });
+    }
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// 3. Upload User Avatar (Create/Update)
+app.post('/api/user/profile/avatar', authenticateToken, upload.single('avatar'), async (req, res) => {
+  const userId = req.user.id;
+  const newProfileImageFilename = req.file ? req.file.filename : null;
+
+  if (!newProfileImageFilename) {
+    return res.status(400).json({ message: 'No image file provided.' });
+  }
+
+  try {
+    // Get the current profile image path to delete the old one
+    const [currentImageRows] = await pool.execute(
+      `SELECT profile_image FROM users WHERE id = ?`,
+      [userId]
+    );
+
+    let oldProfileImageFilename = null;
+    if (currentImageRows.length > 0 && currentImageRows[0].profile_image) {
+        oldProfileImageFilename = currentImageRows[0].profile_image;
+    }
+
+    // Update the database with the new image path
+    const [result] = await pool.execute(
+      `UPDATE users SET profile_image = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [newProfileImageFilename, userId]
+    );
+
+    if (result.affectedRows === 0) {
+      // If user not found, delete the uploaded file as it won't be used
+      if (req.file) {
+        fs.unlink(req.file.path, (err) => {
+          if (err) console.error('Error deleting orphaned file:', err);
+        });
+      }
+      return res.status(404).json({ message: 'User not found for avatar update.' });
+    }
+
+    // If there was an old profile image, delete it from the server
+    if (oldProfileImageFilename && oldProfileImageFilename !== newProfileImageFilename) {
+      const oldImagePath = path.join(UPLOADS_DIR, oldProfileImageFilename);
+      fs.unlink(oldImagePath, (err) => {
+        if (err) console.error('Error deleting old avatar:', err);
+      });
+    }
+
+    // After updating, re-fetch the user to send the most current data back to the client
+    const [updatedRows] = await pool.execute(
+      `SELECT id, first_name, last_name, email, phone, account_type, profile_image, company, website, bio
+       FROM users WHERE id = ?`,
+      [userId]
+    );
+
+    const updatedUserFromDb = updatedRows[0];
+    const updatedUserForFrontend = {
+      id: updatedUserFromDb.id,
+      firstName: updatedUserFromDb.first_name,
+      lastName: updatedUserFromDb.last_name,
+      email: updatedUserFromDb.email,
+      phone: updatedUserFromDb.phone,
+      accountType: updatedUserFromDb.account_type,
+      profileImage: updatedUserFromDb.profile_image ? `${process.env.APP_URL}/uploads/${updatedUserFromDb.profile_image}` : null, // Full URL for image
+      company: updatedUserFromDb.company,
+      website: updatedUserFromDb.website,
+      bio: updatedUserFromDb.bio,
+    };
+
+    res.json({ message: 'Avatar uploaded successfully!', user: updatedUserForFrontend });
+
+  } catch (error) {
+    console.error('Error uploading avatar:', error);
+    // If an error occurred during DB update, delete the uploaded file
+    if (req.file) {
+      fs.unlink(req.file.path, (err) => {
+        if (err) console.error('Error deleting failed upload file:', err);
+      });
+    }
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
 // ==================== DASHBOARD ROUTES ====================
 
 // Get user stats
