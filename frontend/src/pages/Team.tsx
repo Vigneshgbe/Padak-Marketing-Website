@@ -2,20 +2,15 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Header } from "@/components/Header";
-import { Linkedin, Mail, Sparkles, Users, ArrowRight, Award, Star } from "lucide-react";
+import { Linkedin, Mail, Sparkles, Users, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 export const Team = () => {
   const navigate = useNavigate();
   
-  // Add state for tracking image errors and animations
+  // Add state for tracking image errors
   const [imageErrors, setImageErrors] = useState({});
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  useEffect(() => {
-    // Trigger animations after component mounts
-    setIsLoaded(true);
-  }, []);
+  const [isVisible, setIsVisible] = useState(false);
 
   // Function to handle image errors
   const handleImageError = (index) => {
@@ -43,120 +38,112 @@ export const Team = () => {
       bio: "2+ years in digital marketing with expertise in building brands and driving growth strategies for businesses across various industries.",
       linkedin: "#",
       email: "padak.service@gmail.com",
-      imageUrl: "https://github.com/Sweety-Vigneshg/Padak-Marketing-Website/blob/main/frontend/src/assets/ThikilanP.jpeg?raw=true",
-      specialties: ["Digital Strategy", "Brand Development", "Marketing Analytics"]
-    } //,
-    // {
-    //   name: "Vignesh G",
-    //   role: "Developer",
-    //   bio: "Professional web developer",
-    //   linkedin: "#",
-    //   email: "padak.service@gmail.com",
-    //   imageUrl: "https://github.com/Sweety-Vigneshg/Padak-Marketing-Website/blob/main/frontend/src/assets/VigneshG.jpg?raw=true"
-    // }
+      imageUrl: "https://github.com/Sweety-Vigneshg/Padak-Marketing-Website/blob/main/frontend/src/assets/ThikilanP.jpeg?raw=true"
+    },
+    {
+      name: "Vignesh G",
+      role: "Developer",
+      bio: "Professional web developer with expertise in creating modern, responsive websites and applications.",
+      linkedin: "#",
+      email: "padak.service@gmail.com",
+      imageUrl: "https://github.com/Sweety-Vigneshg/Padak-Marketing-Website/blob/main/frontend/src/assets/VigneshG.jpg?raw=true"
+    }
   ];
+
+  useEffect(() => {
+    setIsVisible(true);
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-orange-50/20">
       <Header />
-      <section className="py-24">
+      <section className="py-20">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl">
           {/* Header */}
           <div 
-            className={`text-center mb-20 transition-all duration-700 transform ${isLoaded ? 'translate-y-0 opacity-100' : '-translate-y-10 opacity-0'}`}
+            className={`text-center mb-16 transition-all duration-700 ${
+              isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+            }`}
           >
-            <div className="inline-flex items-center gap-2 bg-orange-100 text-orange-600 px-4 py-2 rounded-full text-sm font-medium mb-6 hover:bg-orange-200 transition-colors duration-300">
+            <div className="inline-flex items-center gap-2 bg-orange-100 text-orange-600 px-4 py-2 rounded-full text-sm font-medium mb-6">
               <Sparkles className="w-4 h-4" />
               Our Team
             </div>
-            <h1 className="text-5xl font-bold mb-6 relative">
+            <h1 className="text-4xl md:text-5xl font-bold mb-4">
               Meet the{" "}
-              <span className="text-orange-500 relative">
-                Experts
-                <span className="absolute bottom-1 left-0 w-full h-2 bg-orange-100 -z-10 transform -rotate-1"></span>
-              </span>
+              <span className="bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">Experts</span>
             </h1>
-            <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
               Dedicated professionals committed to your digital success
             </p>
           </div>
 
-          {/* Team Grid - dynamically adjust based on number of team members */}
-          <div 
-            className={`grid gap-12 mb-24 ${
-              teamMembers.length === 1 
-                ? 'grid-cols-1 max-w-2xl mx-auto' 
-                : teamMembers.length === 2 
-                  ? 'grid-cols-1 md:grid-cols-2 max-w-4xl mx-auto' 
-                  : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
-            }`}
-          >
+          {/* Team Grid */}
+          <div className={`grid gap-8 mb-16 ${
+            teamMembers.length === 1 
+              ? 'grid-cols-1 max-w-md mx-auto' 
+              : teamMembers.length === 2 
+                ? 'grid-cols-1 md:grid-cols-2 max-w-4xl mx-auto' 
+                : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+          }`}>
             {teamMembers.map((member, index) => (
-              <div 
-                key={index} 
-                className={`transition-all duration-700 transform ${isLoaded ? 'translate-y-0 opacity-100' : 'translate-y-20 opacity-0'}`}
-                style={{ transitionDelay: `${index * 200}ms` }}
+              <div
+                key={index}
+                className={`transition-all duration-500 ${
+                  isVisible 
+                    ? "opacity-100 translate-y-0" 
+                    : "opacity-0 translate-y-8"
+                }`}
+                style={{ transitionDelay: `${index * 150}ms` }}
               >
-                <Card className="group p-8 hover:shadow-xl transition-all duration-500 border border-orange-100 hover:border-orange-200 bg-white rounded-2xl overflow-hidden relative">
-                  {/* Background decoration */}
-                  <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-bl from-orange-100/40 to-transparent rounded-bl-full -z-0 group-hover:scale-125 transition-transform duration-700"></div>
+                <Card className="p-6 hover:shadow-xl transition-all duration-300 border-gray-100 group overflow-hidden relative">
+                  {/* Background element */}
+                  <div className="absolute -top-10 -right-10 w-32 h-32 bg-orange-500/10 rounded-full blur-xl group-hover:bg-orange-500/20 transition-all duration-300"></div>
                   
-                  <div className="text-center relative z-10">
-                    {/* Image with fallback - Larger size */}
-                    <div className="w-52 h-52 mx-auto mb-6 relative">
-                      <div className="absolute inset-0 bg-gradient-to-br to-orange-500 rounded-full opacity-100 transition-opacity duration-500"></div>
-                      {member.imageUrl && !imageErrors[index] ? (
+                  {/* Image with fallback - larger size */}
+                  <div 
+                    className="w-48 h-48 mx-auto mb-6 relative transition-transform duration-500 group-hover:scale-105"
+                  >
+                    {member.imageUrl && !imageErrors[index] ? (
+                      <div className="rounded-full overflow-hidden border-4 border-white shadow-lg">
                         <img 
                           src={member.imageUrl} 
                           alt={member.name}
-                          className="w-full h-full object-cover rounded-full ring-4 ring-white shadow-lg group-hover:scale-105 transition-transform duration-500"
+                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                           onError={() => handleImageError(index)}
                         />
-                      ) : (
-                        <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-500 rounded-full flex items-center justify-center text-white text-5xl font-semibold shadow-lg group-hover:scale-105 transition-transform duration-500">
-                          {member.name.split(' ').map(n => n[0]).join('')}
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Info */}
-                    <h3 className="text-2xl font-bold mb-2 group-hover:text-orange-500 transition-colors duration-300">{member.name}</h3>
-                    <p className="text-orange-600 font-medium text-lg mb-3 flex items-center justify-center gap-2">
-                      <Award className="w-4 h-4" />
-                      {member.role}
-                    </p>
-                    <p className="text-gray-600 text-md mb-6 leading-relaxed">{member.bio}</p>
-                    
-                    {/* Specialties */}
-                    {member.specialties && (
-                      <div className="flex flex-wrap justify-center gap-2 mb-6">
-                        {member.specialties.map((specialty, i) => (
-                          <span 
-                            key={i} 
-                            className="bg-orange-50 text-orange-600 px-3 py-1 rounded-full text-xs font-medium hover:bg-orange-100 transition-colors duration-300"
-                            style={{ transitionDelay: `${i * 100}ms` }}
-                          >
-                            {specialty}
-                          </span>
-                        ))}
+                      </div>
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-500 rounded-full flex items-center justify-center text-white text-2xl font-semibold">
+                        {member.name.split(' ').map(n => n[0]).join('')}
                       </div>
                     )}
                     
-                    {/* Social Links - Enhanced */}
-                    <div className="flex justify-center gap-4">
+                    {/* Hover effect */}
+                    <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/20 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  </div>
+                  
+                  {/* Info */}
+                  <div>
+                    <h3 className="text-2xl font-bold mb-2 text-center">{member.name}</h3>
+                    <p className="text-orange-600 font-medium text-lg mb-3 text-center">{member.role}</p>
+                    <p className="text-muted-foreground mb-5 min-h-[60px] text-center">{member.bio}</p>
+                    
+                    {/* Social Links with animation */}
+                    <div 
+                      className="flex justify-center gap-3 transition-transform duration-300 group-hover:scale-105"
+                    >
                       <a 
                         href={member.linkedin} 
-                        className="w-12 h-12 border border-gray-200 rounded-lg flex items-center justify-center hover:border-orange-500 hover:text-white hover:bg-orange-500 transition-all duration-300 group/icon"
-                        aria-label={`${member.name}'s LinkedIn Profile`}
+                        className="w-10 h-10 bg-white border border-gray-200 rounded-full flex items-center justify-center hover:bg-orange-500 hover:border-orange-500 hover:text-white transition-all duration-300 shadow-sm"
                       >
-                        <Linkedin className="w-5 h-5 group-hover/icon:scale-110 transition-transform" />
+                        <Linkedin className="w-5 h-5" />
                       </a>
                       <a 
                         href={`mailto:${member.email}`} 
-                        className="w-12 h-12 border border-gray-200 rounded-lg flex items-center justify-center hover:border-orange-500 hover:text-white hover:bg-orange-500 transition-all duration-300 group/icon"
-                        aria-label={`Email ${member.name}`}
+                        className="w-10 h-10 bg-white border border-gray-200 rounded-full flex items-center justify-center hover:bg-orange-500 hover:border-orange-500 hover:text-white transition-all duration-300 shadow-sm"
                       >
-                        <Mail className="w-5 h-5 group-hover/icon:scale-110 transition-transform" />
+                        <Mail className="w-5 h-5" />
                       </a>
                     </div>
                   </div>
@@ -165,39 +152,38 @@ export const Team = () => {
             ))}
           </div>
 
-          {/* Bottom CTA - Enhanced */}
-          <div
-            className={`relative transition-all duration-700 transform ${isLoaded ? 'translate-y-0 opacity-100' : 'translate-y-20 opacity-0'}`}
-            style={{ transitionDelay: `400ms` }}
+          {/* Bottom CTA with animation */}
+          <div 
+            className={`bg-gradient-to-r from-orange-500 to-orange-400 rounded-2xl p-10 text-center text-white relative overflow-hidden transition-all duration-700 ${
+              isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
+            }`}
           >
-            <div className="absolute inset-0 bg-gradient-to-r from-orange-600/20 to-orange-400/20 rounded-3xl blur-xl transform -rotate-1 scale-105"></div>
-            <div className="relative bg-gradient-to-r from-orange-500 to-orange-400 rounded-2xl p-12 text-center text-white shadow-lg overflow-hidden">
-              {/* Decorative elements */}
-              <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/4"></div>
-              <div className="absolute bottom-0 left-0 w-64 h-64 bg-white/10 rounded-full translate-y-1/2 -translate-x-1/4"></div>
-              
-              <div
-                className={`bg-white/20 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 transition-all duration-700 ${isLoaded ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}`}
-                style={{ transitionDelay: `600ms` }}
-              >
-                <Users className="w-10 h-10 text-white" />
+            {/* Floating elements */}
+            <div className="absolute top-0 left-0 w-48 h-48 bg-white/10 rounded-full blur-3xl animate-pulse"></div>
+            <div className="absolute bottom-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
+            
+            <div className="relative z-10">
+              <div className="w-12 h-12 mx-auto mb-4 text-white/90 transition-transform duration-500 hover:scale-110">
+                <Users className="w-12 h-12 mx-auto" />
               </div>
               
-              <h2 className="text-3xl font-bold mb-4">
+              <h2 className="text-2xl md:text-3xl font-bold mb-3">
                 Let's Work Together
               </h2>
-              <p className="text-white/90 mb-8 max-w-xl mx-auto text-lg">
+              <p className="text-white/90 mb-6 max-w-xl mx-auto">
                 Our team is ready to help you achieve your digital marketing goals
-                and transform your online presence.
               </p>
-              <Button 
-                size="lg"
-                onClick={handleStartProject}
-                className="bg-white text-orange-500 hover:bg-orange-50 font-semibold px-8 py-6 text-lg shadow-md hover:shadow-lg transition-all duration-300 group"
-              >
-                Start a Project
-                <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
-              </Button>
+              
+              <div className="transition-transform duration-300 hover:scale-105 inline-block">
+                <Button 
+                  size="lg"
+                  onClick={handleStartProject}
+                  className="bg-white text-orange-500 hover:bg-gray-100 font-semibold shadow-lg"
+                >
+                  Start a Project
+                  <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
+              </div>
             </div>
           </div>
         </div>
