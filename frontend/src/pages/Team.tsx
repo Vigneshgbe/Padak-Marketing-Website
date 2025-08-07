@@ -4,16 +4,16 @@ import { Card } from "@/components/ui/card";
 import { Header } from "@/components/Header";
 import { Linkedin, Mail, Sparkles, Users, ArrowRight, Award, Star } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
 
 export const Team = () => {
   const navigate = useNavigate();
   
-  // Add state for tracking image errors
+  // Add state for tracking image errors and animations
   const [imageErrors, setImageErrors] = useState({});
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
+    // Trigger animations after component mounts
     setIsLoaded(true);
   }, []);
 
@@ -45,38 +45,16 @@ export const Team = () => {
       email: "padak.service@gmail.com",
       imageUrl: "https://github.com/Sweety-Vigneshg/Padak-Marketing-Website/blob/main/frontend/src/assets/ThikilanP.jpeg?raw=true",
       specialties: ["Digital Strategy", "Brand Development", "Marketing Analytics"]
-    } //,
-    // {
-    //   name: "Vignesh G",
-    //   role: "Developer",
-    //   bio: "Professional web developer",
-    //   linkedin: "#",
-    //   email: "padak.service@gmail.com",
-    //   imageUrl: "https://github.com/Sweety-Vigneshg/Padak-Marketing-Website/blob/main/frontend/src/assets/VigneshG.jpg?raw=true"
-    // }
+    } ,
+    {
+      name: "Vignesh G",
+      role: "Developer",
+      bio: "Professional web developer",
+      linkedin: "#",
+      email: "padak.service@gmail.com",
+      imageUrl: "https://github.com/Sweety-Vigneshg/Padak-Marketing-Website/blob/main/frontend/src/assets/VigneshG.jpg?raw=true"
+    }
   ];
-
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.3
-      }
-    }
-  };
-
-  const itemVariants = {
-    hidden: { y: 20, opacity: 0 },
-    visible: {
-      y: 0,
-      opacity: 1,
-      transition: {
-        type: "spring",
-        stiffness: 100
-      }
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-orange-50/20">
@@ -84,11 +62,8 @@ export const Team = () => {
       <section className="py-24">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl">
           {/* Header */}
-          <motion.div 
-            className="text-center mb-20"
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7 }}
+          <div 
+            className={`text-center mb-20 transition-all duration-700 transform ${isLoaded ? 'translate-y-0 opacity-100' : '-translate-y-10 opacity-0'}`}
           >
             <div className="inline-flex items-center gap-2 bg-orange-100 text-orange-600 px-4 py-2 rounded-full text-sm font-medium mb-6 hover:bg-orange-200 transition-colors duration-300">
               <Sparkles className="w-4 h-4" />
@@ -104,10 +79,10 @@ export const Team = () => {
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
               Dedicated professionals committed to your digital success
             </p>
-          </motion.div>
+          </div>
 
           {/* Team Grid - dynamically adjust based on number of team members */}
-          <motion.div 
+          <div 
             className={`grid gap-12 mb-24 ${
               teamMembers.length === 1 
                 ? 'grid-cols-1 max-w-2xl mx-auto' 
@@ -115,12 +90,13 @@ export const Team = () => {
                   ? 'grid-cols-1 md:grid-cols-2 max-w-4xl mx-auto' 
                   : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
             }`}
-            variants={containerVariants}
-            initial="hidden"
-            animate={isLoaded ? "visible" : "hidden"}
           >
             {teamMembers.map((member, index) => (
-              <motion.div key={index} variants={itemVariants}>
+              <div 
+                key={index} 
+                className={`transition-all duration-700 transform ${isLoaded ? 'translate-y-0 opacity-100' : 'translate-y-20 opacity-0'}`}
+                style={{ transitionDelay: `${index * 200}ms` }}
+              >
                 <Card className="group p-8 hover:shadow-xl transition-all duration-500 border border-orange-100 hover:border-orange-200 bg-white rounded-2xl overflow-hidden relative">
                   {/* Background decoration */}
                   <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-bl from-orange-100/40 to-transparent rounded-bl-full -z-0 group-hover:scale-125 transition-transform duration-700"></div>
@@ -155,7 +131,11 @@ export const Team = () => {
                     {member.specialties && (
                       <div className="flex flex-wrap justify-center gap-2 mb-6">
                         {member.specialties.map((specialty, i) => (
-                          <span key={i} className="bg-orange-50 text-orange-600 px-3 py-1 rounded-full text-xs font-medium hover:bg-orange-100 transition-colors duration-300">
+                          <span 
+                            key={i} 
+                            className="bg-orange-50 text-orange-600 px-3 py-1 rounded-full text-xs font-medium hover:bg-orange-100 transition-colors duration-300"
+                            style={{ transitionDelay: `${i * 100}ms` }}
+                          >
                             {specialty}
                           </span>
                         ))}
@@ -181,16 +161,14 @@ export const Team = () => {
                     </div>
                   </div>
                 </Card>
-              </motion.div>
+              </div>
             ))}
-          </motion.div>
+          </div>
 
           {/* Bottom CTA - Enhanced */}
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5, duration: 0.7 }}
-            className="relative"
+          <div
+            className={`relative transition-all duration-700 transform ${isLoaded ? 'translate-y-0 opacity-100' : 'translate-y-20 opacity-0'}`}
+            style={{ transitionDelay: `400ms` }}
           >
             <div className="absolute inset-0 bg-gradient-to-r from-orange-600/20 to-orange-400/20 rounded-3xl blur-xl transform -rotate-1 scale-105"></div>
             <div className="relative bg-gradient-to-r from-orange-500 to-orange-400 rounded-2xl p-12 text-center text-white shadow-lg overflow-hidden">
@@ -198,14 +176,12 @@ export const Team = () => {
               <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/4"></div>
               <div className="absolute bottom-0 left-0 w-64 h-64 bg-white/10 rounded-full translate-y-1/2 -translate-x-1/4"></div>
               
-              <motion.div
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ delay: 0.8, type: "spring", stiffness: 100 }}
-                className="bg-white/20 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6"
+              <div
+                className={`bg-white/20 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 transition-all duration-700 ${isLoaded ? 'scale-100 opacity-100' : 'scale-50 opacity-0'}`}
+                style={{ transitionDelay: `600ms` }}
               >
                 <Users className="w-10 h-10 text-white" />
-              </motion.div>
+              </div>
               
               <h2 className="text-3xl font-bold mb-4">
                 Let's Work Together
@@ -223,7 +199,7 @@ export const Team = () => {
                 <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </Button>
             </div>
-          </motion.div>
+          </div>
         </div>
       </section>
     </div>
