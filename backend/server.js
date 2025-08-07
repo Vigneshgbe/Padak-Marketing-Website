@@ -15,6 +15,9 @@ const port = process.env.PORT || 5000;
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-secret-key';
 
+// Ensure __dirname is properly set
+const __dirname = path.resolve();
+
 // Create necessary directories
 const assignmentsDir = path.join(__dirname, 'uploads', 'assignments');
 if (!fs.existsSync(assignmentsDir)) fs.mkdirSync(assignmentsDir, { recursive: true });
@@ -486,8 +489,13 @@ app.post('/api/auth/avatar', authenticateToken, avatarUpload.single('avatar'), a
     }
 
     const userId = req.user.id;
-    // Use the correct path format that matches your static file serving
-    const profileImage = `/uploads/avatars/${req.file.filename}`;
+    const filename = req.file.filename;
+    const profileImage = `/uploads/avatars/${filename}`;
+
+    // Create absolute URL
+    const protocol = req.protocol;
+    const host = req.get('host');
+    const absoluteUrl = `${protocol}://${host}${profileImage}`;
 
     // Delete old avatar if exists
     if (req.user.profile_image) {
@@ -500,10 +508,10 @@ app.post('/api/auth/avatar', authenticateToken, avatarUpload.single('avatar'), a
 
     await pool.execute(
       'UPDATE users SET profile_image = ?, updated_at = NOW() WHERE id = ?',
-      [profileImage, userId]
+      [profileImage, userId] // Store relative path in DB
     );
 
-    res.json({ profileImage });
+    res.json({ profileImage: absoluteUrl }); // Return absolute URL to frontend
 
   } catch (error) {
     console.error('Avatar upload error:', error);
@@ -511,8 +519,6 @@ app.post('/api/auth/avatar', authenticateToken, avatarUpload.single('avatar'), a
   }
 });
 
-// Serve static avatar files
-//app.use('/uploads/avatars', express.static(path.join(__dirname, 'uploads', 'avatars')));
 
 // ==================== DASHBOARD ROUTES ====================
 
