@@ -35,7 +35,11 @@ class AuthService {
   }
 
   async uploadAvatar(file: File): Promise<{ profileImage: string }> {
-    return apiService.uploadFile<{ profileImage: string }>('/auth/avatar', file);
+    return apiService.uploadFile<{ profileImage: string }>(
+      '/auth/avatar', 
+      file, 
+      'avatar'  // Pass the correct field name
+    );
   }
 
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {

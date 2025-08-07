@@ -78,6 +78,9 @@ testConnection();
 // });
 
 // ===== AVATAR MULTER CONFIGURATION  =====
+const avatarsDir = path.join(__dirname, 'uploads', 'avatars');
+if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
+
 const avatarStorage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, avatarsDir);
