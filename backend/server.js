@@ -15,9 +15,6 @@ const port = process.env.PORT || 5000;
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-secret-key';
 
-// Ensure __dirname is properly set
-const __dirname = path.resolve();
-
 // Create necessary directories
 const assignmentsDir = path.join(__dirname, 'uploads', 'assignments');
 if (!fs.existsSync(assignmentsDir)) fs.mkdirSync(assignmentsDir, { recursive: true });
