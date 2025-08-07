@@ -47,32 +47,63 @@ async function testConnection() {
 
 testConnection();
 
-// Multer configuration for file uploads
-const storage = multer.diskStorage({
+// // Multer configuration for file uploads
+// const storage = multer.diskStorage({
+//   destination: function (req, file, cb) {
+//     cb(null, 'uploads/');
+//   },
+//   filename: function (req, file, cb) {
+//     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+//     cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+//   }
+// });
+
+// const upload = multer({
+//   storage: storage,
+//   limits: {
+//     fileSize: 5 * 1024 * 1024 // 5MB limit
+//   },
+//   fileFilter: function (req, file, cb) {
+//     if (file.fieldname === 'avatar') {
+//       // Check if file is an image
+//       if (file.mimetype.startsWith('image/')) {
+//         cb(null, true);
+//       } else {
+//         cb(new Error('Only image files are allowed for avatar'));
+//       }
+//     } else {
+//       cb(null, true);
+//     }
+//   }
+// });
+
+// Create avatars directory if it doesn't exist
+const avatarsDir = path.join(__dirname, 'uploads', 'avatars');
+if (!fs.existsSync(avatarsDir)) {
+  fs.mkdirSync(avatarsDir, { recursive: true });
+}
+
+// Multer configuration for avatars
+const avatarStorage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'uploads/');
+    cb(null, avatarsDir);
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    cb(null, 'avatar-' + uniqueSuffix + path.extname(file.originalname));
   }
 });
 
-const upload = multer({
-  storage: storage,
+const avatarUpload = multer({ 
+  storage: avatarStorage,
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB limit
   },
   fileFilter: function (req, file, cb) {
-    if (file.fieldname === 'avatar') {
-      // Check if file is an image
-      if (file.mimetype.startsWith('image/')) {
-        cb(null, true);
-      } else {
-        cb(new Error('Only image files are allowed for avatar'));
-      }
-    } else {
+    if (file.mimetype.startsWith('image/')) {
       cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'));
     }
   }
 });
