@@ -96,7 +96,7 @@ app.use(cors({
 // Middleware
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
 // ======== AUTHENTICATION MIDDLEWARE ========
 
@@ -423,6 +423,642 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Get stats error:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// =================================================================
+// ============== ENHANCED SOCIAL FEED FUNCTIONALITY ===============
+// =================================================================
+
+// --- Multer Configuration for Social Post Images ---
+const socialUploadDir = 'public/uploads/social';
+if (!fs.existsSync(socialUploadDir)) {
+  fs.mkdirSync(socialUploadDir, { recursive: true });
+}
+
+const socialStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, socialUploadDir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `social-${Date.now()}${path.extname(file.originalname)}`);
+  },
+});
+
+const socialUpload = multer({
+  storage: socialStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    const filetypes = /jpeg|jpg|png|gif/;
+    const mimetype = filetypes.test(file.mimetype);
+    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+    if (mimetype && extname) {
+      return cb(null, true);
+    }
+    cb(new Error('Error: File upload only supports the following filetypes - ' + filetypes));
+  },
+}).single('image'); 
+
+// Helper function to get full URL for images (SIMPLIFIED)
+const getFullImageUrl = (req, imagePath) => {
+  if (!imagePath) {
+      return null;
+  }
+  if (imagePath.startsWith('http')) {
+      return imagePath;
+  }
+  let cleanPath = imagePath.replace(/^public\//, '');
+  if (!cleanPath.startsWith('/')) {
+      cleanPath = '/' + cleanPath;
+  }
+  return `${req.protocol}://${req.get('host')}${cleanPath}`;
+}
+
+// --- GET All Posts (with Pagination, Likes, Comments, etc.) ---
+app.get('/api/posts', authenticateToken, async (req, res) => {
+const userId = req.user.id;
+const page = parseInt(req.query.page, 10) || 1;
+const limit = parseInt(req.query.limit, 10) || 10;
+const offset = (page - 1) * limit;
+
+try {
+  // Step 1: Get total count (no changes here)
+  const [[{ totalPosts }]] = await pool.execute(`
+    SELECT COUNT(DISTINCT p.id) as totalPosts FROM social_activities p
+    WHERE p.activity_type = 'post'
+    AND (
+      p.visibility = 'public' OR (p.visibility = 'private' AND p.user_id = ?) OR
+      (p.visibility = 'connections' AND (p.user_id = ? OR p.user_id IN (
+          SELECT user_id_2 FROM user_connections WHERE user_id_1 = ? AND status = 'accepted'
+          UNION
+          SELECT user_id_1 FROM user_connections WHERE user_id_2 = ? AND status = 'accepted'
+      )))
+    )
+  `, [userId, userId, userId, userId]);
+
+  const totalPages = Math.ceil(totalPosts / limit);
+
+  // Step 2: Fetch paginated posts (no changes here)
+  const [posts] = await pool.execute(`
+    SELECT
+      p.id, p.user_id, p.content, p.image_url, p.created_at, p.updated_at,
+      p.visibility, p.achievement, p.share_count,
+      u.first_name, u.last_name, u.profile_image, u.account_type,
+      (SELECT COUNT(*) FROM social_activities WHERE activity_type = 'like' AND target_id = p.id) AS likes,
+      (SELECT COUNT(*) FROM social_activities WHERE activity_type = 'comment' AND target_id = p.id) AS comment_count,
+      EXISTS(SELECT 1 FROM social_activities WHERE activity_type = 'like' AND target_id = p.id AND user_id = ?) AS has_liked,
+      EXISTS(SELECT 1 FROM social_activities WHERE activity_type = 'bookmark' AND target_id = p.id AND user_id = ?) AS has_bookmarked
+    FROM social_activities p JOIN users u ON p.user_id = u.id
+    WHERE p.activity_type = 'post'
+    AND (
+        p.visibility = 'public' OR (p.visibility = 'private' AND p.user_id = ?) OR
+        (p.visibility = 'connections' AND (p.user_id = ? OR p.user_id IN (
+            SELECT user_id_2 FROM user_connections WHERE user_id_1 = ? AND status = 'accepted'
+            UNION
+            SELECT user_id_1 FROM user_connections WHERE user_id_2 = ? AND status = 'accepted'
+        )))
+    )
+    ORDER BY p.created_at DESC LIMIT ? OFFSET ?
+  `, [userId, userId, userId, userId, userId, userId, limit, offset]);
+  
+  if (posts.length === 0) {
+      return res.json({ posts: [], pagination: { page, totalPages, totalPosts } });
+  }
+
+  // Step 3: Fetch comments for the retrieved posts
+  const postIds = posts.map(p => p.id);
+  let comments = [];
+
+  // ============================ SQL FIX IS HERE ============================
+  // We construct the query string by safely escaping the array of IDs.
+  // This correctly generates WHERE ... IN (1, 2, 3) and prevents the error.
+  const commentsQuery = `
+    SELECT
+      c.id, c.user_id, c.content, c.created_at, c.target_id,
+      u.first_name, u.last_name, u.profile_image, u.account_type
+    FROM social_activities c JOIN users u ON c.user_id = u.id
+    WHERE c.activity_type = 'comment' AND c.target_id IN (${pool.escape(postIds)})
+    ORDER BY c.created_at ASC
+  `;
+  const [fetchedComments] = await pool.query(commentsQuery); // Use .query for non-prepared statements
+  comments = fetchedComments;
+  // ============================= SQL FIX ENDS HERE =============================
+  
+  // Step 4: Map comments and format image URLs
+  const postsWithData = posts.map(post => {
+    const postComments = comments
+      .filter(comment => comment.target_id === post.id)
+      .map(c => ({
+        ...c,
+        user: {
+          id: c.user_id,
+          first_name: c.first_name,
+          last_name: c.last_name,
+          // Use the simplified helper for comment author images
+          profile_image: getFullImageUrl(req, c.profile_image),
+          account_type: c.account_type,
+        }
+      }));
+
+    return {
+      ...post,
+      has_liked: !!post.has_liked,
+      has_bookmarked: !!post.has_bookmarked,
+      // Use the simplified helper for post images
+      image_url: getFullImageUrl(req, post.image_url),
+      user: {
+        id: post.user_id,
+        first_name: post.first_name,
+        last_name: post.last_name,
+        // Use the simplified helper for post author images
+        profile_image: getFullImageUrl(req, post.profile_image),
+        account_type: post.account_type,
+      },
+      comments: postComments,
+    };
+  });
+
+  res.json({
+    posts: postsWithData,
+    pagination: { page, totalPages, totalPosts }
+  });
+
+} catch (error) {
+  console.error('Error fetching posts:', error);
+  res.status(500).json({ error: 'Failed to fetch posts.' });
+}
+});
+
+
+// --- POST a new post ---
+// --- CORRECTED IMAGE PATH SAVING ---
+app.post('/api/posts', authenticateToken, (req, res) => {
+  socialUpload(req, res, async (err) => {
+      if (err) {
+          console.error('Multer error:', err);
+          return res.status(400).json({ error: err.message });
+      }
+      
+      try {
+          const { content, achievement, visibility } = req.body;
+          const userId = req.user.id;
+
+          if (!content && !req.file) {
+              return res.status(400).json({ error: 'Post must have content or an image.' });
+          }
+
+          // ============================ IMAGE PATH FIX IS HERE ============================
+          // Save a clean URL path instead of a filesystem path.
+          const imageUrl = req.file ? `/uploads/social/${req.file.filename}` : null;
+          // ============================ IMAGE PATH FIX ENDS HERE ==========================
+
+          const isAchievement = achievement === 'true';
+
+          const [result] = await pool.execute(
+              `INSERT INTO social_activities 
+                  (user_id, activity_type, content, image_url, achievement, visibility) 
+              VALUES (?, 'post', ?, ?, ?, ?)`,
+              [userId, content || '', imageUrl, isAchievement, visibility]
+          );
+
+          const postId = result.insertId;
+
+          // Fetch the newly created post to return to the frontend
+          const [[newPost]] = await pool.execute(`
+              SELECT p.*, u.first_name, u.last_name, u.profile_image, u.account_type
+              FROM social_activities p JOIN users u ON p.user_id = u.id
+              WHERE p.id = ?
+          `, [postId]);
+
+          res.status(201).json({
+              ...newPost,
+              has_liked: false,
+              has_bookmarked: false,
+              likes: 0,
+              comment_count: 0,
+              image_url: getFullImageUrl(req, newPost.image_url),
+              user: {
+                id: newPost.user_id,
+                first_name: newPost.first_name,
+                last_name: newPost.last_name,
+                profile_image: getFullImageUrl(req, newPost.profile_image),
+                account_type: newPost.account_type,
+              },
+              comments: [],
+          });
+      } catch (error) {
+          console.error('Error creating post:', error);
+          res.status(500).json({ error: 'Failed to create post.' });
+      }
+  });
+});
+
+// --- PUT (edit) a post ---
+app.put('/api/posts/:id', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    const { content } = req.body;
+    const userId = req.user.id;
+
+    if (!content || content.trim() === '') {
+        return res.status(400).json({ error: 'Content cannot be empty.' });
+    }
+
+    try {
+        const [[post]] = await pool.execute('SELECT user_id FROM social_activities WHERE id = ?', [id]);
+
+        if (!post) {
+            return res.status(404).json({ error: 'Post not found.' });
+        }
+
+        if (post.user_id !== userId) {
+            return res.status(403).json({ error: 'You are not authorized to edit this post.' });
+        }
+
+        await pool.execute(
+            'UPDATE social_activities SET content = ?, updated_at = NOW() WHERE id = ?',
+            [content, id]
+        );
+
+        res.json({ message: 'Post updated successfully.' });
+    } catch (error) {
+        console.error('Error updating post:', error);
+        res.status(500).json({ error: 'Failed to update post.' });
+    }
+});
+
+
+// --- DELETE a post ---
+app.delete('/api/posts/:id', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    try {
+        const [[post]] = await pool.execute('SELECT user_id, image_url FROM social_activities WHERE id = ?', [id]);
+
+        if (!post) {
+            return res.status(404).json({ error: 'Post not found.' });
+        }
+
+        if (post.user_id !== userId) {
+            return res.status(403).json({ error: 'You are not authorized to delete this post.' });
+        }
+        
+        // Delete the post record (ON DELETE CASCADE in DB should handle comments, likes, etc.)
+        await pool.execute('DELETE FROM social_activities WHERE id = ?', [id]);
+
+        // If there was an image, delete it from the filesystem
+        if (post.image_url) {
+            fs.unlink(path.join(__dirname, post.image_url), (err) => {
+                if (err) console.error("Error deleting post image:", err);
+            });
+        }
+
+        res.json({ message: 'Post deleted successfully.' });
+    } catch (error) {
+        console.error('Error deleting post:', error);
+        res.status(500).json({ error: 'Failed to delete post.' });
+    }
+});
+
+
+// --- POST a comment on a post ---
+app.post('/api/posts/:id/comment', authenticateToken, async (req, res) => {
+    const targetId = req.params.id;
+    const { content } = req.body;
+    const userId = req.user.id;
+
+    if (!content || content.trim() === '') {
+        return res.status(400).json({ error: 'Comment cannot be empty.' });
+    }
+
+    try {
+        const [result] = await pool.execute(
+            `INSERT INTO social_activities (user_id, activity_type, content, target_id) VALUES (?, 'comment', ?, ?)`,
+            [userId, content, targetId]
+        );
+
+        const commentId = result.insertId;
+
+        // Fetch the new comment with user info to return
+        const [[newComment]] = await pool.execute(`
+            SELECT c.*, u.first_name, u.last_name, u.profile_image
+            FROM social_activities c
+            JOIN users u ON c.user_id = u.id
+            WHERE c.id = ?
+        `, [commentId]);
+
+        res.status(201).json({
+            ...newComment,
+            user: {
+                id: newComment.user_id,
+                first_name: newComment.first_name,
+                last_name: newComment.last_name,
+                profile_image: getFullImageUrl(req, newComment.profile_image)
+            }
+        });
+    } catch (error) {
+        console.error('Error posting comment:', error);
+        res.status(500).json({ error: 'Failed to post comment.' });
+    }
+});
+
+
+// --- POST (like) a post ---
+app.post('/api/posts/:id/like', authenticateToken, async (req, res) => {
+    const targetId = req.params.id;
+    const userId = req.user.id;
+
+    try {
+        // Use INSERT IGNORE to prevent duplicates if user clicks too fast
+        await pool.execute(
+            `INSERT IGNORE INTO social_activities (user_id, activity_type, target_id) VALUES (?, 'like', ?)`,
+            [userId, targetId]
+        );
+        res.status(201).json({ message: 'Post liked.' });
+    } catch (error) {
+        console.error('Error liking post:', error);
+        res.status(500).json({ error: 'Failed to like post.' });
+    }
+});
+
+// --- DELETE (unlike) a post ---
+app.delete('/api/posts/:id/like', authenticateToken, async (req, res) => {
+    const targetId = req.params.id;
+    const userId = req.user.id;
+
+    try {
+        await pool.execute(
+            `DELETE FROM social_activities WHERE user_id = ? AND activity_type = 'like' AND target_id = ?`,
+            [userId, targetId]
+        );
+        res.json({ message: 'Post unliked.' });
+    } catch (error) {
+        console.error('Error unliking post:', error);
+        res.status(500).json({ error: 'Failed to unlike post.' });
+    }
+});
+
+
+// --- POST (bookmark) a post ---
+app.post('/api/posts/:id/bookmark', authenticateToken, async (req, res) => {
+    const targetId = req.params.id;
+    const userId = req.user.id;
+
+    try {
+        await pool.execute(
+            `INSERT IGNORE INTO social_activities (user_id, activity_type, target_id) VALUES (?, 'bookmark', ?)`,
+            [userId, targetId]
+        );
+        res.status(201).json({ message: 'Post bookmarked.' });
+    } catch (error) {
+        console.error('Error bookmarking post:', error);
+        res.status(500).json({ error: 'Failed to bookmark post.' });
+    }
+});
+
+// --- DELETE (unbookmark) a post ---
+app.delete('/api/posts/:id/bookmark', authenticateToken, async (req, res) => {
+    const targetId = req.params.id;
+    const userId = req.user.id;
+
+    try {
+        await pool.execute(
+            `DELETE FROM social_activities WHERE user_id = ? AND activity_type = 'bookmark' AND target_id = ?`,
+            [userId, targetId]
+        );
+        res.json({ message: 'Post unbookmarked.' });
+    } catch (error) {
+        console.error('Error unbookmarking post:', error);
+        res.status(500).json({ error: 'Failed to unbookmark post.' });
+    }
+});
+
+
+// --- POST (track) a share ---
+app.post('/api/posts/:id/share', authenticateToken, async (req, res) => {
+    const postId = req.params.id;
+
+    try {
+        await pool.execute(
+            'UPDATE social_activities SET share_count = share_count + 1 WHERE id = ?',
+            [postId]
+        );
+        res.json({ message: 'Share tracked.' });
+    } catch (error) {
+        console.error('Error tracking share:', error);
+        res.status(500).json({ error: 'Failed to track share.' });
+    }
+});
+
+// ============ STUDENT DASHBOARD SPECIFIC ENDPOINTS  ====================
+
+// This fetches all enrolled courses for a specific user, including course details
+app.get('/api/users/:userId/enrollments', authenticateToken, async (req, res) => {
+  const userId = req.user.id; // User ID is from the authenticated token
+
+  // Security check: Ensure the user requesting data matches the user ID in the URL parameter
+  // unless you have admin roles that can view other users' data.
+  if (parseInt(req.params.userId, 10) !== userId) {
+    return res.status(403).json({ message: 'Forbidden: You can only access your own enrollment data.' });
+  }
+
+  try {
+    const [enrollments] = await pool.execute(`
+      SELECT
+        e.id,
+        e.progress,
+        e.status,
+        e.enrollment_date,
+        e.completion_date,
+        c.id AS course_id,
+        c.title AS courseTitle,             -- Alias for frontend
+        c.instructor_name AS instructorName, -- Alias for frontend (assuming column exists)
+        c.duration_weeks AS durationWeeks    -- Alias for frontend (assuming column exists)
+      FROM enrollments e
+      JOIN courses c ON e.course_id = c.id
+      WHERE e.user_id = ?
+      ORDER BY e.enrollment_date DESC
+    `, [userId]); // Use userId from token
+
+    // The data is already aliased correctly for the frontend in the SQL query
+    res.json(enrollments);
+  } catch (error) {
+    console.error('Error fetching user enrollments for dashboard:', error);
+    res.status(500).json({ error: 'Internal server error while fetching enrolled courses.' });
+  }
+});
+
+// GET /api/users/:userId/internship-submissions
+app.get('/api/users/:userId/internship-submissions', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+
+  if (parseInt(req.params.userId, 10) !== userId) {
+    return res.status(403).json({ message: 'Forbidden: You can only access your own internship submissions.' });
+  }
+
+  try {
+    const [applications] = await pool.query( // Using pool.query or pool.execute is fine, just be consistent
+      `SELECT
+         sub.id,
+         sub.internship_id,
+         sub.status AS applicationStatus,
+         sub.submitted_at AS applicationDate, 
+         i.title AS internshipTitle,
+         i.company AS companyName
+       FROM internship_submissions sub
+       JOIN internships i ON sub.internship_id = i.id
+       WHERE sub.user_id = ?
+       ORDER BY sub.submitted_at DESC`, 
+      [userId]
+    );
+
+    res.json(applications);
+  } catch (error) {
+    console.error('Error fetching user internship applications for dashboard:', error); // <--- CHECK THIS IN YOUR BACKEND CONSOLE
+    res.status(500).json({ message: 'Internal server error while fetching your applications.' });
+  }
+});
+
+// =============== NEW PROFESSIONAL DASHBOARD ENDPOINTS ====================
+
+// Assumes a 'services' table with detailed service info, joined with 'service_categories'
+app.get('/api/services', authenticateToken, async (req, res) => {
+  try {
+    const [services] = await pool.execute(
+      `SELECT
+          s.id,
+          s.name,          -- The specific service name (e.g., "Advanced SEO Package")
+          sc.id AS category_id, -- The ID of the category
+          sc.name AS categoryName, -- The category name (e.g., "SEO")
+          s.description,
+          s.price,
+          s.duration,
+          s.rating,
+          s.reviews,
+          s.features,      -- Assuming this is still a JSON string in 'services' table
+          s.popular
+       FROM services s  -- This 'services' table is assumed to contain detailed service offerings
+       JOIN service_categories sc ON s.category_id = sc.id
+       WHERE sc.is_active = 1 -- Only fetch services belonging to active categories
+       ORDER BY s.popular DESC, s.name ASC`
+    );
+
+    // Parse JSON fields from database strings to JavaScript arrays/objects
+    const parsedServices = services.map(service => ({
+      ...service,
+      features: JSON.parse(service.features || '[]')
+    }));
+
+    res.json(parsedServices);
+  } catch (error) {
+    console.error('Error fetching available services:', error);
+    res.status(500).json({ message: 'Failed to fetch available services.', error: error.message });
+  }
+});
+
+// ADJUSTED: GET /api/users/:userId/service-requests - Fetch a user's submitted service requests
+app.get('/api/users/:userId/service-requests', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+
+  if (parseInt(req.params.userId, 10) !== userId) {
+    return res.status(403).json({ message: 'Forbidden: You can only access your own service requests.' });
+  }
+
+  try {
+    const [requests] = await pool.execute(
+      `SELECT
+          sr.id,
+          sr.user_id AS userId,
+          sr.subcategory_id AS categoryId, -- Maps to categoryId on frontend
+          sc.name AS categoryName,         -- Fetched from service_categories.name
+          sr.full_name AS fullName,
+          sr.email,
+          sr.phone,
+          sr.company,
+          sr.website,
+          sr.project_details AS projectDetails, -- Maps to projectDetails on frontend
+          sr.budget_range AS budgetRange,     -- Maps to budgetRange on frontend
+          sr.timeline,                        -- Maps to timeline on frontend
+          sr.contact_method AS contactMethod,
+          sr.additional_requirements AS additionalRequirements,
+          sr.status,
+          sr.created_at AS requestDate,       -- Maps to requestDate on frontend
+          sr.updated_at AS updatedAt          -- Optional, for display if needed
+       FROM service_requests sr
+       JOIN service_categories sc ON sr.subcategory_id = sc.id -- Join with service_categories
+       WHERE sr.user_id = ?
+       ORDER BY sr.created_at DESC`,
+      [userId]
+    );
+
+    res.json(requests);
+  } catch (error) {
+    console.error('Error fetching user service requests:', error);
+    res.status(500).json({ message: 'Failed to fetch your service requests.', error: error.message });
+  }
+});
+
+// ADJUSTED: POST /api/service-requests - Submit a new service request
+app.post('/api/service-requests', authenticateToken, async (req, res) => {
+  const userId = req.user.id; // User ID from authenticated token
+  const {
+    categoryId, // Comes from selectedService.category_id
+    fullName,
+    email,
+    phone,
+    company,
+    website,
+    projectDetails, // Changed from description
+    budgetRange,    // Changed from budget
+    timeline,       // Changed from deadline
+    contactMethod,
+    additionalRequirements
+  } = req.body;
+
+  // Validate required fields based on your 'service_requests' table schema
+  if (!userId || !categoryId || !fullName || !email || !phone || !projectDetails || !budgetRange || !timeline || !contactMethod) {
+    return res.status(400).json({ message: 'Missing required fields for service request. Please fill in all necessary details.' });
+  }
+
+  try {
+    const [result] = await pool.execute(
+      `INSERT INTO service_requests (
+         user_id,
+         subcategory_id,
+         full_name,
+         email,
+         phone,
+         company,
+         website,
+         project_details,
+         budget_range,
+         timeline,
+         contact_method,
+         additional_requirements,
+         status
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`, // New requests are 'pending' by default
+      [
+        userId,
+        categoryId,
+        fullName,
+        email,
+        phone,
+        company || null, // Allow NULL for optional fields if not provided
+        website || null,
+        projectDetails,
+        budgetRange,
+        timeline,
+        contactMethod,
+        additionalRequirements || null
+      ]
+    );
+
+    // Return the ID of the newly created request
+    res.status(201).json({ message: 'Service request submitted successfully!', id: result.insertId });
+  } catch (error) {
+    console.error('Error submitting service request:', error);
+    res.status(500).json({ message: 'Failed to submit service request. An internal server error occurred.', error: error.message });
   }
 });
 
