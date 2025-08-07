@@ -1,91 +1,83 @@
 // src/hooks/use-profile.ts
-import { useState, useContext } from 'react';
-import { User } from '../lib/types';
-import { AuthContext } from '../context/AuthContext';
-import { jwtDecode } from 'jwt-decode';
+import { useState } from 'react';
+import { useAuth } from './use-auth';
+import { useToast } from './use-toast';
 
 export const useProfile = () => {
-  const { token, setUser } = useContext(AuthContext);
+  const { user, updateUser } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  const updateProfile = async (data: any) => {
+    if (!user) return;
+
+    setLoading(true);
+    try {
+      const updatedUser = await authService.updateProfile(data);
+      updateUser(updatedUser);
+      toast({
+        title: "Success",
+        description: "Profile updated successfully",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update profile",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const uploadAvatar = async (file: File) => {
+    if (!user) return;
+  
     setLoading(true);
-    setError(null);
-    
     try {
       const formData = new FormData();
-      formData.append('avatar', file);  // Changed from 'file' to 'avatar'
+      formData.append('avatar', file); // Changed from 'file' to 'avatar'
       
       const response = await fetch('/api/auth/avatar', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
         },
         body: formData
       });
 
       if (!response.ok) {
-        throw new Error('Failed to upload avatar');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to upload avatar');
       }
 
-      const data = await response.json();
+      const { profileImage } = await response.json();
       
       // Update user context with new profile image
-      if (token) {
-        const decoded: any = jwtDecode(token);
-        setUser({
-          ...decoded,
-          profileImage: data.profileImage
-        });
-      }
-
-      return data.profileImage;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const updateProfile = async (profileData: any) => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const response = await fetch('/api/auth/profile', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(profileData)
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update profile');
-      }
-
-      const updatedUser = await response.json();
+      updateUser({ profileImage });
       
-      // Update user context
-      if (token) {
-        const decoded: any = jwtDecode(token);
-        setUser({
-          ...decoded,
-          ...updatedUser
-        });
-      }
-
-      return updatedUser;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Update failed');
-      throw err;
+      toast({
+        title: "Success",
+        description: "Avatar updated successfully",
+      });
+      
+      return profileImage;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to upload avatar",
+        variant: "destructive",
+      });
+      throw error;
     } finally {
       setLoading(false);
     }
   };
 
-  return { uploadAvatar, updateProfile, loading, error };
+  return {
+    user,
+    loading,
+    updateProfile,
+    uploadAvatar,
+  };
 };

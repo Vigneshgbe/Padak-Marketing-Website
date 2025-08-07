@@ -51,9 +51,13 @@ class ApiService {
     });
   }
 
-  async uploadFile<T>(endpoint: string, file: File): Promise<T> {
+  async uploadFile<T>(
+    endpoint: string,
+    file: File,
+    fieldName: string = 'file'  // Add fieldName parameter with default
+  ): Promise<T> {
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append(fieldName, file);  // Use the fieldName parameter
 
     const token = localStorage.getItem('authToken');
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
