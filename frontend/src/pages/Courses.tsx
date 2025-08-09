@@ -377,19 +377,33 @@ function CheckoutPage({ course, onBack }) {
       formDataToSend.append('paymentScreenshot', formData.paymentScreenshot);
       
       // Get JWT token from storage
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
       
       const response = await fetch(`${API_BASE}/enroll-request`, {
         method: 'POST',
         headers: {
           'Authorization': token ? `Bearer ${token}` : ''
+          // Important: Do NOT set Content-Type header when sending FormData
+          // The browser will set it automatically with the correct boundary
         },
         body: formDataToSend
       });
       
+      // First check if there's any content before trying to parse JSON
+      const text = await response.text();
+      let data;
+      
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          console.error('Error parsing response:', e);
+          // If parsing fails, we'll use the text as the error message
+        }
+      }
+      
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Submission failed');
+        throw new Error((data && data.error) || 'Enrollment request failed');
       }
       
       setShowThankYou(true);
