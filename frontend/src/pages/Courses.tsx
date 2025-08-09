@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { apiService } from "@/lib/api";
 import { 
   Play, 
   Clock, 
@@ -24,13 +25,7 @@ const API_BASE = '/api';
 
 const fetchCourses = async () => {
   try {
-    const response = await fetch(`${API_BASE}/courses`);
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Failed to fetch courses. Server response:', errorText);
-      throw new Error(`Failed to fetch courses: ${response.status} ${response.statusText}`);
-    }
-    const courses = await response.json();
+    const courses = await apiService.get('/courses');
     
     return courses.map(course => ({
       ...course,

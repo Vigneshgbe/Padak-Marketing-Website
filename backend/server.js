@@ -1878,6 +1878,7 @@ app.post('/api/enroll-request',
     }
   }
 );
+
 // ==================== COURSES ROUTES ====================
 
 // Replace the existing /api/courses endpoint
