@@ -284,7 +284,7 @@ export default function Courses() {
         <div className="absolute bottom-20 right-10 w-24 h-24 bg-orange-500/10 rounded-full blur-2xl animate-pulse delay-1000"></div>
       </section>
 
-      {/* Course Stats */}
+      {/* Course Stats
       <section className="py-8 bg-white border-b border-orange-100">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
@@ -310,7 +310,7 @@ export default function Courses() {
             </div>
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* Courses Grid */}
       <section className="py-20 bg-gradient-to-br from-orange-50/30 via-background to-orange-100/20">
