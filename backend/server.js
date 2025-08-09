@@ -130,6 +130,35 @@ const assignmentUpload = multer({
   }
 });
 
+// ===== PAYMENT SCREENSHOT MULTER CONFIGURATION =====
+const paymentScreenshotStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadDir = path.join(__dirname, 'uploads', 'payments');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `payment-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+const paymentScreenshotUpload = multer({
+  storage: paymentScreenshotStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: function (req, file, cb) {
+    const allowedTypes = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
+    const fileExt = path.extname(file.originalname).toLowerCase();
+    if (allowedTypes.includes(fileExt)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only images are allowed.'));
+    }
+  }
+});
+
 // CORS configuration
 const allowedOrigins = [
   'http://localhost:3000',
@@ -1777,6 +1806,90 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   }
 });
 
+// ==================== COURSE ENROLLMENT REQUESTS ====================
+app.post('/api/enroll-request', 
+  authenticateToken, 
+  paymentScreenshotUpload.single('paymentScreenshot'), 
+  async (req, res) => {
+    try {
+      const userId = req.user.id;
+      const {
+        courseId,
+        fullName,
+        email,
+        phone,
+        address,
+        city,
+        state,
+        pincode,
+        paymentMethod,
+        transactionId
+      } = req.body;
+
+      // Validate required fields
+      if (!courseId || !fullName || !email || !phone || !address || !city || !state || !pincode || !paymentMethod || !transactionId) {
+        return res.status(400).json({ error: 'All fields are required' });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: 'Payment screenshot is required' });
+      }
+
+      // Insert into database
+      const [result] = await pool.execute(
+        `INSERT INTO courses_enroll_request (
+          user_id, course_id, full_name, email, phone, address, city, state, pincode, 
+          payment_method, transaction_id, payment_screenshot
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          userId,
+          courseId,
+          fullName,
+          email,
+          phone,
+          address,
+          city,
+          state,
+          pincode,
+          paymentMethod,
+          transactionId,
+          `/uploads/payments/${req.file.filename}`
+        ]
+      );
+
+      res.status(201).json({
+        message: 'Enrollment request submitted successfully',
+        requestId: result.insertId
+      });
+
+    } catch (error) {
+      console.error('Enrollment request error:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+);
+
+// Get user's enrollment requests
+app.get('/api/enroll-requests', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const [requests] = await pool.execute(
+      `SELECT r.*, c.title AS course_title, c.instructor_name
+       FROM courses_enroll_request r
+       JOIN courses c ON r.course_id = c.id
+       WHERE r.user_id = ?
+       ORDER BY r.created_at DESC`,
+      [userId]
+    );
+
+    res.json(requests);
+  } catch (error) {
+    console.error('Get enrollment requests error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ==================== COURSES ROUTES ====================
 
 // Get all courses
@@ -1893,37 +2006,6 @@ app.post('/api/courses/enroll', authenticateToken, async (req, res) => {
 });
 
 // ==================== ASSIGNMENTS ROUTES ====================
-
-// Configure multer for file uploads
-// const storage = multer.diskStorage({
-//   destination: (req, file, cb) => {
-//     const uploadDir = 'uploads/assignments';
-//     if (!fs.existsSync(uploadDir)) {
-//       fs.mkdirSync(uploadDir, { recursive: true });
-//     }
-//     cb(null, uploadDir);
-//   },
-//   filename: (req, file, cb) => {
-//     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-//     cb(null, `assignment-${uniqueSuffix}${path.extname(file.originalname)}`);
-//   }
-// });
-
-// const upload = multer({ 
-//   storage: storage,
-//   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
-//   fileFilter: (req, file, cb) => {
-//     const allowedTypes = ['.pdf', '.doc', '.docx', '.txt', '.zip', '.rar'];
-//     const fileExt = path.extname(file.originalname).toLowerCase();
-//     if (allowedTypes.includes(fileExt)) {
-//       cb(null, true);
-//     } else {
-//       cb(new Error('Invalid file type. Only PDF, DOC, DOCX, TXT, ZIP, RAR files are allowed.'));
-//     }
-//   }
-// });
-
-// Add these routes to your existing server.js file
 
 // GET /auth/me - Get current user info
 app.get('/auth/me', authenticateToken, (req, res) => {

@@ -16,7 +16,8 @@ import {
   BookOpen,
   Award,
   TrendingUp,
-  RefreshCw
+  RefreshCw,
+  ShoppingCart
 } from "lucide-react";
 
 // Database API functions - replace with actual MySQL API endpoints
@@ -129,23 +130,14 @@ const fetchCourses = async () => {
   }
 };
 
-const enrollInCourse = async (courseId, userId) => {
-  try {  
-    console.log(`Enrolled in course ${courseId}`);
-    return { success: true, message: 'Successfully enrolled!' };
-  } catch (error) {
-    console.error('Error enrolling in course:', error);
-    return { success: false, message: 'Enrollment failed' };
-  }
-};
-
 export default function Courses() {
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [levelFilter, setLevelFilter] = useState("all");
-  const [enrolling, setEnrolling] = useState(null);
+  const [selectedCourse, setSelectedCourse] = useState(null);
+  const [showCheckout, setShowCheckout] = useState(false);
 
   useEffect(() => {
     loadCourses();
@@ -158,24 +150,9 @@ export default function Courses() {
     setLoading(false);
   };
 
-  const handleEnrollment = async (courseId) => {
-    setEnrolling(courseId);
-    // In a real app, you'd get the user ID from authentication
-    const userId = 1; // Mock user ID
-    const result = await enrollInCourse(courseId, userId);
-    
-    if (result.success) {
-      // Update course students count
-      setCourses(prev => prev.map(course => 
-        course.id === courseId 
-          ? { ...course, students: course.students + 1 }
-          : course
-      ));
-      alert('Successfully enrolled in the course!');
-    } else {
-      alert('Enrollment failed. Please try again.');
-    }
-    setEnrolling(null);
+  const handleEnrollment = (course) => {
+    setSelectedCourse(course);
+    setShowCheckout(true);
   };
 
   const filteredCourses = courses.filter(course => {
@@ -190,6 +167,11 @@ export default function Courses() {
 
   const categories = ["all", ...Array.from(new Set(courses.map(course => course.category)))];
   const levels = ["all", "Beginner", "Intermediate", "Advanced"];
+
+  // Checkout Component
+  if (showCheckout && selectedCourse) {
+    return <CheckoutPage course={selectedCourse} onBack={() => setShowCheckout(false)} />;
+  }
 
   if (loading) {
     return (
@@ -284,34 +266,6 @@ export default function Courses() {
         <div className="absolute bottom-20 right-10 w-24 h-24 bg-orange-500/10 rounded-full blur-2xl animate-pulse delay-1000"></div>
       </section>
 
-      {/* Course Stats
-      <section className="py-8 bg-white border-b border-orange-100">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
-            <div>
-              <div className="text-2xl font-bold text-orange-600">{courses.length}</div>
-              <div className="text-sm text-gray-600">Active Courses</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-orange-600">
-                {courses.reduce((acc, course) => acc + course.students, 0)}
-              </div>
-              <div className="text-sm text-gray-600">Total Students</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-orange-600">{categories.length - 1}</div>
-              <div className="text-sm text-gray-600">Categories</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-orange-600">
-                {(courses.reduce((acc, course) => acc + course.rating, 0) / courses.length).toFixed(1)}
-              </div>
-              <div className="text-sm text-gray-600">Avg Rating</div>
-            </div>
-          </div>
-        </div>
-      </section> */}
-
       {/* Courses Grid */}
       <section className="py-20 bg-gradient-to-br from-orange-50/30 via-background to-orange-100/20">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -374,16 +328,11 @@ export default function Courses() {
                   <div className="flex items-center justify-between pt-4 border-t">
                     <div className="text-2xl font-bold text-orange-600">{course.price}</div>
                     <Button 
-                      onClick={() => handleEnrollment(course.id)}
-                      disabled={enrolling === course.id}
+                      onClick={() => handleEnrollment(course)}
                       className="bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-300 group relative overflow-hidden"
                     >
-                      {enrolling === course.id ? (
-                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                      ) : (
-                        <Play className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
-                      )}
-                      {enrolling === course.id ? 'Enrolling...' : 'Enroll Now'}
+                      <ShoppingCart className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
+                      Enroll Now
                     </Button>
                   </div>
                 </CardContent>
@@ -416,6 +365,569 @@ export default function Courses() {
         </div>
       </section>
 
+      <Footer />
+    </div>
+  );
+}
+
+// Checkout Page Component
+function CheckoutPage({ course, onBack }) {
+  const [currentStep, setCurrentStep] = useState(1);
+  const [formData, setFormData] = useState({
+    // User Details
+    fullName: '',
+    email: '',
+    phone: '',
+    address: '',
+    city: '',
+    state: '',
+    pincode: '',
+    
+    // Payment Details
+    paymentMethod: 'upi',
+    paymentScreenshot: null,
+    transactionId: '',
+    
+    // Course Details (auto-filled)
+    courseId: course.id,
+    courseName: course.title,
+    coursePrice: course.price,
+    instructor: course.instructor
+  });
+  const [loading, setLoading] = useState(false);
+  const [showThankYou, setShowThankYou] = useState(false);
+  const [errors, setErrors] = useState({});
+
+  const validateStep = (step) => {
+    const newErrors = {};
+    
+    if (step === 1) {
+      if (!formData.fullName.trim()) newErrors.fullName = 'Full name is required';
+      if (!formData.email.trim()) newErrors.email = 'Email is required';
+      else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = 'Email is invalid';
+      if (!formData.phone.trim()) newErrors.phone = 'Phone number is required';
+      else if (!/^\d{10}$/.test(formData.phone.replace(/\D/g, ''))) newErrors.phone = 'Phone number should be 10 digits';
+      if (!formData.address.trim()) newErrors.address = 'Address is required';
+      if (!formData.city.trim()) newErrors.city = 'City is required';
+      if (!formData.state.trim()) newErrors.state = 'State is required';
+      if (!formData.pincode.trim()) newErrors.pincode = 'Pincode is required';
+    }
+    
+    if (step === 2) {
+      if (!formData.paymentScreenshot) newErrors.paymentScreenshot = 'Payment screenshot is required';
+      if (!formData.transactionId.trim()) newErrors.transactionId = 'Transaction ID is required';
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleNext = () => {
+    if (validateStep(currentStep)) {
+      setCurrentStep(currentStep + 1);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!validateStep(2)) return;
+    
+    setLoading(true);
+    try {
+      // Simulate API call to submit enrollment request
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Here you would call your API to insert into courses_enroll_request table
+      console.log('Enrollment request submitted:', formData);
+      
+      setShowThankYou(true);
+    } catch (error) {
+      alert('Submission failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleInputChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: '' }));
+    }
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setFormData(prev => ({ ...prev, paymentScreenshot: file }));
+      if (errors.paymentScreenshot) {
+        setErrors(prev => ({ ...prev, paymentScreenshot: '' }));
+      }
+    }
+  };
+
+  // Thank You Page
+  if (showThankYou) {
+    return <ThankYouPage course={course} />;
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-orange-50/30 via-background to-orange-100/20">
+      <Header />
+      
+      <div className="container mx-auto px-4 py-8">
+        {/* Back Button */}
+        <Button 
+          variant="outline" 
+          onClick={onBack}
+          className="mb-6 border-orange-200 hover:bg-orange-50"
+        >
+          ← Back to Courses
+        </Button>
+
+        <div className="max-w-6xl mx-auto">
+          {/* Progress Steps */}
+          <div className="mb-8">
+            <div className="flex items-center justify-center space-x-4">
+              <div className={`flex items-center space-x-2 ${currentStep >= 1 ? 'text-orange-600' : 'text-gray-400'}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${currentStep >= 1 ? 'border-orange-600 bg-orange-50' : 'border-gray-300'}`}>
+                  1
+                </div>
+                <span className="font-medium">Course & User Details</span>
+              </div>
+              <div className={`w-16 h-0.5 ${currentStep >= 2 ? 'bg-orange-600' : 'bg-gray-300'}`}></div>
+              <div className={`flex items-center space-x-2 ${currentStep >= 2 ? 'text-orange-600' : 'text-gray-400'}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${currentStep >= 2 ? 'border-orange-600 bg-orange-50' : 'border-gray-300'}`}>
+                  2
+                </div>
+                <span className="font-medium">Payment</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid lg:grid-cols-3 gap-8">
+            {/* Course Summary - Always visible */}
+            <div className="lg:col-span-1">
+              <Card className="sticky top-8 border-0 bg-white shadow-lg">
+                <CardHeader className="pb-4">
+                  <div className="text-center">
+                    <div className="text-6xl mb-4">{course.image}</div>
+                    <CardTitle className="text-xl text-center">{course.title}</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-3 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Instructor:</span>
+                      <span className="font-medium">{course.instructor}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Duration:</span>
+                      <span className="font-medium">{course.duration}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Level:</span>
+                      <Badge variant="outline" className="border-orange-200 text-orange-600">
+                        {course.level}
+                      </Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Lessons:</span>
+                      <span className="font-medium">{course.lessons}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Certificate:</span>
+                      <Award className="w-4 h-4 text-green-500" />
+                    </div>
+                  </div>
+                  
+                  <div className="border-t pt-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-lg font-semibold">Total Amount:</span>
+                      <span className="text-2xl font-bold text-orange-600">{course.price}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Form Content */}
+            <div className="lg:col-span-2">
+              <Card className="border-0 bg-white shadow-lg">
+                <CardHeader>
+                  <CardTitle className="text-2xl">
+                    {currentStep === 1 ? 'Personal Information' : 'Payment Details'}
+                  </CardTitle>
+                  <CardDescription>
+                    {currentStep === 1 
+                      ? 'Please provide your details to complete the enrollment'
+                      : 'Complete your payment to secure your spot in the course'
+                    }
+                  </CardDescription>
+                </CardHeader>
+                
+                <CardContent>
+                  {currentStep === 1 && (
+                    <div className="space-y-6">
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-2">Full Name *</label>
+                          <Input
+                            value={formData.fullName}
+                            onChange={(e) => handleInputChange('fullName', e.target.value)}
+                            placeholder="Enter your full name"
+                            className={errors.fullName ? 'border-red-500' : 'border-orange-200 focus:border-orange-500'}
+                          />
+                          {errors.fullName && <p className="text-red-500 text-sm mt-1">{errors.fullName}</p>}
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium mb-2">Email *</label>
+                          <Input
+                            type="email"
+                            value={formData.email}
+                            onChange={(e) => handleInputChange('email', e.target.value)}
+                            placeholder="Enter your email"
+                            className={errors.email ? 'border-red-500' : 'border-orange-200 focus:border-orange-500'}
+                          />
+                          {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium mb-2">Phone Number *</label>
+                        <Input
+                          value={formData.phone}
+                          onChange={(e) => handleInputChange('phone', e.target.value)}
+                          placeholder="Enter your phone number"
+                          className={errors.phone ? 'border-red-500' : 'border-orange-200 focus:border-orange-500'}
+                        />
+                        {errors.phone && <p className="text-red-500 text-sm mt-1">{errors.phone}</p>}
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium mb-2">Address *</label>
+                        <Input
+                          value={formData.address}
+                          onChange={(e) => handleInputChange('address', e.target.value)}
+                          placeholder="Enter your complete address"
+                          className={errors.address ? 'border-red-500' : 'border-orange-200 focus:border-orange-500'}
+                        />
+                        {errors.address && <p className="text-red-500 text-sm mt-1">{errors.address}</p>}
+                      </div>
+                      
+                      <div className="grid md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-2">City *</label>
+                          <Input
+                            value={formData.city}
+                            onChange={(e) => handleInputChange('city', e.target.value)}
+                            placeholder="City"
+                            className={errors.city ? 'border-red-500' : 'border-orange-200 focus:border-orange-500'}
+                          />
+                          {errors.city && <p className="text-red-500 text-sm mt-1">{errors.city}</p>}
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium mb-2">State *</label>
+                          <Input
+                            value={formData.state}
+                            onChange={(e) => handleInputChange('state', e.target.value)}
+                            placeholder="State"
+                            className={errors.state ? 'border-red-500' : 'border-orange-200 focus:border-orange-500'}
+                          />
+                          {errors.state && <p className="text-red-500 text-sm mt-1">{errors.state}</p>}
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium mb-2">Pincode *</label>
+                          <Input
+                            value={formData.pincode}
+                            onChange={(e) => handleInputChange('pincode', e.target.value)}
+                            placeholder="Pincode"
+                            className={errors.pincode ? 'border-red-500' : 'border-orange-200 focus:border-orange-500'}
+                          />
+                          {errors.pincode && <p className="text-red-500 text-sm mt-1">{errors.pincode}</p>}
+                        </div>
+                      </div>
+                      
+                      <div className="flex justify-end pt-6">
+                        <Button 
+                          onClick={handleNext}
+                          className="bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500"
+                        >
+                          Continue to Payment
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {currentStep === 2 && (
+                    <div className="space-y-6">
+                      <div className="text-center p-6 bg-orange-50 rounded-lg">
+                        <h3 className="text-lg font-semibold mb-4">Scan & Pay</h3>
+                        <div className="bg-white p-4 rounded-lg inline-block shadow-sm">
+                          {/* QR Code placeholder - replace with actual QR code */}
+                          <div className="w-48 h-48 bg-gray-100 flex items-center justify-center rounded-lg">
+                            <div className="text-center">
+                              <div className="text-4xl mb-2">📱</div>
+                              <p className="text-sm text-gray-600">QR Code</p>
+                              <p className="text-xs text-gray-500 mt-1">Pay {course.price}</p>
+                            </div>
+                          </div>
+                        </div>
+                        <p className="text-sm text-gray-600 mt-4">
+                          Scan this QR code with any UPI app to pay {course.price}
+                        </p>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium mb-2">Upload Payment Screenshot *</label>
+                        <div className="border-2 border-dashed border-orange-200 rounded-lg p-4 text-center">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleFileUpload}
+                            className="hidden"
+                            id="payment-screenshot"
+                          />
+                          <label htmlFor="payment-screenshot" className="cursor-pointer">
+                            <div className="text-gray-400 mb-2">
+                              <svg className="mx-auto h-12 w-12" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </div>
+                            <p className="text-sm text-gray-600">
+                              {formData.paymentScreenshot ? formData.paymentScreenshot.name : 'Click to upload payment screenshot'}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">PNG, JPG up to 10MB</p>
+                          </label>
+                        </div>
+                        {errors.paymentScreenshot && <p className="text-red-500 text-sm mt-1">{errors.paymentScreenshot}</p>}
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium mb-2">Transaction ID *</label>
+                        <Input
+                          value={formData.transactionId}
+                          onChange={(e) => handleInputChange('transactionId', e.target.value)}
+                          placeholder="Enter transaction ID from payment app"
+                          className={errors.transactionId ? 'border-red-500' : 'border-orange-200 focus:border-orange-500'}
+                        />
+                        {errors.transactionId && <p className="text-red-500 text-sm mt-1">{errors.transactionId}</p>}
+                      </div>
+                      
+                      <div className="bg-blue-50 p-4 rounded-lg">
+                        <div className="flex items-start space-x-3">
+                          <div className="text-blue-500 mt-0.5">ℹ️</div>
+                          <div className="text-sm text-blue-800">
+                            <p className="font-medium mb-1">Payment Instructions:</p>
+                            <ul className="list-disc list-inside space-y-1 text-xs">
+                              <li>Scan the QR code with any UPI app (PhonePe, Paytm, GPay, etc.)</li>
+                              <li>Complete the payment of {course.price}</li>
+                              <li>Take a screenshot of the successful payment</li>
+                              <li>Upload the screenshot and enter the transaction ID</li>
+                              <li>Your enrollment will be processed within 24 hours</li>
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="flex justify-between pt-6">
+                        <Button 
+                          variant="outline" 
+                          onClick={() => setCurrentStep(1)}
+                          className="border-orange-200 hover:bg-orange-50"
+                        >
+                          Back
+                        </Button>
+                        <Button 
+                          onClick={handleSubmit}
+                          disabled={loading}
+                          className="bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500"
+                        >
+                          {loading ? (
+                            <>
+                              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                              Submitting...
+                            </>
+                          ) : (
+                            'Complete Enrollment'
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <Footer />
+    </div>
+  );
+}
+
+// Thank You Page Component
+function ThankYouPage({ course }) {
+  const [showLoginDialog, setShowLoginDialog] = useState(false);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-orange-50/30 via-background to-orange-100/20">
+      <Header />
+      
+      <div className="container mx-auto px-4 py-16">
+        <div className="max-w-2xl mx-auto text-center">
+          {/* Success Animation */}
+          <div className="mb-8">
+            <div className="w-24 h-24 bg-gradient-to-r from-green-500 to-green-400 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+              <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h1 className="text-4xl font-bold text-gray-900 mb-4">
+              Thank You! 🎉
+            </h1>
+            <p className="text-xl text-gray-600">
+              Your enrollment request has been submitted successfully!
+            </p>
+          </div>
+
+          {/* Course Details */}
+          <Card className="mb-8 border-0 bg-white shadow-lg">
+            <CardHeader>
+              <div className="text-4xl mb-2">{course.image}</div>
+              <CardTitle className="text-2xl">{course.title}</CardTitle>
+              <CardDescription>by {course.instructor}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="text-center p-3 bg-orange-50 rounded-lg">
+                  <div className="font-semibold text-orange-600">Duration</div>
+                  <div>{course.duration}</div>
+                </div>
+                <div className="text-center p-3 bg-blue-50 rounded-lg">
+                  <div className="font-semibold text-blue-600">Lessons</div>
+                  <div>{course.lessons}</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Important Notice */}
+          <Card className="mb-8 border-0 bg-gradient-to-r from-blue-50 to-indigo-50 shadow-lg">
+            <CardContent className="p-6">
+              <div className="flex items-start space-x-3">
+                <div className="text-2xl">📋</div>
+                <div className="text-left">
+                  <h3 className="font-semibold text-blue-900 mb-2">Important Note:</h3>
+                  <p className="text-blue-800 text-sm leading-relaxed mb-4">
+                    Your submission and details will be updated in our dashboard within 24 hours. 
+                    Once verified, you'll receive access to your personalized dashboard where you can 
+                    track your progress, access course materials, and connect with instructors.
+                  </p>
+                  <div className="bg-white/60 p-3 rounded-lg">
+                    <p className="text-blue-700 text-sm font-medium">
+                      Please login and check your personalized dashboard for updates!
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Action Buttons */}
+          <div className="space-y-4">
+            <Button 
+              onClick={() => setShowLoginDialog(true)}
+              size="lg"
+              className="w-full bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500 text-white py-3"
+            >
+              Access Your Dashboard
+            </Button>
+            
+            <div className="text-center">
+              <Button 
+                variant="outline" 
+                onClick={() => window.location.href = '/courses'}
+                className="border-orange-200 hover:bg-orange-50"
+              >
+                Browse More Courses
+              </Button>
+            </div>
+          </div>
+
+          {/* What's Next */}
+          <div className="mt-12 text-left">
+            <h3 className="text-lg font-semibold mb-4 text-center">What happens next?</h3>
+            <div className="grid md:grid-cols-3 gap-4">
+              <div className="text-center p-4 bg-white rounded-lg shadow-sm">
+                <div className="text-2xl mb-2">⏰</div>
+                <div className="font-medium text-sm">Verification</div>
+                <div className="text-xs text-gray-600 mt-1">Payment verified within 24 hours</div>
+              </div>
+              <div className="text-center p-4 bg-white rounded-lg shadow-sm">
+                <div className="text-2xl mb-2">📧</div>
+                <div className="font-medium text-sm">Email Confirmation</div>
+                <div className="text-xs text-gray-600 mt-1">Welcome email with login details</div>
+              </div>
+              <div className="text-center p-4 bg-white rounded-lg shadow-sm">
+                <div className="text-2xl mb-2">🚀</div>
+                <div className="font-medium text-sm">Start Learning</div>
+                <div className="text-xs text-gray-600 mt-1">Access course materials & begin</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Login Dialog */}
+      {showLoginDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="text-center mb-4">
+              <h3 className="text-xl font-semibold">Access Dashboard</h3>
+              <p className="text-gray-600 text-sm mt-2">
+                Please login to access your personalized learning dashboard
+              </p>
+            </div>
+            
+            <div className="space-y-4">
+              <Button 
+                className="w-full bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500"
+                onClick={() => {
+                  // Redirect to login page
+                  window.location.href = '/login';
+                }}
+              >
+                Login to Dashboard
+              </Button>
+              
+              <div className="text-center">
+                <span className="text-sm text-gray-600">Don't have an account? </span>
+                <button 
+                  className="text-orange-600 hover:text-orange-700 text-sm font-medium"
+                  onClick={() => {
+                    // Redirect to signup page
+                    window.location.href = '/signup';
+                  }}
+                >
+                  Sign up here
+                </button>
+              </div>
+            </div>
+            
+            <Button 
+              variant="outline" 
+              onClick={() => setShowLoginDialog(false)}
+              className="w-full mt-4 border-gray-200"
+            >
+              Close
+            </Button>
+          </div>
+        </div>
+      )}
+      
       <Footer />
     </div>
   );
