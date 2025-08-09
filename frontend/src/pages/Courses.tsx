@@ -364,7 +364,7 @@ function CheckoutPage({ course, onBack }) {
       const formDataToSend = new FormData();
       
       // Append all form data
-      formDataToSend.append('courseId', formData.courseId);
+      formDataToSend.append('courseId', formData.courseId.toString());
       formDataToSend.append('fullName', formData.fullName);
       formDataToSend.append('email', formData.email);
       formDataToSend.append('phone', formData.phone);
@@ -374,36 +374,53 @@ function CheckoutPage({ course, onBack }) {
       formDataToSend.append('pincode', formData.pincode);
       formDataToSend.append('paymentMethod', formData.paymentMethod);
       formDataToSend.append('transactionId', formData.transactionId);
-      formDataToSend.append('paymentScreenshot', formData.paymentScreenshot);
+      
+      // Make sure we're actually sending the file
+      if (formData.paymentScreenshot) {
+        formDataToSend.append('paymentScreenshot', formData.paymentScreenshot);
+      }
+      
+      // Log what we're sending
+      console.log('Form data being sent:', {
+        courseId: formData.courseId,
+        fullName: formData.fullName,
+        email: formData.email,
+        // other fields...
+        hasFile: !!formData.paymentScreenshot
+      });
       
       // Get JWT token from storage
       const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      console.log('Using token:', token ? 'Token exists' : 'No token found');
+      
+      // Log the API endpoint
+      console.log('Sending request to:', `${API_BASE}/enroll-request`);
       
       const response = await fetch(`${API_BASE}/enroll-request`, {
         method: 'POST',
         headers: {
           'Authorization': token ? `Bearer ${token}` : ''
-          // Important: Do NOT set Content-Type header when sending FormData
-          // The browser will set it automatically with the correct boundary
         },
         body: formDataToSend
       });
       
+      console.log('Response status:', response.status);
+      
       // First check if there's any content before trying to parse JSON
       const text = await response.text();
-      let data;
+      console.log('Response body:', text);
       
+      let data;
       if (text) {
         try {
           data = JSON.parse(text);
         } catch (e) {
           console.error('Error parsing response:', e);
-          // If parsing fails, we'll use the text as the error message
         }
       }
       
       if (!response.ok) {
-        throw new Error((data && data.error) || 'Enrollment request failed');
+        throw new Error((data && data.error) || text || 'Enrollment request failed');
       }
       
       setShowThankYou(true);
@@ -414,7 +431,7 @@ function CheckoutPage({ course, onBack }) {
       setLoading(false);
     }
   };
-
+  
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
