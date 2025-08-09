@@ -380,58 +380,74 @@ function CheckoutPage({ course, onBack }) {
         formDataToSend.append('paymentScreenshot', formData.paymentScreenshot);
       }
       
-      // Log what we're sending
-      console.log('Form data being sent:', {
+      // Get JWT token from storage - try multiple possible token locations
+      const token = 
+        localStorage.getItem('authToken') || 
+        localStorage.getItem('token') || 
+        sessionStorage.getItem('authToken') || 
+        sessionStorage.getItem('token');
+      
+      console.log('Authorization token available:', !!token);
+      
+      // Create custom fetch that doesn't throw on non-2xx responses
+      const fetchWithErrorHandling = async (url, options) => {
+        const response = await fetch(url, options);
+        const responseText = await response.text();
+        
+        console.log('Response status:', response.status);
+        console.log('Response text:', responseText);
+        
+        let responseData;
+        try {
+          responseData = JSON.parse(responseText);
+        } catch (e) {
+          console.warn('Response is not valid JSON:', responseText);
+          responseData = { error: responseText || 'Unknown error' };
+        }
+        
+        if (!response.ok) {
+          console.error('Request failed:', response.status, responseData);
+          throw new Error(responseData.error || responseData.message || 'Request failed');
+        }
+        
+        return responseData;
+      };
+      
+      // Log what we're submitting (for debugging)
+      console.log('Form submission details:', {
+        endpoint: `${API_BASE}/enroll-request`,
+        hasFile: !!formData.paymentScreenshot,
         courseId: formData.courseId,
-        fullName: formData.fullName,
-        email: formData.email,
-        // other fields...
-        hasFile: !!formData.paymentScreenshot
+        token: token ? 'Present' : 'Missing'
       });
       
-      // Get JWT token from storage
-      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-      console.log('Using token:', token ? 'Token exists' : 'No token found');
-      
-      // Log the API endpoint
-      console.log('Sending request to:', `${API_BASE}/enroll-request`);
-      
-      const response = await fetch(`${API_BASE}/enroll-request`, {
+      // Make the request
+      const data = await fetchWithErrorHandling(`${API_BASE}/enroll-request`, {
         method: 'POST',
-        headers: {
-          'Authorization': token ? `Bearer ${token}` : ''
-        },
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
         body: formDataToSend
       });
       
-      console.log('Response status:', response.status);
-      
-      // First check if there's any content before trying to parse JSON
-      const text = await response.text();
-      console.log('Response body:', text);
-      
-      let data;
-      if (text) {
-        try {
-          data = JSON.parse(text);
-        } catch (e) {
-          console.error('Error parsing response:', e);
-        }
-      }
-      
-      if (!response.ok) {
-        throw new Error((data && data.error) || text || 'Enrollment request failed');
-      }
-      
+      console.log('Enrollment successful:', data);
       setShowThankYou(true);
     } catch (error) {
       console.error('Submission error:', error);
-      alert(error.message || 'Submission failed. Please try again.');
+      
+      // Provide more helpful error message
+      let errorMessage = error.message || 'Submission failed. Please try again.';
+      
+      // If it might be an authentication issue
+      if (errorMessage.includes('token') || errorMessage.includes('auth') || 
+          errorMessage.includes('unauthorized') || errorMessage.includes('permission')) {
+        errorMessage = 'Authentication failed. Please log in before submitting.';
+      }
+      
+      alert(errorMessage);
     } finally {
       setLoading(false);
     }
   };
-  
+
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
