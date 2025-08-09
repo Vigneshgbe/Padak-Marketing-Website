@@ -25,20 +25,25 @@ const API_BASE = '/api';
 const fetchCourses = async () => {
   try {
     const response = await fetch(`${API_BASE}/courses`);
-    if (!response.ok) throw new Error('Failed to fetch courses');
+    if (!response.ok) {
+      // Log the full error response from the server if not OK
+      const errorText = await response.text();
+      console.error('Failed to fetch courses. Server response:', errorText);
+      throw new Error(`Failed to fetch courses: ${response.status} ${response.statusText}`);
+    }
     const courses = await response.json();
     
     return courses.map(course => ({
       ...course,
-      instructor: course.instructorName,
-      duration: `${course.durationWeeks} weeks`,
+      instructor: course.instructorName, // Mapped from instructor_name
+      duration: `${course.durationWeeks} weeks`, // Mapped from duration_weeks
       students: Math.floor(Math.random() * 2000) + 500, // Mock until we have real data
       rating: (Math.random() * 0.5 + 4.5).toFixed(1), // Mock rating
       lessons: course.durationWeeks * 4, // Mock lessons
       certificate: true, // All courses have certificates
       image: course.thumbnail || '📘', // Default emoji if no thumbnail
-      // Add this line to explicitly map difficultyLevel to level
-      level: course.difficultyLevel ? course.difficultyLevel.charAt(0).toUpperCase() + course.difficultyLevel.slice(1) : '' // Capitalize first letter
+      // Ensure level is capitalized for display and filtering
+      level: course.difficultyLevel ? course.difficultyLevel.charAt(0).toUpperCase() + course.difficultyLevel.slice(1) : '' 
     }));
   } catch (error) {
     console.error('Error fetching courses:', error);
@@ -63,7 +68,8 @@ export default function Courses() {
     setLoading(true);
     try {
       const coursesData = await fetchCourses();
-      setCourses(coursesData.filter(course => course.isActive === true));
+      // THIS IS THE CRUCIAL FILTER: Only show courses where isActive is true
+      setCourses(coursesData.filter(course => course.isActive === true)); 
     } catch (error) {
       console.error('Error loading courses:', error);
     } finally {
@@ -81,13 +87,16 @@ export default function Courses() {
                          course.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          course.instructor.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = categoryFilter === "all" || course.category === categoryFilter;
-    const matchesLevel = levelFilter === "all" || course.level === levelFilter;
+    // Ensure level comparison is consistent (e.g., both capitalized)
+    const matchesLevel = levelFilter === "all" || course.level === levelFilter; 
     
     return matchesSearch && matchesCategory && matchesLevel;
   });
 
+  // Dynamically get categories from fetched courses
   const categories = ["all", ...Array.from(new Set(courses.map(course => course.category)))];
-  const levels = ["all", "Beginner", "Intermediate", "Advanced"];
+  // Levels should ideally match the capitalization provided by the backend mapping
+  const levels = ["all", "Beginner", "Intermediate", "Advanced"]; 
 
   // Checkout Component
   if (showCheckout && selectedCourse) {
@@ -274,7 +283,7 @@ export default function Courses() {
                 Try adjusting your search terms or filters to find more courses.
               </p>
               <Button 
-                onClick={loadCourses}
+                onClick={loadCourses} // This will re-fetch data
                 variant="outline" 
                 className="border-orange-200 hover:bg-orange-50"
               >
@@ -305,11 +314,11 @@ function CheckoutPage({ course, onBack }) {
     pincode: '',
     
     // Payment Details
-    paymentMethod: 'upi',
-    paymentScreenshot: null,
+    paymentMethod: 'upi', // Default to UPI
+    paymentScreenshot: null, // File object
     transactionId: '',
     
-    // Course Details (auto-filled)
+    // Course Details (auto-filled, no need to send these to backend, but useful for display)
     courseId: course.id,
     courseName: course.title,
     coursePrice: course.price,
@@ -320,6 +329,7 @@ function CheckoutPage({ course, onBack }) {
   const [errors, setErrors] = useState({});
   const [paymentPreview, setPaymentPreview] = useState(null);
 
+  // Validation function
   const validateStep = (step) => {
     const newErrors = {};
     
@@ -351,13 +361,13 @@ function CheckoutPage({ course, onBack }) {
   };
 
   const handleSubmit = async () => {
-    if (!validateStep(2)) return;
+    if (!validateStep(2)) return; // Validate final step before submission
     
     setLoading(true);
     try {
       const formDataToSend = new FormData();
       
-      // Append all form data
+      // Append all form data that needs to be sent to the backend
       formDataToSend.append('courseId', formData.courseId);
       formDataToSend.append('fullName', formData.fullName);
       formDataToSend.append('email', formData.email);
@@ -369,20 +379,26 @@ function CheckoutPage({ course, onBack }) {
       formDataToSend.append('paymentMethod', formData.paymentMethod);
       formDataToSend.append('transactionId', formData.transactionId);
       
-      // Append file if exists
+      // Append file if it exists
       if (formData.paymentScreenshot) {
         formDataToSend.append('paymentScreenshot', formData.paymentScreenshot);
+      } else {
+        // If somehow paymentScreenshot is null at this point, but validation passed (which it shouldn't)
+        throw new Error('Payment screenshot is missing.'); 
       }
       
-      // Get JWT token from storage
+      // Get JWT token from storage for authentication
       const token = localStorage.getItem('token');
       
       const response = await fetch(`${API_BASE}/enroll-request`, {
         method: 'POST',
+        // Important: Do NOT set 'Content-Type': 'multipart/form-data' explicitly.
+        // The browser will automatically set it correctly, along with the boundary,
+        // when you provide a FormData object as the body.
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}` // Include Authorization header if token exists
         },
-        body: formDataToSend
+        body: formDataToSend // FormData object for file uploads
       });
       
       if (!response.ok) {
@@ -390,8 +406,8 @@ function CheckoutPage({ course, onBack }) {
         throw new Error(errorData.error || 'Submission failed');
       }
       
-      const result = await response.json();
-      setShowThankYou(true);
+      // const result = await response.json(); // If you want to use requestId from backend
+      setShowThankYou(true); // Show thank you page on success
     } catch (error) {
       console.error('Submission error:', error);
       alert(error.message || 'Submission failed. Please try again.');
@@ -400,29 +416,46 @@ function CheckoutPage({ course, onBack }) {
     }
   };
 
+  // Generic input change handler
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+    // Clear error for the field as user types
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
   };
 
+  // File upload handler
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
+      // Basic file type and size validation (optional but recommended)
+      if (!file.type.startsWith('image/')) {
+        setErrors(prev => ({ ...prev, paymentScreenshot: 'Only image files are allowed.' }));
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+        setErrors(prev => ({ ...prev, paymentScreenshot: 'File size exceeds 10MB limit.' }));
+        return;
+      }
+
       setFormData(prev => ({ ...prev, paymentScreenshot: file }));
       
-      // Create preview URL
+      // Create preview URL for the image
       const previewUrl = URL.createObjectURL(file);
       setPaymentPreview(previewUrl);
       
+      // Clear error once file is selected
       if (errors.paymentScreenshot) {
         setErrors(prev => ({ ...prev, paymentScreenshot: '' }));
       }
+    } else {
+      setFormData(prev => ({ ...prev, paymentScreenshot: null }));
+      setPaymentPreview(null);
     }
   };
 
-  // Thank You Page
+  // Render Thank You Page if submission was successful
   if (showThankYou) {
     return <ThankYouPage course={course} />;
   }
@@ -432,7 +465,6 @@ function CheckoutPage({ course, onBack }) {
       <Header />
       
       <div className="container mx-auto px-4 py-8">
-        {/* Back Button */}
         <Button 
           variant="outline" 
           onClick={onBack}
@@ -656,7 +688,7 @@ function CheckoutPage({ course, onBack }) {
                                   className="h-32 w-auto object-contain mb-2 rounded-md"
                                 />
                                 <p className="text-sm text-gray-600">
-                                  {formData.paymentScreenshot.name}
+                                  {formData.paymentScreenshot ? formData.paymentScreenshot.name : 'No file selected'}
                                 </p>
                                 <p className="text-xs text-gray-500 mt-1">
                                   Click to change
@@ -744,7 +776,7 @@ function CheckoutPage({ course, onBack }) {
   );
 }
 
-// Thank You Page Component
+// Thank You Page Component (No changes needed, already looks good)
 function ThankYouPage({ course }) {
   const [showLoginDialog, setShowLoginDialog] = useState(false);
 

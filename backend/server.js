@@ -1812,7 +1812,8 @@ app.post('/api/enroll-request',
   paymentScreenshotUpload.single('paymentScreenshot'), 
   async (req, res) => {
     try {
-      const userId = req.user.id;
+      // req.user.id comes from authenticateToken middleware
+      const userId = req.user ? req.user.id : null; // Added check for req.user in case auth fails silently
       const {
         courseId,
         fullName,
@@ -1834,7 +1835,7 @@ app.post('/api/enroll-request',
       
       if (missingFields.length > 0) {
         return res.status(400).json({ 
-          error: 'All fields are required',
+          error: `Missing required fields: ${missingFields.join(', ')}`, // More specific error
           missingFields
         });
       }
@@ -1850,7 +1851,7 @@ app.post('/api/enroll-request',
           payment_method, transaction_id, payment_screenshot
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          userId,
+          userId, // Can be null if not logged in (user_id INT(11) DEFAULT NULL)
           courseId,
           fullName,
           email,
@@ -1861,7 +1862,7 @@ app.post('/api/enroll-request',
           pincode,
           paymentMethod,
           transactionId,
-          `/uploads/payments/${req.file.filename}`
+          `/uploads/payments/${req.file.filename}` // Path where Multer saves the file
         ]
       );
 
@@ -1872,60 +1873,13 @@ app.post('/api/enroll-request',
 
     } catch (error) {
       console.error('Enrollment request error:', error);
-      res.status(500).json({ error: 'Server error' });
+      // More detailed error for debugging (remove in production)
+      res.status(500).json({ error: 'Server error', details: error.message }); 
     }
   }
 );
-
-// Get user's enrollment requests
-app.get('/api/enroll-requests', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    
-    const [requests] = await pool.execute(
-      `SELECT r.*, c.title AS course_title, c.instructor_name
-       FROM course_enroll_requests r
-       JOIN courses c ON r.course_id = c.id
-       WHERE r.user_id = ?
-       ORDER BY r.created_at DESC`,
-      [userId]
-    );
-
-    res.json(requests);
-  } catch (error) {
-    console.error('Get enrollment requests error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Get enrollment request status
-app.get('/api/enroll-requests/:id', authenticateToken, async (req, res) => {
-  try {
-    const requestId = req.params.id;
-    const userId = req.user.id;
-    
-    const [request] = await pool.execute(
-      `SELECT r.*, c.title AS course_title 
-       FROM course_enroll_requests r
-       JOIN courses c ON r.course_id = c.id
-       WHERE r.id = ? AND r.user_id = ?`,
-      [requestId, userId]
-    );
-
-    if (request.length === 0) {
-      return res.status(404).json({ error: 'Request not found' });
-    }
-
-    res.json(request[0]);
-  } catch (error) {
-    console.error('Get enrollment request error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
 // ==================== COURSES ROUTES ====================
 
-// Get all courses
 // Get all courses (with proper price formatting)
 app.get('/api/courses', async (req, res) => {
   try {
