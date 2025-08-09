@@ -25,46 +25,32 @@ const API_BASE = '/api';
 const fetchCourses = async () => {
   try {
     const response = await fetch(`${API_BASE}/courses`);
-    
-    // First check if response is HTML error page
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('text/html')) {
-      const html = await response.text();
-      console.error('Server returned HTML error:', html);
-      throw new Error('Server error: Received HTML response instead of JSON');
-    }
-    
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Failed to fetch courses. Server response:', errorText);
       throw new Error(`Failed to fetch courses: ${response.status} ${response.statusText}`);
     }
-    
     const courses = await response.json();
     
     return courses.map(course => ({
       ...course,
-      instructor: course.instructorName,
-      duration: `${course.durationWeeks} weeks`,
+      instructor: course.instructorName || 'Unknown Instructor',
+      duration: course.durationWeeks ? `${course.durationWeeks} weeks` : 'TBD',
       students: Math.floor(Math.random() * 2000) + 500,
       rating: (Math.random() * 0.5 + 4.5).toFixed(1),
-      lessons: course.durationWeeks * 4,
+      lessons: course.durationWeeks ? course.durationWeeks * 4 : 0,
       certificate: true,
       image: course.thumbnail || '📘',
-      level: course.difficultyLevel 
-        ? course.difficultyLevel.charAt(0).toUpperCase() + course.difficultyLevel.slice(1) 
-        : ''
+      // Ensure level is properly formatted
+      level: course.difficultyLevel ? 
+        course.difficultyLevel.charAt(0).toUpperCase() + course.difficultyLevel.slice(1).toLowerCase() : 
+        'Beginner'
     }));
   } catch (error) {
     console.error('Error fetching courses:', error);
-    
-    // Show user-friendly error
-    alert(`Error loading courses: ${error.message}. Please try again later.`);
-    
     return [];
   }
 };
-
 
 export default function Courses() {
   const [courses, setCourses] = useState([]);
@@ -83,9 +69,12 @@ export default function Courses() {
     setLoading(true);
     try {
       const coursesData = await fetchCourses();
-      setCourses(coursesData); // Backend already filters active courses
+      // Fix: MySQL returns 1/0 for boolean, not true/false
+      // The backend already filters by is_active = true in the SQL query
+      setCourses(coursesData);
     } catch (error) {
       console.error('Error loading courses:', error);
+      setCourses([]); // Set empty array on error
     } finally {
       setLoading(false);
     }
@@ -97,20 +86,20 @@ export default function Courses() {
   };
 
   const filteredCourses = courses.filter(course => {
-    const matchesSearch = course.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         course.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         course.instructor.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = 
+      (course.title && course.title.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (course.description && course.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (course.instructor && course.instructor.toLowerCase().includes(searchTerm.toLowerCase()));
+    
     const matchesCategory = categoryFilter === "all" || course.category === categoryFilter;
-    // Ensure level comparison is consistent (e.g., both capitalized)
-    const matchesLevel = levelFilter === "all" || course.level === levelFilter; 
+    const matchesLevel = levelFilter === "all" || course.level === levelFilter;
     
     return matchesSearch && matchesCategory && matchesLevel;
   });
 
-  // Dynamically get categories from fetched courses
-  const categories = ["all", ...Array.from(new Set(courses.map(course => course.category)))];
-  // Levels should ideally match the capitalization provided by the backend mapping
-  const levels = ["all", "Beginner", "Intermediate", "Advanced"]; 
+  // Get unique categories from courses
+  const categories = ["all", ...Array.from(new Set(courses.map(course => course.category).filter(Boolean)))];
+  const levels = ["all", "Beginner", "Intermediate", "Advanced"];
 
   // Checkout Component
   if (showCheckout && selectedCourse) {
@@ -152,7 +141,7 @@ export default function Courses() {
             </p>
             <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground mb-4">
               <TrendingUp className="w-4 h-4" />
-              <span>Updated courses from admin dashboard</span>
+              <span>{courses.length} courses available</span>
             </div>
           </div>
 
@@ -294,10 +283,12 @@ export default function Courses() {
               </div>
               <h3 className="text-xl font-semibold mb-2">No courses found</h3>
               <p className="text-muted-foreground mb-4">
-                Try adjusting your search terms or filters to find more courses.
+                {courses.length === 0 
+                  ? "No courses are available at the moment. Please check back later."
+                  : "Try adjusting your search terms or filters to find more courses."}
               </p>
               <Button 
-                onClick={loadCourses} // This will re-fetch data
+                onClick={loadCourses}
                 variant="outline" 
                 className="border-orange-200 hover:bg-orange-50"
               >
@@ -314,11 +305,10 @@ export default function Courses() {
   );
 }
 
-// Checkout Page Component
+// Checkout Page Component (keeping your existing implementation)
 function CheckoutPage({ course, onBack }) {
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
-    // User Details
     fullName: '',
     email: '',
     phone: '',
@@ -326,13 +316,9 @@ function CheckoutPage({ course, onBack }) {
     city: '',
     state: '',
     pincode: '',
-    
-    // Payment Details
-    paymentMethod: 'upi', // Default to UPI
-    paymentScreenshot: null, // File object
+    paymentMethod: 'upi',
+    paymentScreenshot: null,
     transactionId: '',
-    
-    // Course Details (auto-filled, no need to send these to backend, but useful for display)
     courseId: course.id,
     courseName: course.title,
     coursePrice: course.price,
@@ -357,6 +343,7 @@ function CheckoutPage({ course, onBack }) {
       if (!formData.city.trim()) newErrors.city = 'City is required';
       if (!formData.state.trim()) newErrors.state = 'State is required';
       if (!formData.pincode.trim()) newErrors.pincode = 'Pincode is required';
+      else if (!/^\d{6}$/.test(formData.pincode)) newErrors.pincode = 'Pincode should be 6 digits';
     }
     
     if (step === 2) {
@@ -375,13 +362,13 @@ function CheckoutPage({ course, onBack }) {
   };
 
   const handleSubmit = async () => {
-    if (!validateStep(2)) return; // Validate final step before submission
+    if (!validateStep(2)) return;
     
     setLoading(true);
     try {
       const formDataToSend = new FormData();
       
-      // Append all form data that needs to be sent to the backend
+      // Append all form data
       formDataToSend.append('courseId', formData.courseId);
       formDataToSend.append('fullName', formData.fullName);
       formDataToSend.append('email', formData.email);
@@ -392,27 +379,17 @@ function CheckoutPage({ course, onBack }) {
       formDataToSend.append('pincode', formData.pincode);
       formDataToSend.append('paymentMethod', formData.paymentMethod);
       formDataToSend.append('transactionId', formData.transactionId);
+      formDataToSend.append('paymentScreenshot', formData.paymentScreenshot);
       
-      // Append file if it exists
-      if (formData.paymentScreenshot) {
-        formDataToSend.append('paymentScreenshot', formData.paymentScreenshot);
-      } else {
-        // If somehow paymentScreenshot is null at this point, but validation passed (which it shouldn't)
-        throw new Error('Payment screenshot is missing.'); 
-      }
-      
-      // Get JWT token from storage for authentication
+      // Get JWT token from storage
       const token = localStorage.getItem('token');
       
       const response = await fetch(`${API_BASE}/enroll-request`, {
         method: 'POST',
-        // Important: Do NOT set 'Content-Type': 'multipart/form-data' explicitly.
-        // The browser will automatically set it correctly, along with the boundary,
-        // when you provide a FormData object as the body.
         headers: {
-          'Authorization': `Bearer ${token}` // Include Authorization header if token exists
+          'Authorization': token ? `Bearer ${token}` : ''
         },
-        body: formDataToSend // FormData object for file uploads
+        body: formDataToSend
       });
       
       if (!response.ok) {
@@ -420,8 +397,7 @@ function CheckoutPage({ course, onBack }) {
         throw new Error(errorData.error || 'Submission failed');
       }
       
-      // const result = await response.json(); // If you want to use requestId from backend
-      setShowThankYou(true); // Show thank you page on success
+      setShowThankYou(true);
     } catch (error) {
       console.error('Submission error:', error);
       alert(error.message || 'Submission failed. Please try again.');
@@ -430,46 +406,45 @@ function CheckoutPage({ course, onBack }) {
     }
   };
 
-  // Generic input change handler
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-    // Clear error for the field as user types
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
   };
 
-  // File upload handler
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
-      // Basic file type and size validation (optional but recommended)
       if (!file.type.startsWith('image/')) {
         setErrors(prev => ({ ...prev, paymentScreenshot: 'Only image files are allowed.' }));
         return;
       }
-      if (file.size > 10 * 1024 * 1024) { // 10MB limit
-        setErrors(prev => ({ ...prev, paymentScreenshot: 'File size exceeds 10MB limit.' }));
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit as per backend
+        setErrors(prev => ({ ...prev, paymentScreenshot: 'File size exceeds 5MB limit.' }));
         return;
       }
 
       setFormData(prev => ({ ...prev, paymentScreenshot: file }));
       
-      // Create preview URL for the image
       const previewUrl = URL.createObjectURL(file);
       setPaymentPreview(previewUrl);
       
-      // Clear error once file is selected
       if (errors.paymentScreenshot) {
         setErrors(prev => ({ ...prev, paymentScreenshot: '' }));
       }
-    } else {
-      setFormData(prev => ({ ...prev, paymentScreenshot: null }));
-      setPaymentPreview(null);
     }
   };
 
-  // Render Thank You Page if submission was successful
+  // Clean up preview URL when component unmounts
+  useEffect(() => {
+    return () => {
+      if (paymentPreview) {
+        URL.revokeObjectURL(paymentPreview);
+      }
+    };
+  }, [paymentPreview]);
+
   if (showThankYou) {
     return <ThankYouPage course={course} />;
   }
@@ -508,7 +483,7 @@ function CheckoutPage({ course, onBack }) {
           </div>
 
           <div className="grid lg:grid-cols-3 gap-8">
-            {/* Course Summary - Always visible */}
+            {/* Course Summary */}
             <div className="lg:col-span-1">
               <Card className="sticky top-8 border-0 bg-white shadow-lg">
                 <CardHeader className="pb-4">
@@ -647,6 +622,7 @@ function CheckoutPage({ course, onBack }) {
                             value={formData.pincode}
                             onChange={(e) => handleInputChange('pincode', e.target.value)}
                             placeholder="Pincode"
+                            maxLength="6"
                             className={errors.pincode ? 'border-red-500' : 'border-orange-200 focus:border-orange-500'}
                           />
                           {errors.pincode && <p className="text-red-500 text-sm mt-1">{errors.pincode}</p>}
@@ -669,7 +645,6 @@ function CheckoutPage({ course, onBack }) {
                       <div className="text-center p-6 bg-orange-50 rounded-lg">
                         <h3 className="text-lg font-semibold mb-4">Scan & Pay</h3>
                         <div className="bg-white p-4 rounded-lg inline-block shadow-sm">
-                          {/* QR Code placeholder - replace with actual QR code */}
                           <div className="w-48 h-48 bg-gray-100 flex items-center justify-center rounded-lg">
                             <div className="text-center">
                               <div className="text-4xl mb-2">📱</div>
@@ -677,7 +652,7 @@ function CheckoutPage({ course, onBack }) {
                               <p className="text-xs text-gray-500 mt-1">Pay {course.price}</p>
                             </div>
                           </div>
-                        </div>
+                          </div>
                         <p className="text-sm text-gray-600 mt-4">
                           Scan this QR code with any UPI app to pay {course.price}
                         </p>
@@ -718,7 +693,7 @@ function CheckoutPage({ course, onBack }) {
                                 <p className="text-sm text-gray-600">
                                   Click to upload payment screenshot
                                 </p>
-                                <p className="text-xs text-gray-500 mt-1">PNG, JPG up to 10MB</p>
+                                <p className="text-xs text-gray-500 mt-1">PNG, JPG, JPEG, GIF, WEBP up to 5MB</p>
                               </>
                             )}
                           </label>
@@ -790,7 +765,7 @@ function CheckoutPage({ course, onBack }) {
   );
 }
 
-// Thank You Page Component (No changes needed, already looks good)
+// Thank You Page Component
 function ThankYouPage({ course }) {
   const [showLoginDialog, setShowLoginDialog] = useState(false);
 
@@ -918,7 +893,6 @@ function ThankYouPage({ course }) {
               <Button 
                 className="w-full bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500"
                 onClick={() => {
-                  // Redirect to login page
                   window.location.href = '/login';
                 }}
               >
@@ -930,7 +904,6 @@ function ThankYouPage({ course }) {
                 <button 
                   className="text-orange-600 hover:text-orange-700 text-sm font-medium"
                   onClick={() => {
-                    // Redirect to signup page
                     window.location.href = '/signup';
                   }}
                 >
@@ -954,3 +927,4 @@ function ThankYouPage({ course }) {
     </div>
   );
 }
+                          
