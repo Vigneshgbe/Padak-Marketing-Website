@@ -1880,25 +1880,32 @@ app.post('/api/enroll-request',
 );
 // ==================== COURSES ROUTES ====================
 
-// Get all courses (with proper price formatting)
 app.get('/api/courses', async (req, res) => {
   try {
     const [courses] = await pool.execute(
-      'SELECT *, CONCAT("₹", FORMAT(price, 2)) AS formatted_price FROM courses WHERE is_active = true ORDER BY created_at DESC'
+      `SELECT 
+        id,
+        title,
+        description,
+        instructor_name AS instructorName,
+        duration_weeks AS durationWeeks,
+        difficulty_level AS difficultyLevel,
+        category,
+        price,
+        thumbnail,
+        is_active AS isActive
+      FROM courses 
+      WHERE is_active = true 
+      ORDER BY created_at DESC`
     );
 
-    res.json(courses.map(course => ({
-      id: course.id,
-      title: course.title,
-      description: course.description,
-      instructorName: course.instructor_name,
-      durationWeeks: course.duration_weeks,
-      difficultyLevel: course.difficulty_level,
-      category: course.category,
-      price: course.formatted_price,
-      thumbnail: course.thumbnail,
-      isActive: course.is_active
-    })));
+    // Format price in JavaScript instead of SQL
+    const formattedCourses = courses.map(course => ({
+      ...course,
+      price: course.price !== null ? `₹${parseFloat(course.price).toFixed(2)}` : '₹0.00'
+    }));
+
+    res.json(formattedCourses);
 
   } catch (error) {
     console.error('Get courses error:', error);

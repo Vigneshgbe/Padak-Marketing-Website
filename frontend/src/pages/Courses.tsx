@@ -26,7 +26,6 @@ const fetchCourses = async () => {
   try {
     const response = await fetch(`${API_BASE}/courses`);
     if (!response.ok) {
-      // Log the full error response from the server if not OK
       const errorText = await response.text();
       console.error('Failed to fetch courses. Server response:', errorText);
       throw new Error(`Failed to fetch courses: ${response.status} ${response.statusText}`);
@@ -35,15 +34,16 @@ const fetchCourses = async () => {
     
     return courses.map(course => ({
       ...course,
-      instructor: course.instructorName, // Mapped from instructor_name
-      duration: `${course.durationWeeks} weeks`, // Mapped from duration_weeks
-      students: Math.floor(Math.random() * 2000) + 500, // Mock until we have real data
-      rating: (Math.random() * 0.5 + 4.5).toFixed(1), // Mock rating
-      lessons: course.durationWeeks * 4, // Mock lessons
-      certificate: true, // All courses have certificates
-      image: course.thumbnail || '📘', // Default emoji if no thumbnail
-      // Ensure level is capitalized for display and filtering
-      level: course.difficultyLevel ? course.difficultyLevel.charAt(0).toUpperCase() + course.difficultyLevel.slice(1) : '' 
+      instructor: course.instructorName,
+      duration: `${course.durationWeeks} weeks`,
+      students: Math.floor(Math.random() * 2000) + 500,
+      rating: (Math.random() * 0.5 + 4.5).toFixed(1),
+      lessons: course.durationWeeks * 4,
+      certificate: true,
+      image: course.thumbnail || '📘',
+      level: course.difficultyLevel 
+        ? course.difficultyLevel.charAt(0).toUpperCase() + course.difficultyLevel.slice(1) 
+        : ''
     }));
   } catch (error) {
     console.error('Error fetching courses:', error);
@@ -68,8 +68,7 @@ export default function Courses() {
     setLoading(true);
     try {
       const coursesData = await fetchCourses();
-      // THIS IS THE CRUCIAL FILTER: Only show courses where isActive is true
-      setCourses(coursesData.filter(course => course.isActive === true)); 
+      setCourses(coursesData); // Backend already filters active courses
     } catch (error) {
       console.error('Error loading courses:', error);
     } finally {
