@@ -21,7 +21,8 @@ import {
   ShoppingCart
 } from "lucide-react";
 
-const API_BASE = '/api';
+// At the top of your file, update the API_BASE constant
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const fetchCourses = async () => {
   try {
@@ -375,79 +376,51 @@ function CheckoutPage({ course, onBack }) {
       formDataToSend.append('paymentMethod', formData.paymentMethod);
       formDataToSend.append('transactionId', formData.transactionId);
       
-      // Make sure we're actually sending the file
       if (formData.paymentScreenshot) {
         formDataToSend.append('paymentScreenshot', formData.paymentScreenshot);
       }
       
-      // Get JWT token from storage - try multiple possible token locations
-      const token = 
-        localStorage.getItem('authToken') || 
-        localStorage.getItem('token') || 
-        sessionStorage.getItem('authToken') || 
-        sessionStorage.getItem('token');
+      // Get JWT token from storage
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
       
-      console.log('Authorization token available:', !!token);
+      console.log('Sending request to:', `${API_BASE}/enroll-request`);
       
-      // Create custom fetch that doesn't throw on non-2xx responses
-      const fetchWithErrorHandling = async (url, options) => {
-        const response = await fetch(url, options);
-        const responseText = await response.text();
-        
-        console.log('Response status:', response.status);
-        console.log('Response text:', responseText);
-        
-        let responseData;
-        try {
-          responseData = JSON.parse(responseText);
-        } catch (e) {
-          console.warn('Response is not valid JSON:', responseText);
-          responseData = { error: responseText || 'Unknown error' };
-        }
-        
-        if (!response.ok) {
-          console.error('Request failed:', response.status, responseData);
-          throw new Error(responseData.error || responseData.message || 'Request failed');
-        }
-        
-        return responseData;
-      };
-      
-      // Log what we're submitting (for debugging)
-      console.log('Form submission details:', {
-        endpoint: `${API_BASE}/enroll-request`,
-        hasFile: !!formData.paymentScreenshot,
-        courseId: formData.courseId,
-        token: token ? 'Present' : 'Missing'
-      });
-      
-      // Make the request
-      const data = await fetchWithErrorHandling(`${API_BASE}/enroll-request`, {
+      const response = await fetch(`${API_BASE}/enroll-request`, {
         method: 'POST',
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : ''
+        },
         body: formDataToSend
       });
       
-      console.log('Enrollment successful:', data);
+      console.log('Response status:', response.status);
+      
+      // Get response as text first
+      const text = await response.text();
+      console.log('Response body:', text);
+      
+      let data;
+      if (text) {
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          console.error('Error parsing response:', e);
+        }
+      }
+      
+      if (!response.ok) {
+        throw new Error((data && data.error) || text || 'Enrollment request failed');
+      }
+      
       setShowThankYou(true);
     } catch (error) {
       console.error('Submission error:', error);
-      
-      // Provide more helpful error message
-      let errorMessage = error.message || 'Submission failed. Please try again.';
-      
-      // If it might be an authentication issue
-      if (errorMessage.includes('token') || errorMessage.includes('auth') || 
-          errorMessage.includes('unauthorized') || errorMessage.includes('permission')) {
-        errorMessage = 'Authentication failed. Please log in before submitting.';
-      }
-      
-      alert(errorMessage);
+      alert(error.message || 'Submission failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
-
+  
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
