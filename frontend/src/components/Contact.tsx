@@ -42,7 +42,7 @@ export const Contact = () => {
     {
       icon: MapPin,
       title: "Office Location",
-      details: ["No.10A, 1/1, Attidiya Road, Ratmalana, Colombo, Sri Lanka", "132/4, Santhiveerappapuram, Punjai Sangenthi, Trichy, Tamil Nadu, India"]
+      details: ["Ratmalana, Colombo, Sri Lanka", "Tamil Nadu, India"]
     },
     {
       icon: Phone,
