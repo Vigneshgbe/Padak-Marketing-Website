@@ -1880,8 +1880,10 @@ app.post('/api/enroll-request',
 );
 // ==================== COURSES ROUTES ====================
 
+// Replace the existing /api/courses endpoint
 app.get('/api/courses', async (req, res) => {
   try {
+    // Use explicit column selection instead of SELECT *
     const [courses] = await pool.execute(
       `SELECT 
         id,
@@ -1909,7 +1911,10 @@ app.get('/api/courses', async (req, res) => {
 
   } catch (error) {
     console.error('Get courses error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ 
+      error: 'Server error',
+      details: error.message
+    });
   }
 });
 

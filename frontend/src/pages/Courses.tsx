@@ -25,11 +25,21 @@ const API_BASE = '/api';
 const fetchCourses = async () => {
   try {
     const response = await fetch(`${API_BASE}/courses`);
+    
+    // First check if response is HTML error page
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('text/html')) {
+      const html = await response.text();
+      console.error('Server returned HTML error:', html);
+      throw new Error('Server error: Received HTML response instead of JSON');
+    }
+    
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Failed to fetch courses. Server response:', errorText);
       throw new Error(`Failed to fetch courses: ${response.status} ${response.statusText}`);
     }
+    
     const courses = await response.json();
     
     return courses.map(course => ({
@@ -47,9 +57,14 @@ const fetchCourses = async () => {
     }));
   } catch (error) {
     console.error('Error fetching courses:', error);
+    
+    // Show user-friendly error
+    alert(`Error loading courses: ${error.message}. Please try again later.`);
+    
     return [];
   }
 };
+
 
 export default function Courses() {
   const [courses, setCourses] = useState([]);
