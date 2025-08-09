@@ -1827,17 +1827,25 @@ app.post('/api/enroll-request',
       } = req.body;
 
       // Validate required fields
-      if (!courseId || !fullName || !email || !phone || !address || !city || !state || !pincode || !paymentMethod || !transactionId) {
-        return res.status(400).json({ error: 'All fields are required' });
+      const requiredFields = ['courseId', 'fullName', 'email', 'phone', 'address', 
+                             'city', 'state', 'pincode', 'paymentMethod', 'transactionId'];
+      
+      const missingFields = requiredFields.filter(field => !req.body[field]);
+      
+      if (missingFields.length > 0) {
+        return res.status(400).json({ 
+          error: 'All fields are required',
+          missingFields
+        });
       }
 
       if (!req.file) {
         return res.status(400).json({ error: 'Payment screenshot is required' });
       }
 
-      // Insert into database
+      // Insert into database (corrected table name)
       const [result] = await pool.execute(
-        `INSERT INTO courses_enroll_request (
+        `INSERT INTO course_enroll_requests (
           user_id, course_id, full_name, email, phone, address, city, state, pincode, 
           payment_method, transaction_id, payment_screenshot
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1876,7 +1884,7 @@ app.get('/api/enroll-requests', authenticateToken, async (req, res) => {
     
     const [requests] = await pool.execute(
       `SELECT r.*, c.title AS course_title, c.instructor_name
-       FROM courses_enroll_request r
+       FROM course_enroll_requests r
        JOIN courses c ON r.course_id = c.id
        WHERE r.user_id = ?
        ORDER BY r.created_at DESC`,
@@ -1890,13 +1898,39 @@ app.get('/api/enroll-requests', authenticateToken, async (req, res) => {
   }
 });
 
+// Get enrollment request status
+app.get('/api/enroll-requests/:id', authenticateToken, async (req, res) => {
+  try {
+    const requestId = req.params.id;
+    const userId = req.user.id;
+    
+    const [request] = await pool.execute(
+      `SELECT r.*, c.title AS course_title 
+       FROM course_enroll_requests r
+       JOIN courses c ON r.course_id = c.id
+       WHERE r.id = ? AND r.user_id = ?`,
+      [requestId, userId]
+    );
+
+    if (request.length === 0) {
+      return res.status(404).json({ error: 'Request not found' });
+    }
+
+    res.json(request[0]);
+  } catch (error) {
+    console.error('Get enrollment request error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ==================== COURSES ROUTES ====================
 
 // Get all courses
+// Get all courses (with proper price formatting)
 app.get('/api/courses', async (req, res) => {
   try {
     const [courses] = await pool.execute(
-      'SELECT * FROM courses WHERE is_active = true ORDER BY created_at DESC'
+      'SELECT *, CONCAT("₹", FORMAT(price, 2)) AS formatted_price FROM courses WHERE is_active = true ORDER BY created_at DESC'
     );
 
     res.json(courses.map(course => ({
@@ -1907,7 +1941,7 @@ app.get('/api/courses', async (req, res) => {
       durationWeeks: course.duration_weeks,
       difficultyLevel: course.difficulty_level,
       category: course.category,
-      price: course.price,
+      price: course.formatted_price,
       thumbnail: course.thumbnail,
       isActive: course.is_active
     })));

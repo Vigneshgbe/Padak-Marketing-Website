@@ -20,110 +20,26 @@ import {
   ShoppingCart
 } from "lucide-react";
 
-// Database API functions - replace with actual MySQL API endpoints
-const API_BASE = '/api'; // Replace with your actual API base URL
+const API_BASE = '/api';
 
 const fetchCourses = async () => {
   try {
-    // Mock data for demonstration
-    return [
-      {
-        id: 1,
-        title: "Complete Digital Marketing Mastery",
-        description: "Master all aspects of digital marketing from SEO to social media advertising",
-        instructor: "Sarah Johnson",
-        duration: "12 weeks",
-        students: 1250,
-        rating: 4.9,
-        price: "₹24,999",
-        level: "Beginner",
-        category: "Digital Marketing",
-        image: "🎯",
-        lessons: 48,
-        certificate: true,
-        status: "active"
-      },
-      {
-        id: 2,
-        title: "Advanced SEO Optimization",
-        description: "Advanced techniques for ranking higher in search engines",
-        instructor: "Michael Chen",
-        duration: "8 weeks",
-        students: 890,
-        rating: 4.8,
-        price: "₹16,999",
-        level: "Advanced",
-        category: "SEO",
-        image: "🔍",
-        lessons: 32,
-        certificate: true,
-        status: "active"
-      },
-      {
-        id: 3,
-        title: "Social Media Marketing Pro",
-        description: "Build and execute winning social media strategies",
-        instructor: "Emily Davis",
-        duration: "10 weeks",
-        students: 2100,
-        rating: 4.9,
-        price: "₹20,999",
-        level: "Intermediate",
-        category: "Social Media",
-        image: "📱",
-        lessons: 40,
-        certificate: true,
-        status: "active"
-      },
-      {
-        id: 4,
-        title: "Google Ads Mastery",
-        description: "Create profitable Google Ads campaigns that convert",
-        instructor: "David Wilson",
-        duration: "6 weeks",
-        students: 670,
-        rating: 4.7,
-        price: "₹14,999",
-        level: "Intermediate",
-        category: "PPC",
-        image: "💰",
-        lessons: 24,
-        certificate: true,
-        status: "active"
-      },
-      {
-        id: 5,
-        title: "Content Marketing Strategy",
-        description: "Develop content that engages and converts your audience",
-        instructor: "Lisa Thompson",
-        duration: "9 weeks",
-        students: 1450,
-        rating: 4.8,
-        price: "₹18,999",
-        level: "Beginner",
-        category: "Content Marketing",
-        image: "✍️",
-        lessons: 36,
-        certificate: true,
-        status: "active"
-      },
-      {
-        id: 6,
-        title: "Email Marketing Automation",
-        description: "Build automated email sequences that drive sales",
-        instructor: "Robert Lee",
-        duration: "7 weeks",
-        students: 980,
-        rating: 4.6,
-        price: "₹12,999",
-        level: "Intermediate",
-        category: "Email Marketing",
-        image: "📧",
-        lessons: 28,
-        certificate: true,
-        status: "active"
-      }
-    ];
+    const response = await fetch(`${API_BASE}/courses`);
+    if (!response.ok) throw new Error('Failed to fetch courses');
+    const courses = await response.json();
+    
+    return courses.map(course => ({
+      ...course,
+      instructor: course.instructorName,
+      duration: `${course.durationWeeks} weeks`,
+      students: Math.floor(Math.random() * 2000) + 500, // Mock until we have real data
+      rating: (Math.random() * 0.5 + 4.5).toFixed(1), // Mock rating
+      lessons: course.durationWeeks * 4, // Mock lessons
+      certificate: true, // All courses have certificates
+      image: course.thumbnail || '📘', // Default emoji if no thumbnail
+      // Add this line to explicitly map difficultyLevel to level
+      level: course.difficultyLevel ? course.difficultyLevel.charAt(0).toUpperCase() + course.difficultyLevel.slice(1) : '' // Capitalize first letter
+    }));
   } catch (error) {
     console.error('Error fetching courses:', error);
     return [];
@@ -145,9 +61,14 @@ export default function Courses() {
 
   const loadCourses = async () => {
     setLoading(true);
-    const coursesData = await fetchCourses();
-    setCourses(coursesData.filter(course => course.status === 'active'));
-    setLoading(false);
+    try {
+      const coursesData = await fetchCourses();
+      setCourses(coursesData.filter(course => course.isActive === true));
+    } catch (error) {
+      console.error('Error loading courses:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleEnrollment = (course) => {
@@ -397,6 +318,7 @@ function CheckoutPage({ course, onBack }) {
   const [loading, setLoading] = useState(false);
   const [showThankYou, setShowThankYou] = useState(false);
   const [errors, setErrors] = useState({});
+  const [paymentPreview, setPaymentPreview] = useState(null);
 
   const validateStep = (step) => {
     const newErrors = {};
@@ -433,15 +355,46 @@ function CheckoutPage({ course, onBack }) {
     
     setLoading(true);
     try {
-      // Simulate API call to submit enrollment request
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const formDataToSend = new FormData();
       
-      // Here you would call your API to insert into courses_enroll_request table
-      console.log('Enrollment request submitted:', formData);
+      // Append all form data
+      formDataToSend.append('courseId', formData.courseId);
+      formDataToSend.append('fullName', formData.fullName);
+      formDataToSend.append('email', formData.email);
+      formDataToSend.append('phone', formData.phone);
+      formDataToSend.append('address', formData.address);
+      formDataToSend.append('city', formData.city);
+      formDataToSend.append('state', formData.state);
+      formDataToSend.append('pincode', formData.pincode);
+      formDataToSend.append('paymentMethod', formData.paymentMethod);
+      formDataToSend.append('transactionId', formData.transactionId);
       
+      // Append file if exists
+      if (formData.paymentScreenshot) {
+        formDataToSend.append('paymentScreenshot', formData.paymentScreenshot);
+      }
+      
+      // Get JWT token from storage
+      const token = localStorage.getItem('token');
+      
+      const response = await fetch(`${API_BASE}/enroll-request`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formDataToSend
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Submission failed');
+      }
+      
+      const result = await response.json();
       setShowThankYou(true);
     } catch (error) {
-      alert('Submission failed. Please try again.');
+      console.error('Submission error:', error);
+      alert(error.message || 'Submission failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -458,6 +411,11 @@ function CheckoutPage({ course, onBack }) {
     const file = e.target.files[0];
     if (file) {
       setFormData(prev => ({ ...prev, paymentScreenshot: file }));
+      
+      // Create preview URL
+      const previewUrl = URL.createObjectURL(file);
+      setPaymentPreview(previewUrl);
+      
       if (errors.paymentScreenshot) {
         setErrors(prev => ({ ...prev, paymentScreenshot: '' }));
       }
@@ -690,15 +648,33 @@ function CheckoutPage({ course, onBack }) {
                             id="payment-screenshot"
                           />
                           <label htmlFor="payment-screenshot" className="cursor-pointer">
-                            <div className="text-gray-400 mb-2">
-                              <svg className="mx-auto h-12 w-12" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-                              </svg>
-                            </div>
-                            <p className="text-sm text-gray-600">
-                              {formData.paymentScreenshot ? formData.paymentScreenshot.name : 'Click to upload payment screenshot'}
-                            </p>
-                            <p className="text-xs text-gray-500 mt-1">PNG, JPG up to 10MB</p>
+                            {paymentPreview ? (
+                              <div className="flex flex-col items-center">
+                                <img 
+                                  src={paymentPreview} 
+                                  alt="Payment preview" 
+                                  className="h-32 w-auto object-contain mb-2 rounded-md"
+                                />
+                                <p className="text-sm text-gray-600">
+                                  {formData.paymentScreenshot.name}
+                                </p>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Click to change
+                                </p>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="text-gray-400 mb-2">
+                                  <svg className="mx-auto h-12 w-12" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                    <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
+                                </div>
+                                <p className="text-sm text-gray-600">
+                                  Click to upload payment screenshot
+                                </p>
+                                <p className="text-xs text-gray-500 mt-1">PNG, JPG up to 10MB</p>
+                              </>
+                            )}
                           </label>
                         </div>
                         {errors.paymentScreenshot && <p className="text-red-500 text-sm mt-1">{errors.paymentScreenshot}</p>}
