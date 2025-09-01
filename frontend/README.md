@@ -1,73 +1,47 @@
-# Welcome to your Lovable project
+# 🎓 Padak
 
-## Project info
+🚀 **Padak** is a digital platform offering **courses, internships, and services** in  
+✅ Digital Marketing  
+✅ Graphic Design  
+✅ Video Editing  
 
-**URL**: https://lovable.dev/projects/50833368-0daa-412d-aaeb-8826fc11b651
+We help **students upskill** and **businesses grow** with practical, hands-on learning and professional services.
 
-## How can I edit this code?
+---
 
-There are several ways of editing your application.
+## ✨ What We Offer
 
-**Use Lovable**
+### 🎯 Courses & Internships
+- 6-Month Digital Marketing Course (with live projects)
+- Graphic Design Training (Beginner → Pro)
+- Video Editing & Content Creation
+- Remote Internships with Certificates
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/50833368-0daa-412d-aaeb-8826fc11b651) and start prompting.
+### 🛠 Services
+- Social Media Marketing
+- Branding & Graphic Design
+- Professional Video Editing
+- Content Strategy & Growth Hacking
 
-Changes made via Lovable will be committed automatically to this repo.
+---
 
-**Use your preferred IDE**
+## 📅 Launch & Batches
+- 📢 **Website Launch**: October 10, 2025  
+- 🧑‍🎓 **First Student Batch**: October 15, 2025  
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+---
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+## 🚀 Mission
+Our mission is to **empower students** with industry-ready skills and help **clients achieve digital success**.  
+Padak bridges the gap between **learning** and **earning**.
 
-Follow these steps:
+---
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
-
-**Edit a file directly in GitHub**
-
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/50833368-0daa-412d-aaeb-8826fc11b651) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+## 📂 Repository Structure
+```bash
+padak/
+├── frontend/       # React-based UI
+├── backend/        # Node.js/Express APIs
+├── database/       # DB schemas & migrations
+├── docs/           # Course & service documentation
+└── README.md       # You are here
