@@ -809,6 +809,7 @@ app.get('/api/users/:userId/enrollments', authenticateToken, async (req, res) =>
       SELECT
         e.id, e.progress, e.status, e.enrollment_date, e.completion_date,
         c.id AS course_id, c.title AS courseTitle,
+        c.image_url, -- Re-added based on schema
         c.duration AS durationWeeks,    -- Using original 'duration' column, aliasing for frontend
         c.level AS difficultyLevel,     -- Using original 'level' column, aliasing for frontend
         c.category
@@ -860,13 +861,13 @@ app.get('/api/services', authenticateToken, async (req, res) => {
     // Note: Your original schema has 'service' (singular) and 'service_category' (singular).
     // 'service' table connects to 'category_id', not 'subcategory_id'.
     // `features` is LONGTEXT, not necessarily JSON.
+    // `service` table does NOT have `is_active` column. Removed `WHERE s.is_active = 1`.
     const [serviceOfferings] = await pool.execute(
       `SELECT
           s.id, s.name, sc.id AS category_id, sc.name AS categoryName,
           s.description, s.price, s.duration, s.rating, s.reviews, s.features, s.popular
        FROM service s  -- Corrected table name
        JOIN service_category sc ON s.category_id = sc.id -- Corrected table name
-       WHERE s.is_active = 1 -- Assuming service has an is_active column. If not, remove.
        ORDER BY s.popular DESC, s.name ASC`
     );
 
@@ -1337,7 +1338,7 @@ app.get('/api/enrollments/my-courses', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // FIX: Re-added c.image_url as it IS in your schema.
+    // FIX: Explicitly selecting image_url which IS in your schema.
     const [enrollments] = await pool.execute(
       `SELECT e.*, c.id as course_id_alias, c.title, c.description,
               c.image_url, c.duration, c.level, c.category, c.price, c.thumbnail_url, c.is_active
@@ -1354,7 +1355,7 @@ app.get('/api/enrollments/my-courses', authenticateToken, async (req, res) => {
       completionDate: enrollment.completion_date, status: enrollment.status,
       course: {
         id: enrollment.course_id_alias, title: enrollment.title, description: enrollment.description,
-        // image_url: enrollment.image_url, // For display if needed
+        image_url: enrollment.image_url, // Now correctly selected from DB
         durationWeeks: enrollment.duration, // Using original 'duration' column
         difficultyLevel: enrollment.level,   // Using original 'level' column
         category: enrollment.category, price: enrollment.price,
@@ -1398,7 +1399,6 @@ app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) =
   try {
     const userId = req.user.id;
 
-    // FIX: Table name 'assignment_submission' (singular) is used consistently now.
     const assignmentsQuery = `
       SELECT 
         a.id, a.course_id, a.title, a.description, a.due_date, a.max_points, a.created_at,
@@ -1486,7 +1486,7 @@ app.post('/api/assignments/submit', authenticateToken, assignmentUpload.single('
       [assignment_id, req.user.id, content || '', file_path]
     );
 
-    res.json({ success: true, message: 'Assignment submitted successfully', submission_id: insertResult.insertId });
+    res.status(201).json({ success: true, message: 'Assignment submitted successfully', submission_id: insertResult.insertId });
   } catch (error) {
     console.error('Error submitting assignment:', error);
     res.status(500).json({ error: 'Server error' });
@@ -1691,7 +1691,7 @@ app.get('/api/admin/certificates', authenticateToken, requireAdmin, async (req, 
   let query = `
     SELECT 
       c.id, c.user_id, c.course_id, c.certificate_url, DATE_FORMAT(c.issued_date, '%d %b %Y') as issued_date,
-      co.title as course_title, -- co.instructor_name as instructor_name, -- Not in schema
+      co.title as course_title, 
       co.category, co.level as difficulty_level, -- Using original 'level'
       u.first_name, u.last_name, u.email,
       DATE_FORMAT(e.completion_date, '%d %b %Y') as completion_date
@@ -1842,10 +1842,9 @@ app.get('/api/resources/:id/download', authenticateToken, async (req, res) => {
     if (!resource) { return res.status(404).json({ error: 'Resource not found' }); }
     if (resource.type === 'tool') { return res.status(400).json({ error: 'Cannot download external tools' }); }
 
-    // FIX: Your original 'download_log' schema has singular name.
     await pool.execute(
-      `INSERT INTO download_log (user_id, resource_id, resource_name, resource_type) VALUES (?, ?, ?, ?)`, // resource_type is NOT NULL in schema
-      [req.user.id, resourceId, resource.title, resource.type || 'unknown']
+      `INSERT INTO download_log (user_id, resource_id, resource_name) VALUES (?, ?, ?)`,
+      [req.user.id, resourceId, resource.title]
     );
 
     const fileExtension = resource.type === 'excel' ? 'xlsx' : 'pdf';
