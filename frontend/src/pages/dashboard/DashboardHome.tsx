@@ -1,4 +1,3 @@
-// src/pages/dashboard/DashboardHome.tsx
 import React from 'react';
 import { User, UserStats } from '../../lib/types';
 

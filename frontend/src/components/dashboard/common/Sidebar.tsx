@@ -1,17 +1,17 @@
-// src/components/dashboard/common/Sidebar.tsx
 import React from 'react';
 import {
   LayoutDashboard, BookOpen, ListChecks, BadgeCheck, Calendar,
   Users, Briefcase, BarChart, Settings, LogOut,
-  Shield, UserCheck, MessageSquare, GraduationCap, FileText,
-  Sun, Moon, User // Added User for default profile icon
+  Shield, UserCheck, MessageSquare, HardHat, FileText,
+  Sun, Moon, User, Code, Layers, Mail, GraduationCap // Added Mail, GraduationCap, Code, Layers for new management sections
 } from 'lucide-react';
 import { useAuth } from '../../../hooks/use-auth';
 
 interface NavItem {
-  id: string;
+  id: string; // Corresponds to activeView state
   label: string;
   icon: React.ReactNode;
+  isManagementSection?: boolean; // New prop to indicate if it's an AdminDashboard section
 }
 
 interface SidebarProps {
@@ -29,9 +29,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   onToggleDarkMode,
   onProfileClick
 }) => {
-  const { user, logout } = useAuth(); // Assuming useAuth provides user object with accountType
+  const { user, logout } = useAuth();
 
-  // Padak Logo component using the actual logo image
   const PadakLogo = () => (
     <img 
       src="https://github.com/Sweety-Vigneshg/Padak-Marketing-Website/blob/main/frontend/src/assets/padak_p.png?raw=true" 
@@ -46,25 +45,29 @@ const Sidebar: React.FC<SidebarProps> = ({
     // Admin navigation items
     if (user?.accountType === 'admin') {
       return [
-        { id: 'dashboard', label: 'Admin Dashboard', icon: <LayoutDashboard size={20} /> }, 
-        { id: 'social', label: 'Social Feed', icon: <MessageSquare size={20} /> },
-        { id: 'manage-courses', label: 'Manage Courses', icon: <BookOpen size={20} /> },
-        { id: 'manage-users', label: 'Manage Users', icon: <Users size={20} /> },
-        // Admin manages internships, so GraduationCap is appropriate for this context.
-        { id: 'manage-internships', label: 'Manage Internships', icon: <GraduationCap size={20} /> },
-        { id: 'contact-messages', label: 'Contact Messages', icon: <MessageSquare size={20} /> },
-        { id: 'enrollments', label: 'Course Enrollments', icon: <UserCheck size={20} /> },
+        { id: 'admin-dashboard', label: 'Admin Dashboard', icon: <LayoutDashboard size={20} /> },
         { id: 'analytics', label: 'Analytics', icon: <BarChart size={20} /> },
-        { id: 'settings', label: 'Settings', icon: <Settings size={20} /> },
+        { id: 'users', label: 'User Management', icon: <Users size={20} />, isManagementSection: true },
+        { id: 'courses', label: 'Course Management', icon: <BookOpen size={20} />, isManagementSection: true },
+        { id: 'assignments', label: 'Assignment Management', icon: HardHat, isManagementSection: true },
+        { id: 'enrollments', label: 'Enrollment Management', icon: UserCheck, isManagementSection: true },
+        { id: 'certificates', label: 'Certificate Management', icon: Award, isManagementSection: true },
+        { id: 'service-categories', label: 'Service Categories', icon: Code, isManagementSection: true },
+        { id: 'service-sub-categories', label: 'Service Sub-Categories', icon: Layers, isManagementSection: true },
+        { id: 'service-offerings', label: 'Service Offerings', icon: Briefcase, isManagementSection: true }, // For the 'service' table
+        { id: 'service-requests', label: 'Service Requests', icon: MessageSquare, isManagementSection: true }, // For the 'service_request' table
+        { id: 'internships', label: 'Internship Management', icon: GraduationCap, isManagementSection: true },
+        { id: 'contacts', label: 'Contact Messages', icon: Mail, isManagementSection: true },
+        { id: 'calendar', label: 'Calendar Events', icon: Calendar, isManagementSection: true },
+        { id: 'settings', label: 'Settings', icon: <Settings size={20} /> }, // Admin specific settings
       ];
     }
 
     // Default/Student/Professional/Business/Agency user navigation items
     const baseItems: NavItem[] = [
       { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
-      { id: 'social', label: 'Social Feed', icon: <MessageSquare size={20} /> }, 
+      { id: 'social', label: 'Social Feed', icon: <MessageSquare size={20} /> },
       { id: 'courses', label: 'My Courses', icon: <BookOpen size={20} /> },
-      // Corrected: 'internships' now uses Briefcase icon for all non-admin users
       { id: 'internships', label: 'Internships', icon: <Briefcase size={20} /> },
       { id: 'assignments', label: 'Assignments', icon: <ListChecks size={20} /> },
       { id: 'certificates', label: 'Certificates', icon: <BadgeCheck size={20} /> },
@@ -72,30 +75,32 @@ const Sidebar: React.FC<SidebarProps> = ({
       { id: 'resources', label: 'Resources', icon: <FileText size={20} /> },
     ];
 
-    // Add 'Request Services' only for specific account types
     if (['professional', 'business', 'agency'].includes(user?.accountType || '')) {
-      // Using Briefcase again here, as it signifies professional/business related services.
-      // If distinction is critical, could use other icons like 'Sparkles' for services, etc.
       baseItems.push({ id: 'services', label: 'Request Services', icon: <Briefcase size={20} /> });
     }
 
-    // Settings is common for all non-admin users
     baseItems.push({ id: 'settings', label: 'Settings', icon: <Settings size={20} /> });
-
     return baseItems;
   };
 
   const navItems = getNavItems();
 
-  // If user object is null (e.g., not logged in), don't render sidebar
-  if (!user) return null;
+  if (!user) return null; // Should ideally be handled by Dashboard.tsx redirect
+
+  // Determine which item is active, especially for admin management sections
+  const isActive = (item: NavItem) => {
+    if (user?.accountType === 'admin' && item.isManagementSection) {
+      return activeView === item.id;
+    }
+    return activeView === item.id;
+  };
+
 
   return (
-    <aside className="fixed lg:static z-30 h-screen w-64 bg-white dark:bg-gray-800 shadow-lg">
-      <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+    <aside className="fixed lg:static z-30 h-screen w-64 bg-white dark:bg-gray-800 shadow-lg flex flex-col">
+      <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
         <div className="flex items-center space-x-2">
-          {/* Padak Logo and Brand */}
-          <div className="hidden lg:flex items-center space-x-3 mr-6">
+          <div className="flex items-center space-x-3 mr-6">
             <div className="flex items-center justify-center">
               <PadakLogo />
             </div>
@@ -109,7 +114,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      <div className="p-4 overflow-y-auto h-[calc(100vh-80px)]"> {/* Added overflow for scrollable content */}
+      <div className="p-4 overflow-y-auto flex-grow">
         <div
           className="flex items-center mb-6 p-3 rounded-lg bg-orange-50 dark:bg-gray-700 cursor-pointer hover:bg-orange-100 dark:hover:bg-gray-600 transition-colors"
           onClick={onProfileClick}
@@ -119,15 +124,14 @@ const Sidebar: React.FC<SidebarProps> = ({
               <img
                 src={user.profileImage}
                 alt="Profile"
-                className="w-12 h-12 rounded-xl object-cover" // Adjusted size for better fit
+                className="w-12 h-12 rounded-xl object-cover"
               />
             ) : (
-              <div className="bg-gray-200 dark:bg-gray-600 border-2 border-dashed border-gray-300 dark:border-gray-500 rounded-xl w-12 h-12 flex items-center justify-center"> {/* Adjusted size */}
+              <div className="bg-gray-200 dark:bg-gray-600 border-2 border-dashed border-gray-300 dark:border-gray-500 rounded-xl w-12 h-12 flex items-center justify-center">
                 {user.accountType === 'admin' ? (
                   <Shield size={24} className="text-orange-500" />
                 ) : (
-                  // Display first letter of first name if no image
-                  <span className="text-lg font-semibold text-gray-400 capitalize">
+                  <span className="text-lg font-semibold text-gray-400 uppercase">
                     {user.firstName?.charAt(0) || <User size={24} />}
                   </span>
                 )}
@@ -146,9 +150,9 @@ const Sidebar: React.FC<SidebarProps> = ({
           {navItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => onViewChange(item.id)} // This triggers the parent to change content
+              onClick={() => onViewChange(item.id)}
               className={`flex items-center w-full p-3 rounded-lg transition-colors ${
-                activeView === item.id
+                isActive(item)
                   ? 'bg-orange-500 text-white'
                   : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
               }`}
@@ -158,28 +162,28 @@ const Sidebar: React.FC<SidebarProps> = ({
             </button>
           ))}
         </nav>
+      </div>
 
-        <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-          <button
-            onClick={onToggleDarkMode}
-            className="flex items-center w-full p-3 rounded-lg text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
-          >
-            <span className="mr-3">
-              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
-            </span>
-            <span>{darkMode ? 'Light Mode' : 'Dark Mode'}</span>
-          </button>
+      <div className="mt-auto p-4 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
+        <button
+          onClick={onToggleDarkMode}
+          className="flex items-center w-full p-3 rounded-lg text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+        >
+          <span className="mr-3">
+            {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+          </span>
+          <span>{darkMode ? 'Light Mode' : 'Dark Mode'}</span>
+        </button>
 
-          <button
-            onClick={logout}
-            className="flex items-center w-full p-3 rounded-lg text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
-          >
-            <span className="mr-3">
-              <LogOut size={20} />
-            </span>
-            <span>Logout</span>
-          </button>
-        </div>
+        <button
+          onClick={logout}
+          className="flex items-center w-full p-3 rounded-lg text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+        >
+          <span className="mr-3">
+            <LogOut size={20} />
+          </span>
+          <span>Logout</span>
+        </button>
       </div>
     </aside>
   );
