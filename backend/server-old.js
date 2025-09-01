@@ -15,11 +15,12 @@ const port = process.env.PORT || 5000;
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-secret-key';
 
-// Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, 'uploads', 'assignments');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+// Create necessary directories
+const assignmentsDir = path.join(__dirname, 'uploads', 'assignments');
+if (!fs.existsSync(assignmentsDir)) fs.mkdirSync(assignmentsDir, { recursive: true });
+
+const avatarsDir = path.join(__dirname, 'uploads', 'avatars');
+if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
 
 // Database connection pool
 const pool = mysql.createPool({
@@ -47,32 +48,113 @@ async function testConnection() {
 
 testConnection();
 
-// Multer configuration for file uploads
-const storage = multer.diskStorage({
+// // Multer configuration for file uploads
+// const storage = multer.diskStorage({
+//   destination: function (req, file, cb) {
+//     cb(null, 'uploads/');
+//   },
+//   filename: function (req, file, cb) {
+//     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+//     cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+//   }
+// });
+
+// const upload = multer({
+//   storage: storage,
+//   limits: {
+//     fileSize: 5 * 1024 * 1024 // 5MB limit
+//   },
+//   fileFilter: function (req, file, cb) {
+//     if (file.fieldname === 'avatar') {
+//       // Check if file is an image
+//       if (file.mimetype.startsWith('image/')) {
+//         cb(null, true);
+//       } else {
+//         cb(new Error('Only image files are allowed for avatar'));
+//       }
+//     } else {
+//       cb(null, true);
+//     }
+//   }
+// });
+
+// ===== AVATAR MULTER CONFIGURATION  =====
+const avatarStorage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'uploads/');
+    cb(null, avatarsDir);
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    cb(null, 'avatar-' + uniqueSuffix + path.extname(file.originalname));
   }
 });
 
-const upload = multer({ 
-  storage: storage,
-  limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
-  },
+const avatarUpload = multer({
+  storage: avatarStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: function (req, file, cb) {
-    if (file.fieldname === 'avatar') {
-      // Check if file is an image
-      if (file.mimetype.startsWith('image/')) {
-        cb(null, true);
-      } else {
-        cb(new Error('Only image files are allowed for avatar'));
-      }
-    } else {
+    if (file.mimetype.startsWith('image/')) {
       cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed for avatars'));
+    }
+  }
+});
+
+// ===== ASSIGNMENT MULTER CONFIGURATION =====
+const assignmentStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadDir = path.join(__dirname, 'uploads', 'assignments');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `assignment-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+const assignmentUpload = multer({
+  storage: assignmentStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: function (req, file, cb) {
+    const allowedTypes = ['.pdf', '.doc', '.docx', '.txt', '.zip', '.rar'];
+    const fileExt = path.extname(file.originalname).toLowerCase();
+    if (allowedTypes.includes(fileExt)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, TXT, ZIP, RAR files are allowed.'));
+    }
+  }
+});
+
+// ===== PAYMENT SCREENSHOT MULTER CONFIGURATION =====
+const paymentScreenshotStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadDir = path.join(__dirname, 'uploads', 'payments');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `payment-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+const paymentScreenshotUpload = multer({
+  storage: paymentScreenshotStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: function (req, file, cb) {
+    const allowedTypes = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
+    const fileExt = path.extname(file.originalname).toLowerCase();
+    if (allowedTypes.includes(fileExt)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only images are allowed.'));
     }
   }
 });
@@ -97,6 +179,7 @@ app.use(cors({
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
+app.use('/uploads/avatars', express.static(path.join(__dirname, 'uploads', 'avatars')));
 
 // ======== AUTHENTICATION MIDDLEWARE ========
 
@@ -150,8 +233,8 @@ app.post('/api/register', async (req, res) => {
   try {
     // Validate required fields
     if (!firstName || !lastName || !email || !password) {
-      return res.status(400).json({ 
-        error: 'First name, last name, email, and password are required' 
+      return res.status(400).json({
+        error: 'First name, last name, email, and password are required'
       });
     }
 
@@ -171,7 +254,7 @@ app.post('/api/register', async (req, res) => {
       'SELECT * FROM users WHERE email = ?',
       [email]
     );
-    
+
     if (existingUsers.length > 0) {
       return res.status(400).json({ error: 'Email already exists' });
     }
@@ -193,7 +276,7 @@ app.post('/api/register', async (req, res) => {
       'INSERT INTO user_stats (user_id) VALUES (?)',
       [result.insertId]
     );
-    
+
     console.log('User registered successfully:', { userId: result.insertId, email });
     res.status(201).json({
       message: 'User registered successfully',
@@ -230,7 +313,7 @@ app.post('/api/login', async (req, res) => {
 
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
-    
+
     if (!isPasswordValid) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
@@ -238,10 +321,10 @@ app.post('/api/login', async (req, res) => {
     // Generate JWT token
     const tokenExpiry = rememberMe ? '30d' : '1d';
     const token = jwt.sign(
-      { 
-        userId: user.id, 
+      {
+        userId: user.id,
         email: user.email,
-        accountType: user.account_type 
+        accountType: user.account_type
       },
       JWT_SECRET,
       { expiresIn: tokenExpiry }
@@ -352,19 +435,99 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
   }
 });
 
-// Upload avatar
-app.post('/api/auth/avatar', authenticateToken, upload.single('avatar'), async (req, res) => {
+// ==================== PROFILE SECTION ROUTES ==================== 
+
+// Get current user profile (UNIFIED)
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user;
+    res.json({
+      id: user.id,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      email: user.email,
+      phone: user.phone,
+      accountType: user.account_type,
+      profileImage: user.profile_image,
+      company: user.company,
+      website: user.website,
+      bio: user.bio,
+      isActive: user.is_active,
+      emailVerified: user.email_verified,
+      createdAt: user.created_at,
+      updatedAt: user.updated_at
+    });
+  } catch (error) {
+    console.error('Get profile error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update user profile (UNIFIED)
+app.put('/api/auth/profile', authenticateToken, async (req, res) => {
+  try {
+    const { firstName, lastName, phone, company, website, bio } = req.body;
+    const userId = req.user.id;
+
+    await pool.execute(
+      `UPDATE users SET 
+       first_name = ?, last_name = ?, phone = ?, company = ?, website = ?, bio = ?, updated_at = NOW()
+       WHERE id = ?`,
+      [firstName, lastName, phone, company, website, bio, userId]
+    );
+
+    // Get updated user data
+    const [users] = await pool.execute(
+      'SELECT * FROM users WHERE id = ?',
+      [userId]
+    );
+
+    const user = users[0];
+    res.json({
+      id: user.id,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      email: user.email,
+      phone: user.phone,
+      accountType: user.account_type,
+      profileImage: user.profile_image,
+      company: user.company,
+      website: user.website,
+      bio: user.bio,
+      isActive: user.is_active,
+      emailVerified: user.email_verified,
+      createdAt: user.created_at,
+      updatedAt: user.updated_at
+    });
+
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Upload avatar (UNIFIED)
+app.post('/api/auth/avatar', authenticateToken, (req, res, next) => {
+  // Handle multer errors properly
+  avatarUpload.single('avatar')(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    next();
+  });
+}, async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
     const userId = req.user.id;
-    const profileImage = `/uploads/${req.file.filename}`;
+    const profileImage = `/uploads/avatars/${req.file.filename}`;
 
     // Delete old avatar if exists
     if (req.user.profile_image) {
-      const oldPath = path.join(__dirname, req.user.profile_image);
+      const oldFilename = path.basename(req.user.profile_image);
+      const oldPath = path.join(avatarsDir, oldFilename);
       if (fs.existsSync(oldPath)) {
         fs.unlinkSync(oldPath);
       }
@@ -375,7 +538,8 @@ app.post('/api/auth/avatar', authenticateToken, upload.single('avatar'), async (
       [profileImage, userId]
     );
 
-    res.json({ profileImage });
+    // Send success response with plain text
+    res.status(200).send(profileImage);
 
   } catch (error) {
     console.error('Avatar upload error:', error);
@@ -401,7 +565,7 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
         'INSERT INTO user_stats (user_id) VALUES (?)',
         [userId]
       );
-      
+
       res.json({
         coursesEnrolled: 0,
         coursesCompleted: 0,
@@ -457,33 +621,33 @@ const socialUpload = multer({
     }
     cb(new Error('Error: File upload only supports the following filetypes - ' + filetypes));
   },
-}).single('image'); 
+}).single('image');
 
 // Helper function to get full URL for images (SIMPLIFIED)
 const getFullImageUrl = (req, imagePath) => {
   if (!imagePath) {
-      return null;
+    return null;
   }
   if (imagePath.startsWith('http')) {
-      return imagePath;
+    return imagePath;
   }
   let cleanPath = imagePath.replace(/^public\//, '');
   if (!cleanPath.startsWith('/')) {
-      cleanPath = '/' + cleanPath;
+    cleanPath = '/' + cleanPath;
   }
   return `${req.protocol}://${req.get('host')}${cleanPath}`;
 }
 
 // --- GET All Posts (with Pagination, Likes, Comments, etc.) ---
 app.get('/api/posts', authenticateToken, async (req, res) => {
-const userId = req.user.id;
-const page = parseInt(req.query.page, 10) || 1;
-const limit = parseInt(req.query.limit, 10) || 10;
-const offset = (page - 1) * limit;
+  const userId = req.user.id;
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 10;
+  const offset = (page - 1) * limit;
 
-try {
-  // Step 1: Get total count (no changes here)
-  const [[{ totalPosts }]] = await pool.execute(`
+  try {
+    // Step 1: Get total count (no changes here)
+    const [[{ totalPosts }]] = await pool.execute(`
     SELECT COUNT(DISTINCT p.id) as totalPosts FROM social_activities p
     WHERE p.activity_type = 'post'
     AND (
@@ -496,10 +660,10 @@ try {
     )
   `, [userId, userId, userId, userId]);
 
-  const totalPages = Math.ceil(totalPosts / limit);
+    const totalPages = Math.ceil(totalPosts / limit);
 
-  // Step 2: Fetch paginated posts (no changes here)
-  const [posts] = await pool.execute(`
+    // Step 2: Fetch paginated posts (no changes here)
+    const [posts] = await pool.execute(`
     SELECT
       p.id, p.user_id, p.content, p.image_url, p.created_at, p.updated_at,
       p.visibility, p.achievement, p.share_count,
@@ -520,19 +684,19 @@ try {
     )
     ORDER BY p.created_at DESC LIMIT ? OFFSET ?
   `, [userId, userId, userId, userId, userId, userId, limit, offset]);
-  
-  if (posts.length === 0) {
+
+    if (posts.length === 0) {
       return res.json({ posts: [], pagination: { page, totalPages, totalPosts } });
-  }
+    }
 
-  // Step 3: Fetch comments for the retrieved posts
-  const postIds = posts.map(p => p.id);
-  let comments = [];
+    // Step 3: Fetch comments for the retrieved posts
+    const postIds = posts.map(p => p.id);
+    let comments = [];
 
-  // ============================ SQL FIX IS HERE ============================
-  // We construct the query string by safely escaping the array of IDs.
-  // This correctly generates WHERE ... IN (1, 2, 3) and prevents the error.
-  const commentsQuery = `
+    // ============================ SQL FIX IS HERE ============================
+    // We construct the query string by safely escaping the array of IDs.
+    // This correctly generates WHERE ... IN (1, 2, 3) and prevents the error.
+    const commentsQuery = `
     SELECT
       c.id, c.user_id, c.content, c.created_at, c.target_id,
       u.first_name, u.last_name, u.profile_image, u.account_type
@@ -540,53 +704,53 @@ try {
     WHERE c.activity_type = 'comment' AND c.target_id IN (${pool.escape(postIds)})
     ORDER BY c.created_at ASC
   `;
-  const [fetchedComments] = await pool.query(commentsQuery); // Use .query for non-prepared statements
-  comments = fetchedComments;
-  // ============================= SQL FIX ENDS HERE =============================
-  
-  // Step 4: Map comments and format image URLs
-  const postsWithData = posts.map(post => {
-    const postComments = comments
-      .filter(comment => comment.target_id === post.id)
-      .map(c => ({
-        ...c,
+    const [fetchedComments] = await pool.query(commentsQuery); // Use .query for non-prepared statements
+    comments = fetchedComments;
+    // ============================= SQL FIX ENDS HERE =============================
+
+    // Step 4: Map comments and format image URLs
+    const postsWithData = posts.map(post => {
+      const postComments = comments
+        .filter(comment => comment.target_id === post.id)
+        .map(c => ({
+          ...c,
+          user: {
+            id: c.user_id,
+            first_name: c.first_name,
+            last_name: c.last_name,
+            // Use the simplified helper for comment author images
+            profile_image: getFullImageUrl(req, c.profile_image),
+            account_type: c.account_type,
+          }
+        }));
+
+      return {
+        ...post,
+        has_liked: !!post.has_liked,
+        has_bookmarked: !!post.has_bookmarked,
+        // Use the simplified helper for post images
+        image_url: getFullImageUrl(req, post.image_url),
         user: {
-          id: c.user_id,
-          first_name: c.first_name,
-          last_name: c.last_name,
-          // Use the simplified helper for comment author images
-          profile_image: getFullImageUrl(req, c.profile_image),
-          account_type: c.account_type,
-        }
-      }));
+          id: post.user_id,
+          first_name: post.first_name,
+          last_name: post.last_name,
+          // Use the simplified helper for post author images
+          profile_image: getFullImageUrl(req, post.profile_image),
+          account_type: post.account_type,
+        },
+        comments: postComments,
+      };
+    });
 
-    return {
-      ...post,
-      has_liked: !!post.has_liked,
-      has_bookmarked: !!post.has_bookmarked,
-      // Use the simplified helper for post images
-      image_url: getFullImageUrl(req, post.image_url),
-      user: {
-        id: post.user_id,
-        first_name: post.first_name,
-        last_name: post.last_name,
-        // Use the simplified helper for post author images
-        profile_image: getFullImageUrl(req, post.profile_image),
-        account_type: post.account_type,
-      },
-      comments: postComments,
-    };
-  });
+    res.json({
+      posts: postsWithData,
+      pagination: { page, totalPages, totalPosts }
+    });
 
-  res.json({
-    posts: postsWithData,
-    pagination: { page, totalPages, totalPosts }
-  });
-
-} catch (error) {
-  console.error('Error fetching posts:', error);
-  res.status(500).json({ error: 'Failed to fetch posts.' });
-}
+  } catch (error) {
+    console.error('Error fetching posts:', error);
+    res.status(500).json({ error: 'Failed to fetch posts.' });
+  }
 });
 
 
@@ -594,260 +758,260 @@ try {
 // --- CORRECTED IMAGE PATH SAVING ---
 app.post('/api/posts', authenticateToken, (req, res) => {
   socialUpload(req, res, async (err) => {
-      if (err) {
-          console.error('Multer error:', err);
-          return res.status(400).json({ error: err.message });
+    if (err) {
+      console.error('Multer error:', err);
+      return res.status(400).json({ error: err.message });
+    }
+
+    try {
+      const { content, achievement, visibility } = req.body;
+      const userId = req.user.id;
+
+      if (!content && !req.file) {
+        return res.status(400).json({ error: 'Post must have content or an image.' });
       }
-      
-      try {
-          const { content, achievement, visibility } = req.body;
-          const userId = req.user.id;
 
-          if (!content && !req.file) {
-              return res.status(400).json({ error: 'Post must have content or an image.' });
-          }
+      // ============================ IMAGE PATH FIX IS HERE ============================
+      // Save a clean URL path instead of a filesystem path.
+      const imageUrl = req.file ? `/uploads/social/${req.file.filename}` : null;
+      // ============================ IMAGE PATH FIX ENDS HERE ==========================
 
-          // ============================ IMAGE PATH FIX IS HERE ============================
-          // Save a clean URL path instead of a filesystem path.
-          const imageUrl = req.file ? `/uploads/social/${req.file.filename}` : null;
-          // ============================ IMAGE PATH FIX ENDS HERE ==========================
+      const isAchievement = achievement === 'true';
 
-          const isAchievement = achievement === 'true';
-
-          const [result] = await pool.execute(
-              `INSERT INTO social_activities 
+      const [result] = await pool.execute(
+        `INSERT INTO social_activities 
                   (user_id, activity_type, content, image_url, achievement, visibility) 
               VALUES (?, 'post', ?, ?, ?, ?)`,
-              [userId, content || '', imageUrl, isAchievement, visibility]
-          );
+        [userId, content || '', imageUrl, isAchievement, visibility]
+      );
 
-          const postId = result.insertId;
+      const postId = result.insertId;
 
-          // Fetch the newly created post to return to the frontend
-          const [[newPost]] = await pool.execute(`
+      // Fetch the newly created post to return to the frontend
+      const [[newPost]] = await pool.execute(`
               SELECT p.*, u.first_name, u.last_name, u.profile_image, u.account_type
               FROM social_activities p JOIN users u ON p.user_id = u.id
               WHERE p.id = ?
           `, [postId]);
 
-          res.status(201).json({
-              ...newPost,
-              has_liked: false,
-              has_bookmarked: false,
-              likes: 0,
-              comment_count: 0,
-              image_url: getFullImageUrl(req, newPost.image_url),
-              user: {
-                id: newPost.user_id,
-                first_name: newPost.first_name,
-                last_name: newPost.last_name,
-                profile_image: getFullImageUrl(req, newPost.profile_image),
-                account_type: newPost.account_type,
-              },
-              comments: [],
-          });
-      } catch (error) {
-          console.error('Error creating post:', error);
-          res.status(500).json({ error: 'Failed to create post.' });
-      }
+      res.status(201).json({
+        ...newPost,
+        has_liked: false,
+        has_bookmarked: false,
+        likes: 0,
+        comment_count: 0,
+        image_url: getFullImageUrl(req, newPost.image_url),
+        user: {
+          id: newPost.user_id,
+          first_name: newPost.first_name,
+          last_name: newPost.last_name,
+          profile_image: getFullImageUrl(req, newPost.profile_image),
+          account_type: newPost.account_type,
+        },
+        comments: [],
+      });
+    } catch (error) {
+      console.error('Error creating post:', error);
+      res.status(500).json({ error: 'Failed to create post.' });
+    }
   });
 });
 
 // --- PUT (edit) a post ---
 app.put('/api/posts/:id', authenticateToken, async (req, res) => {
-    const { id } = req.params;
-    const { content } = req.body;
-    const userId = req.user.id;
+  const { id } = req.params;
+  const { content } = req.body;
+  const userId = req.user.id;
 
-    if (!content || content.trim() === '') {
-        return res.status(400).json({ error: 'Content cannot be empty.' });
+  if (!content || content.trim() === '') {
+    return res.status(400).json({ error: 'Content cannot be empty.' });
+  }
+
+  try {
+    const [[post]] = await pool.execute('SELECT user_id FROM social_activities WHERE id = ?', [id]);
+
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found.' });
     }
 
-    try {
-        const [[post]] = await pool.execute('SELECT user_id FROM social_activities WHERE id = ?', [id]);
-
-        if (!post) {
-            return res.status(404).json({ error: 'Post not found.' });
-        }
-
-        if (post.user_id !== userId) {
-            return res.status(403).json({ error: 'You are not authorized to edit this post.' });
-        }
-
-        await pool.execute(
-            'UPDATE social_activities SET content = ?, updated_at = NOW() WHERE id = ?',
-            [content, id]
-        );
-
-        res.json({ message: 'Post updated successfully.' });
-    } catch (error) {
-        console.error('Error updating post:', error);
-        res.status(500).json({ error: 'Failed to update post.' });
+    if (post.user_id !== userId) {
+      return res.status(403).json({ error: 'You are not authorized to edit this post.' });
     }
+
+    await pool.execute(
+      'UPDATE social_activities SET content = ?, updated_at = NOW() WHERE id = ?',
+      [content, id]
+    );
+
+    res.json({ message: 'Post updated successfully.' });
+  } catch (error) {
+    console.error('Error updating post:', error);
+    res.status(500).json({ error: 'Failed to update post.' });
+  }
 });
 
 
 // --- DELETE a post ---
 app.delete('/api/posts/:id', authenticateToken, async (req, res) => {
-    const { id } = req.params;
-    const userId = req.user.id;
+  const { id } = req.params;
+  const userId = req.user.id;
 
-    try {
-        const [[post]] = await pool.execute('SELECT user_id, image_url FROM social_activities WHERE id = ?', [id]);
+  try {
+    const [[post]] = await pool.execute('SELECT user_id, image_url FROM social_activities WHERE id = ?', [id]);
 
-        if (!post) {
-            return res.status(404).json({ error: 'Post not found.' });
-        }
-
-        if (post.user_id !== userId) {
-            return res.status(403).json({ error: 'You are not authorized to delete this post.' });
-        }
-        
-        // Delete the post record (ON DELETE CASCADE in DB should handle comments, likes, etc.)
-        await pool.execute('DELETE FROM social_activities WHERE id = ?', [id]);
-
-        // If there was an image, delete it from the filesystem
-        if (post.image_url) {
-            fs.unlink(path.join(__dirname, post.image_url), (err) => {
-                if (err) console.error("Error deleting post image:", err);
-            });
-        }
-
-        res.json({ message: 'Post deleted successfully.' });
-    } catch (error) {
-        console.error('Error deleting post:', error);
-        res.status(500).json({ error: 'Failed to delete post.' });
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found.' });
     }
+
+    if (post.user_id !== userId) {
+      return res.status(403).json({ error: 'You are not authorized to delete this post.' });
+    }
+
+    // Delete the post record (ON DELETE CASCADE in DB should handle comments, likes, etc.)
+    await pool.execute('DELETE FROM social_activities WHERE id = ?', [id]);
+
+    // If there was an image, delete it from the filesystem
+    if (post.image_url) {
+      fs.unlink(path.join(__dirname, post.image_url), (err) => {
+        if (err) console.error("Error deleting post image:", err);
+      });
+    }
+
+    res.json({ message: 'Post deleted successfully.' });
+  } catch (error) {
+    console.error('Error deleting post:', error);
+    res.status(500).json({ error: 'Failed to delete post.' });
+  }
 });
 
 
 // --- POST a comment on a post ---
 app.post('/api/posts/:id/comment', authenticateToken, async (req, res) => {
-    const targetId = req.params.id;
-    const { content } = req.body;
-    const userId = req.user.id;
+  const targetId = req.params.id;
+  const { content } = req.body;
+  const userId = req.user.id;
 
-    if (!content || content.trim() === '') {
-        return res.status(400).json({ error: 'Comment cannot be empty.' });
-    }
+  if (!content || content.trim() === '') {
+    return res.status(400).json({ error: 'Comment cannot be empty.' });
+  }
 
-    try {
-        const [result] = await pool.execute(
-            `INSERT INTO social_activities (user_id, activity_type, content, target_id) VALUES (?, 'comment', ?, ?)`,
-            [userId, content, targetId]
-        );
+  try {
+    const [result] = await pool.execute(
+      `INSERT INTO social_activities (user_id, activity_type, content, target_id) VALUES (?, 'comment', ?, ?)`,
+      [userId, content, targetId]
+    );
 
-        const commentId = result.insertId;
+    const commentId = result.insertId;
 
-        // Fetch the new comment with user info to return
-        const [[newComment]] = await pool.execute(`
+    // Fetch the new comment with user info to return
+    const [[newComment]] = await pool.execute(`
             SELECT c.*, u.first_name, u.last_name, u.profile_image
             FROM social_activities c
             JOIN users u ON c.user_id = u.id
             WHERE c.id = ?
         `, [commentId]);
 
-        res.status(201).json({
-            ...newComment,
-            user: {
-                id: newComment.user_id,
-                first_name: newComment.first_name,
-                last_name: newComment.last_name,
-                profile_image: getFullImageUrl(req, newComment.profile_image)
-            }
-        });
-    } catch (error) {
-        console.error('Error posting comment:', error);
-        res.status(500).json({ error: 'Failed to post comment.' });
-    }
+    res.status(201).json({
+      ...newComment,
+      user: {
+        id: newComment.user_id,
+        first_name: newComment.first_name,
+        last_name: newComment.last_name,
+        profile_image: getFullImageUrl(req, newComment.profile_image)
+      }
+    });
+  } catch (error) {
+    console.error('Error posting comment:', error);
+    res.status(500).json({ error: 'Failed to post comment.' });
+  }
 });
 
 
 // --- POST (like) a post ---
 app.post('/api/posts/:id/like', authenticateToken, async (req, res) => {
-    const targetId = req.params.id;
-    const userId = req.user.id;
+  const targetId = req.params.id;
+  const userId = req.user.id;
 
-    try {
-        // Use INSERT IGNORE to prevent duplicates if user clicks too fast
-        await pool.execute(
-            `INSERT IGNORE INTO social_activities (user_id, activity_type, target_id) VALUES (?, 'like', ?)`,
-            [userId, targetId]
-        );
-        res.status(201).json({ message: 'Post liked.' });
-    } catch (error) {
-        console.error('Error liking post:', error);
-        res.status(500).json({ error: 'Failed to like post.' });
-    }
+  try {
+    // Use INSERT IGNORE to prevent duplicates if user clicks too fast
+    await pool.execute(
+      `INSERT IGNORE INTO social_activities (user_id, activity_type, target_id) VALUES (?, 'like', ?)`,
+      [userId, targetId]
+    );
+    res.status(201).json({ message: 'Post liked.' });
+  } catch (error) {
+    console.error('Error liking post:', error);
+    res.status(500).json({ error: 'Failed to like post.' });
+  }
 });
 
 // --- DELETE (unlike) a post ---
 app.delete('/api/posts/:id/like', authenticateToken, async (req, res) => {
-    const targetId = req.params.id;
-    const userId = req.user.id;
+  const targetId = req.params.id;
+  const userId = req.user.id;
 
-    try {
-        await pool.execute(
-            `DELETE FROM social_activities WHERE user_id = ? AND activity_type = 'like' AND target_id = ?`,
-            [userId, targetId]
-        );
-        res.json({ message: 'Post unliked.' });
-    } catch (error) {
-        console.error('Error unliking post:', error);
-        res.status(500).json({ error: 'Failed to unlike post.' });
-    }
+  try {
+    await pool.execute(
+      `DELETE FROM social_activities WHERE user_id = ? AND activity_type = 'like' AND target_id = ?`,
+      [userId, targetId]
+    );
+    res.json({ message: 'Post unliked.' });
+  } catch (error) {
+    console.error('Error unliking post:', error);
+    res.status(500).json({ error: 'Failed to unlike post.' });
+  }
 });
 
 
 // --- POST (bookmark) a post ---
 app.post('/api/posts/:id/bookmark', authenticateToken, async (req, res) => {
-    const targetId = req.params.id;
-    const userId = req.user.id;
+  const targetId = req.params.id;
+  const userId = req.user.id;
 
-    try {
-        await pool.execute(
-            `INSERT IGNORE INTO social_activities (user_id, activity_type, target_id) VALUES (?, 'bookmark', ?)`,
-            [userId, targetId]
-        );
-        res.status(201).json({ message: 'Post bookmarked.' });
-    } catch (error) {
-        console.error('Error bookmarking post:', error);
-        res.status(500).json({ error: 'Failed to bookmark post.' });
-    }
+  try {
+    await pool.execute(
+      `INSERT IGNORE INTO social_activities (user_id, activity_type, target_id) VALUES (?, 'bookmark', ?)`,
+      [userId, targetId]
+    );
+    res.status(201).json({ message: 'Post bookmarked.' });
+  } catch (error) {
+    console.error('Error bookmarking post:', error);
+    res.status(500).json({ error: 'Failed to bookmark post.' });
+  }
 });
 
 // --- DELETE (unbookmark) a post ---
 app.delete('/api/posts/:id/bookmark', authenticateToken, async (req, res) => {
-    const targetId = req.params.id;
-    const userId = req.user.id;
+  const targetId = req.params.id;
+  const userId = req.user.id;
 
-    try {
-        await pool.execute(
-            `DELETE FROM social_activities WHERE user_id = ? AND activity_type = 'bookmark' AND target_id = ?`,
-            [userId, targetId]
-        );
-        res.json({ message: 'Post unbookmarked.' });
-    } catch (error) {
-        console.error('Error unbookmarking post:', error);
-        res.status(500).json({ error: 'Failed to unbookmark post.' });
-    }
+  try {
+    await pool.execute(
+      `DELETE FROM social_activities WHERE user_id = ? AND activity_type = 'bookmark' AND target_id = ?`,
+      [userId, targetId]
+    );
+    res.json({ message: 'Post unbookmarked.' });
+  } catch (error) {
+    console.error('Error unbookmarking post:', error);
+    res.status(500).json({ error: 'Failed to unbookmark post.' });
+  }
 });
 
 
 // --- POST (track) a share ---
 app.post('/api/posts/:id/share', authenticateToken, async (req, res) => {
-    const postId = req.params.id;
+  const postId = req.params.id;
 
-    try {
-        await pool.execute(
-            'UPDATE social_activities SET share_count = share_count + 1 WHERE id = ?',
-            [postId]
-        );
-        res.json({ message: 'Share tracked.' });
-    } catch (error) {
-        console.error('Error tracking share:', error);
-        res.status(500).json({ error: 'Failed to track share.' });
-    }
+  try {
+    await pool.execute(
+      'UPDATE social_activities SET share_count = share_count + 1 WHERE id = ?',
+      [postId]
+    );
+    res.json({ message: 'Share tracked.' });
+  } catch (error) {
+    console.error('Error tracking share:', error);
+    res.status(500).json({ error: 'Failed to track share.' });
+  }
 });
 
 // ============ STUDENT DASHBOARD SPECIFIC ENDPOINTS  ====================
@@ -908,7 +1072,7 @@ app.get('/api/users/:userId/internship-submissions', authenticateToken, async (r
        FROM internship_submissions sub
        JOIN internships i ON sub.internship_id = i.id
        WHERE sub.user_id = ?
-       ORDER BY sub.submitted_at DESC`, 
+       ORDER BY sub.submitted_at DESC`,
       [userId]
     );
 
@@ -1068,7 +1232,7 @@ app.post('/api/service-requests', authenticateToken, async (req, res) => {
 app.get('/api/calendar/events', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
-    
+
     // Get course start/end dates for enrolled courses
     const courseEventsQuery = `
       SELECT 
@@ -1085,7 +1249,7 @@ app.get('/api/calendar/events', authenticateToken, async (req, res) => {
       WHERE e.user_id = ? AND e.status = 'active'
       ORDER BY c.created_at ASC
     `;
-    
+
     // Get assignment deadlines
     const assignmentEventsQuery = `
       SELECT 
@@ -1109,7 +1273,7 @@ app.get('/api/calendar/events', authenticateToken, async (req, res) => {
       WHERE e.user_id = ? AND e.status = 'active'
       ORDER BY a.due_date ASC
     `;
-    
+
     // Get custom calendar events if the table exists
     const customEventsQuery = `
       SELECT 
@@ -1124,11 +1288,11 @@ app.get('/api/calendar/events', authenticateToken, async (req, res) => {
       WHERE user_id = ? AND event_date >= CURDATE() - INTERVAL 30 DAY
       ORDER BY event_date ASC
     `;
-    
+
     // Execute queries
     const [courseEventsResult] = await pool.execute(courseEventsQuery, [userId]);
     const [assignmentEventsResult] = await pool.execute(assignmentEventsQuery, [userId, userId]);
-    
+
     let customEventsResult = [];
     try {
       [customEventsResult] = await pool.execute(customEventsQuery, [userId]);
@@ -1136,7 +1300,7 @@ app.get('/api/calendar/events', authenticateToken, async (req, res) => {
       // Custom events table doesn't exist, skip
       console.log('Custom events table not found, skipping...');
     }
-    
+
     // Format course events
     const courseEvents = courseEventsResult.map(event => ({
       id: `course-${event.id}`,
@@ -1151,7 +1315,7 @@ app.get('/api/calendar/events', authenticateToken, async (req, res) => {
       },
       color: 'blue'
     }));
-    
+
     // Format assignment events
     const assignmentEvents = assignmentEventsResult.map(assignment => ({
       id: `assignment-${assignment.id}`,
@@ -1165,10 +1329,10 @@ app.get('/api/calendar/events', authenticateToken, async (req, res) => {
         category: assignment.course_category
       },
       status: assignment.status,
-      color: assignment.status === 'completed' ? 'green' : 
-             assignment.status === 'overdue' ? 'red' : 'orange'
+      color: assignment.status === 'completed' ? 'green' :
+        assignment.status === 'overdue' ? 'red' : 'orange'
     }));
-    
+
     // Format custom events
     const customEvents = customEventsResult.map(event => ({
       id: `custom-${event.id}`,
@@ -1179,10 +1343,10 @@ app.get('/api/calendar/events', authenticateToken, async (req, res) => {
       type: event.type || 'custom',
       color: 'purple'
     }));
-    
+
     // Combine all events
     const allEvents = [...courseEvents, ...assignmentEvents, ...customEvents];
-    
+
     res.json(allEvents);
   } catch (error) {
     console.error('Error fetching calendar events:', error);
@@ -1195,13 +1359,13 @@ app.get('/api/calendar/events/date/:date', authenticateToken, async (req, res) =
   try {
     const userId = req.user.id;
     const { date } = req.params;
-    
+
     // Validate date format (YYYY-MM-DD)
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRegex.test(date)) {
       return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
     }
-    
+
     const eventsQuery = `
       SELECT 
         'assignment' as event_type,
@@ -1243,9 +1407,9 @@ app.get('/api/calendar/events/date/:date', authenticateToken, async (req, res) =
       
       ORDER BY date ASC
     `;
-    
+
     const [eventsResult] = await pool.execute(eventsQuery, [userId, userId, date, userId, date]);
-    
+
     // Try to get custom events for the date
     let customEvents = [];
     try {
@@ -1269,9 +1433,9 @@ app.get('/api/calendar/events/date/:date', authenticateToken, async (req, res) =
     } catch (error) {
       // Custom events table doesn't exist
     }
-    
+
     const allEvents = [...eventsResult, ...customEvents];
-    
+
     const events = allEvents.map(event => ({
       id: `${event.event_type}-${event.id}`,
       title: event.title,
@@ -1286,7 +1450,7 @@ app.get('/api/calendar/events/date/:date', authenticateToken, async (req, res) =
       } : null,
       status: event.status
     }));
-    
+
     res.json(events);
   } catch (error) {
     console.error('Error fetching events for date:', error);
@@ -1298,7 +1462,7 @@ app.get('/api/calendar/events/date/:date', authenticateToken, async (req, res) =
 app.get('/api/calendar/upcoming', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
-    
+
     const upcomingEventsQuery = `
       SELECT 
         'assignment' as event_type,
@@ -1326,9 +1490,9 @@ app.get('/api/calendar/upcoming', authenticateToken, async (req, res) => {
       ORDER BY date ASC
       LIMIT 10
     `;
-    
+
     const [upcomingResult] = await pool.execute(upcomingEventsQuery, [userId, userId]);
-    
+
     // Try to get upcoming custom events
     let customUpcoming = [];
     try {
@@ -1356,9 +1520,9 @@ app.get('/api/calendar/upcoming', authenticateToken, async (req, res) => {
     } catch (error) {
       // Custom events table doesn't exist
     }
-    
+
     const allUpcoming = [...upcomingResult, ...customUpcoming];
-    
+
     const upcomingEvents = allUpcoming.map(event => ({
       id: `${event.event_type}-${event.id}`,
       title: event.title,
@@ -1372,11 +1536,11 @@ app.get('/api/calendar/upcoming', authenticateToken, async (req, res) => {
         category: event.course_category
       } : null,
       status: event.status,
-      color: event.status === 'completed' ? 'green' : 
-             event.status === 'overdue' ? 'red' : 
-             event.event_type === 'custom' ? 'purple' : 'orange'
+      color: event.status === 'completed' ? 'green' :
+        event.status === 'overdue' ? 'red' :
+          event.event_type === 'custom' ? 'purple' : 'orange'
     }));
-    
+
     res.json(upcomingEvents);
   } catch (error) {
     console.error('Error fetching upcoming events:', error);
@@ -1388,7 +1552,7 @@ app.get('/api/calendar/upcoming', authenticateToken, async (req, res) => {
 app.get('/api/calendar/stats', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
-    
+
     const statsQuery = `
       SELECT 
         COUNT(CASE WHEN s.id IS NULL AND a.due_date >= CURDATE() THEN 1 END) as pending_assignments,
@@ -1402,10 +1566,10 @@ app.get('/api/calendar/stats', authenticateToken, async (req, res) => {
       LEFT JOIN assignment_submissions s ON a.id = s.assignment_id AND s.user_id = ?
       WHERE e.user_id = ?
     `;
-    
+
     const [statsResult] = await pool.execute(statsQuery, [userId, userId]);
     const stats = statsResult[0];
-    
+
     res.json({
       pending_assignments: stats.pending_assignments || 0,
       completed_assignments: stats.completed_assignments || 0,
@@ -1424,7 +1588,7 @@ app.get('/api/calendar/stats', authenticateToken, async (req, res) => {
 app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
-    
+
     const assignmentsQuery = `
       SELECT 
         a.id,
@@ -1445,9 +1609,9 @@ app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) =
       WHERE e.user_id = ? AND e.status = 'active'
       ORDER BY a.due_date ASC
     `;
-    
+
     const [assignmentsResult] = await pool.execute(assignmentsQuery, [userId, userId]);
-    
+
     const assignments = assignmentsResult.map(assignment => ({
       id: assignment.id,
       title: assignment.title,
@@ -1465,7 +1629,7 @@ app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) =
         grade: assignment.submission_grade
       } : null
     }));
-    
+
     res.json(assignments);
   } catch (error) {
     console.error('Error fetching user assignments:', error);
@@ -1478,18 +1642,18 @@ app.post('/api/calendar/events', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
     const { title, description, date, time, type = 'custom' } = req.body;
-    
+
     // Validate required fields
     if (!title || !date) {
       return res.status(400).json({ error: 'Title and date are required' });
     }
-    
+
     // Validate date format
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRegex.test(date)) {
       return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
     }
-    
+
     // Check if custom_calendar_events table exists, if not create it
     const createTableQuery = `
       CREATE TABLE IF NOT EXISTS custom_calendar_events (
@@ -1506,16 +1670,16 @@ app.post('/api/calendar/events', authenticateToken, async (req, res) => {
         INDEX idx_user_date (user_id, event_date)
       )
     `;
-    
+
     await pool.execute(createTableQuery);
-    
+
     const insertQuery = `
       INSERT INTO custom_calendar_events (user_id, title, description, event_date, event_time, event_type, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
     `;
-    
+
     const [result] = await pool.execute(insertQuery, [userId, title, description, date, time, type]);
-    
+
     res.status(201).json({
       id: result.insertId,
       title,
@@ -1537,27 +1701,27 @@ app.put('/api/calendar/events/:id', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const { id } = req.params;
     const { title, description, date, time, type } = req.body;
-    
+
     // Check if event exists and belongs to user
     const checkQuery = `
       SELECT id FROM custom_calendar_events 
       WHERE id = ? AND user_id = ?
     `;
-    
+
     const [checkResult] = await pool.execute(checkQuery, [id, userId]);
-    
+
     if (checkResult.length === 0) {
       return res.status(404).json({ error: 'Calendar event not found or unauthorized' });
     }
-    
+
     const updateQuery = `
       UPDATE custom_calendar_events 
       SET title = ?, description = ?, event_date = ?, event_time = ?, event_type = ?, updated_at = NOW()
       WHERE id = ? AND user_id = ?
     `;
-    
+
     await pool.execute(updateQuery, [title, description, date, time, type, id, userId]);
-    
+
     res.json({ message: 'Calendar event updated successfully' });
   } catch (error) {
     console.error('Error updating calendar event:', error);
@@ -1570,18 +1734,18 @@ app.delete('/api/calendar/events/:id', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
     const { id } = req.params;
-    
+
     const deleteQuery = `
       DELETE FROM custom_calendar_events 
       WHERE id = ? AND user_id = ?
     `;
-    
+
     const [result] = await pool.execute(deleteQuery, [id, userId]);
-    
+
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Calendar event not found or unauthorized' });
     }
-    
+
     res.json({ message: 'Calendar event deleted successfully' });
   } catch (error) {
     console.error('Error deleting calendar event:', error);
@@ -1593,7 +1757,7 @@ app.delete('/api/calendar/events/:id', authenticateToken, async (req, res) => {
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
-    
+
     const userQuery = `
       SELECT 
         id,
@@ -1612,15 +1776,15 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
       FROM users 
       WHERE id = ?
     `;
-    
+
     const [userResult] = await pool.execute(userQuery, [userId]);
-    
+
     if (userResult.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     const user = userResult[0];
-    
+
     res.json({
       id: user.id,
       first_name: user.first_name,
@@ -1642,153 +1806,207 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   }
 });
 
+// ==================== COURSE ENROLLMENT REQUESTS ====================
+app.post('/api/enroll-request', 
+  authenticateToken, 
+  paymentScreenshotUpload.single('paymentScreenshot'), 
+  async (req, res) => {
+    try {
+      // req.user.id comes from authenticateToken middleware
+      const userId = req.user ? req.user.id : null; // Added check for req.user in case auth fails silently
+      const {
+        courseId,
+        fullName,
+        email,
+        phone,
+        address,
+        city,
+        state,
+        pincode,
+        paymentMethod,
+        transactionId
+      } = req.body;
+
+      // Validate required fields
+      const requiredFields = ['courseId', 'fullName', 'email', 'phone', 'address', 
+                             'city', 'state', 'pincode', 'paymentMethod', 'transactionId'];
+      
+      const missingFields = requiredFields.filter(field => !req.body[field]);
+      
+      if (missingFields.length > 0) {
+        return res.status(400).json({ 
+          error: `Missing required fields: ${missingFields.join(', ')}`, // More specific error
+          missingFields
+        });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: 'Payment screenshot is required' });
+      }
+
+      // Insert into database (corrected table name)
+      const [result] = await pool.execute(
+        `INSERT INTO course_enroll_requests (
+          user_id, course_id, full_name, email, phone, address, city, state, pincode, 
+          payment_method, transaction_id, payment_screenshot
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          userId, // Can be null if not logged in (user_id INT(11) DEFAULT NULL)
+          courseId,
+          fullName,
+          email,
+          phone,
+          address,
+          city,
+          state,
+          pincode,
+          paymentMethod,
+          transactionId,
+          `/uploads/payments/${req.file.filename}` // Path where Multer saves the file
+        ]
+      );
+
+      res.status(201).json({
+        message: 'Enrollment request submitted successfully',
+        requestId: result.insertId
+      });
+
+    } catch (error) {
+      console.error('Enrollment request error:', error);
+      // More detailed error for debugging (remove in production)
+      res.status(500).json({ error: 'Server error', details: error.message }); 
+    }
+  }
+);
+
 // ==================== COURSES ROUTES ====================
 
-// Get all courses
+// Replace the existing /api/courses endpoint
 app.get('/api/courses', async (req, res) => {
   try {
+    // Use explicit column selection instead of SELECT *
     const [courses] = await pool.execute(
-      'SELECT * FROM courses WHERE is_active = true ORDER BY created_at DESC'
+      `SELECT 
+        id,
+        title,
+        description,
+        instructor_name AS instructorName,
+        duration_weeks AS durationWeeks,
+        difficulty_level AS difficultyLevel,
+        category,
+        price,
+        thumbnail,
+        is_active AS isActive
+      FROM courses 
+      WHERE is_active = true 
+      ORDER BY created_at DESC`
     );
 
-    res.json(courses.map(course => ({
-      id: course.id,
-      title: course.title,
-      description: course.description,
-      instructorName: course.instructor_name,
-      durationWeeks: course.duration_weeks,
-      difficultyLevel: course.difficulty_level,
-      category: course.category,
-      price: course.price,
-      thumbnail: course.thumbnail,
-      isActive: course.is_active
-    })));
+    // Format price in JavaScript instead of SQL
+    const formattedCourses = courses.map(course => ({
+      ...course,
+      price: course.price !== null ? `₹${parseFloat(course.price).toFixed(2)}` : '₹0.00'
+    }));
+
+    res.json(formattedCourses);
 
   } catch (error) {
     console.error('Get courses error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ 
+      error: 'Server error',
+      details: error.message
+    });
   }
 });
 
 // Get user's enrolled courses
 app.get('/api/enrollments/my-courses', authenticateToken, async (req, res) => {
-    try {
-      const userId = req.user.id;
-  
-      const [enrollments] = await pool.execute(
-        `SELECT e.*, c.* FROM enrollments e
+  try {
+    const userId = req.user.id;
+
+    const [enrollments] = await pool.execute(
+      `SELECT e.*, c.* FROM enrollments e
          JOIN courses c ON e.course_id = c.id
          WHERE e.user_id = ? AND e.status = 'active'
          ORDER BY e.enrollment_date DESC`,
-        [userId]
-      );
-  
-      res.json(enrollments.map(enrollment => ({
-        id: enrollment.id,
-        userId: enrollment.user_id,
-        courseId: enrollment.course_id,
-        progress: enrollment.progress,
-        enrollmentDate: enrollment.enrollment_date,
-        completionDate: enrollment.completion_date,
-        status: enrollment.status,
-        course: {
-          id: enrollment.course_id,
-          title: enrollment.title,
-          description: enrollment.description,
-          instructorName: enrollment.instructor_name,
-          durationWeeks: enrollment.duration_weeks,
-          difficultyLevel: enrollment.difficulty_level,
-          category: enrollment.category,
-          price: enrollment.price,
-          thumbnail: enrollment.thumbnail,
-          isActive: enrollment.is_active
-        }
-      })));
-  
-    } catch (error) {
-      console.error('Get my courses error:', error);
-      res.status(500).json({ error: 'Server error' });
-    }
-  });
-  
-  // Enroll in a course
-  app.post('/api/courses/enroll', authenticateToken, async (req, res) => {
-    try {
-      const { courseId } = req.body;
-      const userId = req.user.id;
-  
-      // Check if already enrolled
-      const [existing] = await pool.execute(
-        'SELECT * FROM enrollments WHERE user_id = ? AND course_id = ?',
-        [userId, courseId]
-      );
-  
-      if (existing.length > 0) {
-        return res.status(400).json({ error: 'Already enrolled in this course' });
-      }
-  
-      // Check if course exists
-      const [courses] = await pool.execute(
-        'SELECT * FROM courses WHERE id = ? AND is_active = true',
-        [courseId]
-      );
-  
-      if (courses.length === 0) {
-        return res.status(404).json({ error: 'Course not found' });
-      }
-  
-      // Create enrollment
-      await pool.execute(
-        'INSERT INTO enrollments (user_id, course_id, enrollment_date) VALUES (?, ?, NOW())',
-        [userId, courseId]
-      );
-  
-      // Update user stats
-      await pool.execute(
-        'UPDATE user_stats SET courses_enrolled = courses_enrolled + 1 WHERE user_id = ?',
-        [userId]
-      );
-  
-      res.status(201).json({ message: 'Successfully enrolled in course' });
-  
-    } catch (error) {
-      console.error('Course enrollment error:', error);
-      res.status(500).json({ error: 'Server error' });
-    }
-  });
-  
-  // ==================== ASSIGNMENTS ROUTES ====================
-  
-// Configure multer for file uploads
-// const storage = multer.diskStorage({
-//   destination: (req, file, cb) => {
-//     const uploadDir = 'uploads/assignments';
-//     if (!fs.existsSync(uploadDir)) {
-//       fs.mkdirSync(uploadDir, { recursive: true });
-//     }
-//     cb(null, uploadDir);
-//   },
-//   filename: (req, file, cb) => {
-//     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-//     cb(null, `assignment-${uniqueSuffix}${path.extname(file.originalname)}`);
-//   }
-// });
+      [userId]
+    );
 
-// const upload = multer({ 
-//   storage: storage,
-//   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
-//   fileFilter: (req, file, cb) => {
-//     const allowedTypes = ['.pdf', '.doc', '.docx', '.txt', '.zip', '.rar'];
-//     const fileExt = path.extname(file.originalname).toLowerCase();
-//     if (allowedTypes.includes(fileExt)) {
-//       cb(null, true);
-//     } else {
-//       cb(new Error('Invalid file type. Only PDF, DOC, DOCX, TXT, ZIP, RAR files are allowed.'));
-//     }
-//   }
-// });
+    res.json(enrollments.map(enrollment => ({
+      id: enrollment.id,
+      userId: enrollment.user_id,
+      courseId: enrollment.course_id,
+      progress: enrollment.progress,
+      enrollmentDate: enrollment.enrollment_date,
+      completionDate: enrollment.completion_date,
+      status: enrollment.status,
+      course: {
+        id: enrollment.course_id,
+        title: enrollment.title,
+        description: enrollment.description,
+        instructorName: enrollment.instructor_name,
+        durationWeeks: enrollment.duration_weeks,
+        difficultyLevel: enrollment.difficulty_level,
+        category: enrollment.category,
+        price: enrollment.price,
+        thumbnail: enrollment.thumbnail,
+        isActive: enrollment.is_active
+      }
+    })));
 
-// Add these routes to your existing server.js file
+  } catch (error) {
+    console.error('Get my courses error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Enroll in a course
+app.post('/api/courses/enroll', authenticateToken, async (req, res) => {
+  try {
+    const { courseId } = req.body;
+    const userId = req.user.id;
+
+    // Check if already enrolled
+    const [existing] = await pool.execute(
+      'SELECT * FROM enrollments WHERE user_id = ? AND course_id = ?',
+      [userId, courseId]
+    );
+
+    if (existing.length > 0) {
+      return res.status(400).json({ error: 'Already enrolled in this course' });
+    }
+
+    // Check if course exists
+    const [courses] = await pool.execute(
+      'SELECT * FROM courses WHERE id = ? AND is_active = true',
+      [courseId]
+    );
+
+    if (courses.length === 0) {
+      return res.status(404).json({ error: 'Course not found' });
+    }
+
+    // Create enrollment
+    await pool.execute(
+      'INSERT INTO enrollments (user_id, course_id, enrollment_date) VALUES (?, ?, NOW())',
+      [userId, courseId]
+    );
+
+    // Update user stats
+    await pool.execute(
+      'UPDATE user_stats SET courses_enrolled = courses_enrolled + 1 WHERE user_id = ?',
+      [userId]
+    );
+
+    res.status(201).json({ message: 'Successfully enrolled in course' });
+
+  } catch (error) {
+    console.error('Course enrollment error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ==================== ASSIGNMENTS ROUTES ====================
 
 // GET /auth/me - Get current user info
 app.get('/auth/me', authenticateToken, (req, res) => {
@@ -1798,17 +2016,17 @@ app.get('/auth/me', authenticateToken, (req, res) => {
     FROM users 
     WHERE id = ?
   `;
-  
+
   db.query(query, [req.user.id], (err, results) => {
     if (err) {
       console.error('Database error:', err);
       return res.status(500).json({ error: 'Database error' });
     }
-    
+
     if (results.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     res.json(results[0]);
   });
 });
@@ -1840,13 +2058,13 @@ app.get('/assignments/my-assignments', authenticateToken, (req, res) => {
     WHERE e.user_id = ? AND c.is_active = TRUE
     ORDER BY a.due_date ASC
   `;
-  
+
   db.query(query, [req.user.id, req.user.id], (err, results) => {
     if (err) {
       console.error('Database error:', err);
       return res.status(500).json({ error: 'Database error' });
     }
-    
+
     // Format results
     const assignments = results.map(row => ({
       id: row.id,
@@ -1871,7 +2089,7 @@ app.get('/assignments/my-assignments', authenticateToken, (req, res) => {
         status: row.submission_status
       } : null
     }));
-    
+
     res.json(assignments);
   });
 });
@@ -1884,11 +2102,11 @@ app.get('/assignments/all', authenticateToken, (req, res) => {
     if (err || userResults.length === 0) {
       return res.status(500).json({ error: 'Database error' });
     }
-    
+
     if (userResults[0].account_type !== 'admin') {
       return res.status(403).json({ error: 'Access denied. Admin only.' });
     }
-    
+
     const query = `
       SELECT 
         a.id,
@@ -1909,13 +2127,13 @@ app.get('/assignments/all', authenticateToken, (req, res) => {
       GROUP BY a.id, a.course_id, a.title, a.description, a.due_date, a.max_points, a.created_at, c.title, c.category
       ORDER BY a.due_date ASC
     `;
-    
+
     db.query(query, (err, results) => {
       if (err) {
         console.error('Database error:', err);
         return res.status(500).json({ error: 'Database error' });
       }
-      
+
       const assignments = results.map(row => ({
         id: row.id,
         course_id: row.course_id,
@@ -1932,25 +2150,25 @@ app.get('/assignments/all', authenticateToken, (req, res) => {
         submission_count: row.submission_count,
         graded_count: row.graded_count
       }));
-      
+
       res.json(assignments);
     });
   });
 });
 
 // POST /assignments/submit - Submit assignment
-app.post('/assignments/submit', authenticateToken, upload.single('file'), (req, res) => {
+app.post('/assignments/submit', authenticateToken, assignmentUpload.single('file'), (req, res) => {
   const { assignment_id, content } = req.body;
   const file_path = req.file ? req.file.filename : null;
-  
+
   if (!assignment_id) {
     return res.status(400).json({ error: 'Assignment ID is required' });
   }
-  
+
   if (!content && !file_path) {
     return res.status(400).json({ error: 'Either content or file is required' });
   }
-  
+
   // Check if assignment exists and user is enrolled
   const checkQuery = `
     SELECT a.id, a.course_id, a.title
@@ -1959,17 +2177,17 @@ app.post('/assignments/submit', authenticateToken, upload.single('file'), (req, 
     INNER JOIN enrollments e ON c.id = e.course_id
     WHERE a.id = ? AND e.user_id = ?
   `;
-  
+
   db.query(checkQuery, [assignment_id, req.user.id], (err, checkResults) => {
     if (err) {
       console.error('Database error:', err);
       return res.status(500).json({ error: 'Database error' });
     }
-    
+
     if (checkResults.length === 0) {
       return res.status(404).json({ error: 'Assignment not found or not enrolled' });
     }
-    
+
     // Check if already submitted
     const existingQuery = 'SELECT id FROM assignment_submissions WHERE assignment_id = ? AND user_id = ?';
     db.query(existingQuery, [assignment_id, req.user.id], (err, existingResults) => {
@@ -1977,23 +2195,23 @@ app.post('/assignments/submit', authenticateToken, upload.single('file'), (req, 
         console.error('Database error:', err);
         return res.status(500).json({ error: 'Database error' });
       }
-      
+
       if (existingResults.length > 0) {
         return res.status(400).json({ error: 'Assignment already submitted' });
       }
-      
+
       // Insert submission
       const insertQuery = `
         INSERT INTO assignment_submissions (assignment_id, user_id, content, file_path, submitted_at, status)
         VALUES (?, ?, ?, ?, NOW(), 'submitted')
       `;
-      
+
       db.query(insertQuery, [assignment_id, req.user.id, content || '', file_path], (err, insertResult) => {
         if (err) {
           console.error('Database error:', err);
           return res.status(500).json({ error: 'Database error' });
         }
-        
+
         res.json({
           success: true,
           message: 'Assignment submitted successfully',
@@ -2007,7 +2225,7 @@ app.post('/assignments/submit', authenticateToken, upload.single('file'), (req, 
 // GET /assignments/download-submission/:id - Download submission file
 app.get('/assignments/download-submission/:id', authenticateToken, (req, res) => {
   const submissionId = req.params.id;
-  
+
   // Get submission details
   const query = `
     SELECT s.file_path, s.user_id, a.title, u.account_type
@@ -2016,39 +2234,39 @@ app.get('/assignments/download-submission/:id', authenticateToken, (req, res) =>
     INNER JOIN users u ON u.id = ?
     WHERE s.id = ?
   `;
-  
+
   db.query(query, [req.user.id, submissionId], (err, results) => {
     if (err) {
       console.error('Database error:', err);
       return res.status(500).json({ error: 'Database error' });
     }
-    
+
     if (results.length === 0) {
       return res.status(404).json({ error: 'Submission not found' });
     }
-    
+
     const submission = results[0];
-    
+
     // Check permissions - user can download their own submission or admin can download any
     if (submission.user_id !== req.user.id && submission.account_type !== 'admin') {
       return res.status(403).json({ error: 'Access denied' });
     }
-    
+
     if (!submission.file_path) {
       return res.status(404).json({ error: 'No file attached to this submission' });
     }
-    
+
     const filePath = path.join(__dirname, 'uploads', 'assignments', submission.file_path);
-    
+
     // Check if file exists
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'File not found' });
     }
-    
+
     // Set headers and send file
     res.setHeader('Content-Disposition', `attachment; filename="${submission.file_path}"`);
     res.setHeader('Content-Type', 'application/octet-stream');
-    
+
     const fileStream = fs.createReadStream(filePath);
     fileStream.pipe(res);
   });
@@ -2057,7 +2275,7 @@ app.get('/assignments/download-submission/:id', authenticateToken, (req, res) =>
 // GET /assignments/course/:courseId - Get assignments for a specific course
 app.get('/assignments/course/:courseId', authenticateToken, (req, res) => {
   const courseId = req.params.courseId;
-  
+
   // Check if user is enrolled or admin
   const checkQuery = `
     SELECT e.user_id, u.account_type
@@ -2069,17 +2287,17 @@ app.get('/assignments/course/:courseId', authenticateToken, (req, res) => {
     FROM users
     WHERE id = ? AND account_type = 'admin'
   `;
-  
+
   db.query(checkQuery, [req.user.id, courseId, req.user.id, req.user.id, req.user.id], (err, checkResults) => {
     if (err) {
       console.error('Database error:', err);
       return res.status(500).json({ error: 'Database error' });
     }
-    
+
     if (checkResults.length === 0) {
       return res.status(403).json({ error: 'Access denied' });
     }
-    
+
     const query = `
       SELECT 
         a.id,
@@ -2104,13 +2322,13 @@ app.get('/assignments/course/:courseId', authenticateToken, (req, res) => {
       WHERE a.course_id = ?
       ORDER BY a.due_date ASC
     `;
-    
+
     db.query(query, [req.user.id, courseId], (err, results) => {
       if (err) {
         console.error('Database error:', err);
         return res.status(500).json({ error: 'Database error' });
       }
-      
+
       const assignments = results.map(row => ({
         id: row.id,
         course_id: row.course_id,
@@ -2134,7 +2352,7 @@ app.get('/assignments/course/:courseId', authenticateToken, (req, res) => {
           status: row.submission_status
         } : null
       }));
-      
+
       res.json(assignments);
     });
   });
@@ -2144,40 +2362,40 @@ app.get('/assignments/course/:courseId', authenticateToken, (req, res) => {
 app.put('/assignments/grade/:submissionId', authenticateToken, (req, res) => {
   const submissionId = req.params.submissionId;
   const { grade, feedback } = req.body;
-  
+
   // Check if user is admin
   const userQuery = 'SELECT account_type FROM users WHERE id = ?';
   db.query(userQuery, [req.user.id], (err, userResults) => {
     if (err || userResults.length === 0) {
       return res.status(500).json({ error: 'Database error' });
     }
-    
+
     if (userResults[0].account_type !== 'admin') {
       return res.status(403).json({ error: 'Access denied. Admin only.' });
     }
-    
+
     // Validate grade
     if (grade < 0 || grade > 100) {
       return res.status(400).json({ error: 'Grade must be between 0 and 100' });
     }
-    
+
     // Update submission
     const updateQuery = `
       UPDATE assignment_submissions 
       SET grade = ?, feedback = ?, status = 'graded'
       WHERE id = ?
     `;
-    
+
     db.query(updateQuery, [grade, feedback || '', submissionId], (err, result) => {
       if (err) {
         console.error('Database error:', err);
         return res.status(500).json({ error: 'Database error' });
       }
-      
+
       if (result.affectedRows === 0) {
         return res.status(404).json({ error: 'Submission not found' });
       }
-      
+
       res.json({
         success: true,
         message: 'Assignment graded successfully'
@@ -2199,15 +2417,15 @@ app.use((error, req, res, next) => {
   next(error);
 });
 
-  
-  // ==================== CERTIFICATES ROUTES ====================
-  
+
+// ==================== CERTIFICATES ROUTES ====================
+
 
 // Certificate Routes
 app.get('/api/certificates/my-certificates', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
-    
+
     const [certificates] = await pool.execute(`
       SELECT 
         c.id,
@@ -2269,7 +2487,7 @@ app.get('/api/certificates/:certificateId/download', authenticateToken, async (r
   try {
     const { certificateId } = req.params;
     const userId = req.user.id;
-    
+
     // Verify the certificate belongs to the user
     const [certificates] = await pool.execute(`
       SELECT c.*, co.title as courseTitle, u.first_name, u.last_name
@@ -2284,7 +2502,7 @@ app.get('/api/certificates/:certificateId/download', authenticateToken, async (r
     }
 
     const certificate = certificates[0];
-    
+
     // If certificate_url exists, redirect to it
     if (certificate.certificate_url) {
       return res.redirect(certificate.certificate_url);
@@ -2304,7 +2522,7 @@ app.get('/api/certificates/:certificateId/download', authenticateToken, async (r
       data: certificateData,
       downloadUrl: `/api/certificates/${certificateId}/pdf`
     });
-    
+
   } catch (error) {
     console.error('Error downloading certificate:', error);
     res.status(500).json({ error: 'Failed to download certificate' });
@@ -2499,8 +2717,8 @@ app.delete('/api/certificates/:certificateId', authenticateToken, async (req, re
   }
 });
 
-  // ==================== RESOURCES SECTION ROUTES ====================
-  
+// ==================== RESOURCES SECTION ROUTES ====================
+
 const getDefaultResources = (accountType) => {
   const allResources = [
     // Student Resources
@@ -2534,7 +2752,7 @@ const getDefaultResources = (accountType) => {
       allowedAccountTypes: ['student', 'professional', 'business', 'agency', 'admin'],
       isPremium: false
     },
-    
+
     // Professional Resources
     {
       id: 4,
@@ -2556,7 +2774,7 @@ const getDefaultResources = (accountType) => {
       allowedAccountTypes: ['professional', 'business', 'agency', 'admin'],
       isPremium: true
     },
-    
+
     // Business Resources
     {
       id: 6,
@@ -2578,7 +2796,7 @@ const getDefaultResources = (accountType) => {
       allowedAccountTypes: ['business', 'agency', 'admin'],
       isPremium: true
     },
-    
+
     // Agency Resources
     {
       id: 8,
@@ -2600,7 +2818,7 @@ const getDefaultResources = (accountType) => {
       allowedAccountTypes: ['agency', 'admin'],
       isPremium: true
     },
-    
+
     // Tools (External Links)
     {
       id: 10,
@@ -2624,7 +2842,7 @@ const getDefaultResources = (accountType) => {
     }
   ];
 
-  return allResources.filter(resource => 
+  return allResources.filter(resource =>
     resource.allowedAccountTypes.includes(accountType)
   );
 };
@@ -2654,7 +2872,7 @@ app.get('/api/user/stats', authenticateToken, async (req, res) => {
         'INSERT INTO user_stats (user_id, courses_enrolled, courses_completed, certificates_earned, learning_streak) VALUES (?, 0, 0, 0, 0)',
         [req.user.id]
       );
-      
+
       stats = {
         courses_enrolled: 0,
         courses_completed: 0,
@@ -2707,7 +2925,7 @@ app.get('/api/resources/:id/download', authenticateToken, async (req, res) => {
     // Create a mock file buffer for download
     const fileExtension = resource.type === 'excel' ? 'xlsx' : 'pdf';
     const filename = `${resource.title}.${fileExtension}`;
-    
+
     // Mock file content
     const mockContent = `Mock ${resource.type.toUpperCase()} content for: ${resource.title}`;
     const buffer = Buffer.from(mockContent);
@@ -2715,7 +2933,7 @@ app.get('/api/resources/:id/download', authenticateToken, async (req, res) => {
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Length', buffer.length);
-    
+
     res.send(buffer);
   } catch (error) {
     console.error('Error downloading resource:', error);
@@ -2757,9 +2975,9 @@ app.get('/api/courses/enrolled', authenticateToken, async (req, res) => {
   }
 });
 
-  // ==================== INTERNSHIPS SECTION ROUTES ====================
+// ==================== INTERNSHIPS SECTION ROUTES ====================
 
-  // GET /api/internships - Fetch all internships
+// GET /api/internships - Fetch all internships
 app.get('/api/internships', async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT * FROM internships ORDER BY posted_at DESC');
@@ -2778,7 +2996,7 @@ app.get('/api/internships', async (req, res) => {
 
 // GET /api/user/internship-applications - Fetch applications for the authenticated user
 app.get('/api/user/internship-applications', authenticateToken, async (req, res) => {
-  const userId = req.user.id; // User ID is attached by authenticateToken middleware
+  const userId = req.user.id; 
 
   if (!userId) {
     return res.status(400).json({ message: 'User ID not found in token.' });
@@ -2887,132 +3105,132 @@ app.post('/api/internships/:id/apply', authenticateToken, async (req, res) => {
   }
 });
 
-  // ==================== SERVICES ROUTES ====================
-  
-  // Get service categories
-  app.get('/api/services/categories', async (req, res) => {
-    try {
-      const [categories] = await pool.execute(
-        'SELECT * FROM service_categories WHERE is_active = true ORDER BY name'
-      );
-  
-      const categoriesWithSubs = await Promise.all(categories.map(async (category) => {
-        const [subcategories] = await pool.execute(
-          'SELECT * FROM service_subcategories WHERE category_id = ? AND is_active = true ORDER BY name',
-          [category.id]
-        );
-  
-        return {
-          id: category.id,
-          name: category.name,
-          description: category.description,
-          icon: category.icon,
-          subcategories: subcategories.map(sub => ({
-            id: sub.id,
-            categoryId: sub.category_id,
-            name: sub.name,
-            description: sub.description,
-            basePrice: sub.base_price
-          }))
-        };
-      }));
-  
-      res.json(categoriesWithSubs);
-  
-    } catch (error) {
-      console.error('Get service categories error:', error);
-      res.status(500).json({ error: 'Server error' });
-    }
-  });
-  
-  // Submit service request
-  app.post('/api/services/requests', authenticateToken, async (req, res) => {
-    try {
-      const {
-        subcategoryId, fullName, email, phone, company, website,
-        projectDetails, budgetRange, timeline, contactMethod, additionalRequirements
-      } = req.body;
-      const userId = req.user.id;
-  
-      // Validate required fields
-      if (!subcategoryId || !fullName || !email || !phone || !projectDetails || !budgetRange || !timeline || !contactMethod) {
-        return res.status(400).json({ error: 'All required fields must be provided' });
-      }
-  
-      // Check if subcategory exists
+// ==================== SERVICES ROUTES ====================
+
+// Get service categories
+app.get('/api/services/categories', async (req, res) => {
+  try {
+    const [categories] = await pool.execute(
+      'SELECT * FROM service_categories WHERE is_active = true ORDER BY name'
+    );
+
+    const categoriesWithSubs = await Promise.all(categories.map(async (category) => {
       const [subcategories] = await pool.execute(
-        'SELECT * FROM service_subcategories WHERE id = ? AND is_active = true',
-        [subcategoryId]
+        'SELECT * FROM service_subcategories WHERE category_id = ? AND is_active = true ORDER BY name',
+        [category.id]
       );
-  
-      if (subcategories.length === 0) {
-        return res.status(404).json({ error: 'Service subcategory not found' });
-      }
-  
-      // Create service request
-      const [result] = await pool.execute(
-        `INSERT INTO service_requests 
+
+      return {
+        id: category.id,
+        name: category.name,
+        description: category.description,
+        icon: category.icon,
+        subcategories: subcategories.map(sub => ({
+          id: sub.id,
+          categoryId: sub.category_id,
+          name: sub.name,
+          description: sub.description,
+          basePrice: sub.base_price
+        }))
+      };
+    }));
+
+    res.json(categoriesWithSubs);
+
+  } catch (error) {
+    console.error('Get service categories error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Submit service request
+app.post('/api/services/requests', authenticateToken, async (req, res) => {
+  try {
+    const {
+      subcategoryId, fullName, email, phone, company, website,
+      projectDetails, budgetRange, timeline, contactMethod, additionalRequirements
+    } = req.body;
+    const userId = req.user.id;
+
+    // Validate required fields
+    if (!subcategoryId || !fullName || !email || !phone || !projectDetails || !budgetRange || !timeline || !contactMethod) {
+      return res.status(400).json({ error: 'All required fields must be provided' });
+    }
+
+    // Check if subcategory exists
+    const [subcategories] = await pool.execute(
+      'SELECT * FROM service_subcategories WHERE id = ? AND is_active = true',
+      [subcategoryId]
+    );
+
+    if (subcategories.length === 0) {
+      return res.status(404).json({ error: 'Service subcategory not found' });
+    }
+
+    // Create service request
+    const [result] = await pool.execute(
+      `INSERT INTO service_requests 
          (user_id, subcategory_id, full_name, email, phone, company, website, 
           project_details, budget_range, timeline, contact_method, additional_requirements, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-        [userId, subcategoryId, fullName, email, phone, company, website, 
-         projectDetails, budgetRange, timeline, contactMethod, additionalRequirements]
-      );
-  
-      res.status(201).json({ 
-        message: 'Service request submitted successfully',
-        requestId: result.insertId 
-      });
-  
-    } catch (error) {
-      console.error('Service request error:', error);
-      res.status(500).json({ error: 'Server error' });
-    }
-  });
-  
-  // Get user's service requests
-  app.get('/api/services/my-requests', authenticateToken, async (req, res) => {
-    try {
-      const userId = req.user.id;
-  
-      const [requests] = await pool.execute(
-        `SELECT sr.*, sc.name as category_name, ss.name as subcategory_name 
+      [userId, subcategoryId, fullName, email, phone, company, website,
+        projectDetails, budgetRange, timeline, contactMethod, additionalRequirements]
+    );
+
+    res.status(201).json({
+      message: 'Service request submitted successfully',
+      requestId: result.insertId
+    });
+
+  } catch (error) {
+    console.error('Service request error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get user's service requests
+app.get('/api/services/my-requests', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const [requests] = await pool.execute(
+      `SELECT sr.*, sc.name as category_name, ss.name as subcategory_name 
          FROM service_requests sr
          JOIN service_subcategories ss ON sr.subcategory_id = ss.id
          JOIN service_categories sc ON ss.category_id = sc.id
          WHERE sr.user_id = ?
          ORDER BY sr.created_at DESC`,
-        [userId]
-      );
-  
-      res.json(requests.map(request => ({
-        id: request.id,
-        userId: request.user_id,
-        subcategoryId: request.subcategory_id,
-        fullName: request.full_name,
-        email: request.email,
-        phone: request.phone,
-        company: request.company,
-        website: request.website,
-        projectDetails: request.project_details,
-        budgetRange: request.budget_range,
-        timeline: request.timeline,
-        contactMethod: request.contact_method,
-        additionalRequirements: request.additional_requirements,
-        status: request.status,
-        createdAt: request.created_at,
-        updatedAt: request.updated_at,
-        categoryName: request.category_name,
-        subcategoryName: request.subcategory_name
-      })));
-  
-    } catch (error) {
-      console.error('Get service requests error:', error);
-      res.status(500).json({ error: 'Server error' });
-    }
-  });
-  
-  // ==================== ADMIN DASHBOARD ROUTES ====================
+      [userId]
+    );
+
+    res.json(requests.map(request => ({
+      id: request.id,
+      userId: request.user_id,
+      subcategoryId: request.subcategory_id,
+      fullName: request.full_name,
+      email: request.email,
+      phone: request.phone,
+      company: request.company,
+      website: request.website,
+      projectDetails: request.project_details,
+      budgetRange: request.budget_range,
+      timeline: request.timeline,
+      contactMethod: request.contact_method,
+      additionalRequirements: request.additional_requirements,
+      status: request.status,
+      createdAt: request.created_at,
+      updatedAt: request.updated_at,
+      categoryName: request.category_name,
+      subcategoryName: request.subcategory_name
+    })));
+
+  } catch (error) {
+    console.error('Get service requests error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ==================== ADMIN DASHBOARD ROUTES ====================
 
 // Admin Dashboard Stats
 app.get('/api/admin/dashboard-stats', authenticateToken, async (req, res) => {
@@ -3058,7 +3276,7 @@ app.get('/api/admin/recent-users', authenticateToken, async (req, res) => {
       ORDER BY created_at DESC 
       LIMIT 5
     `);
-    
+
     res.json(users);
   } catch (error) {
     console.error('Error fetching recent users:', error);
@@ -3081,7 +3299,7 @@ app.get('/api/admin/recent-enrollments', authenticateToken, async (req, res) => 
       ORDER BY e.enrollment_date DESC
       LIMIT 5
     `);
-    
+
     res.json(enrollments);
   } catch (error) {
     console.error('Error fetching recent enrollments:', error);
@@ -3096,13 +3314,13 @@ app.get('/api/admin/service-requests', authenticateToken, async (req, res) => {
     const [tables] = await pool.execute(`
       SHOW TABLES LIKE 'service%sub%categories'
     `);
-    
+
     let tableQuery;
     if (tables.length > 0) {
       // Use the actual table name from database
       const tableName = Object.values(tables[0])[0];
       console.log(`Found subcategory table: ${tableName}`);
-      
+
       tableQuery = `
         SELECT sr.id, sr.full_name as name, 
                sc.name as service,
@@ -3126,7 +3344,7 @@ app.get('/api/admin/service-requests', authenticateToken, async (req, res) => {
         LIMIT 5
       `;
     }
-    
+
     const [requests] = await pool.execute(tableQuery);
     res.json(requests);
   } catch (error) {
@@ -3134,108 +3352,108 @@ app.get('/api/admin/service-requests', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch service requests', details: error.message });
   }
 });
-  
-  // ==================== CONTACT ROUTES ====================
-  
-  // Contact form endpoint
-  app.post('/api/contact', async (req, res) => {
-    const { firstName, lastName, email, phone, company, message } = req.body;
-  
-    try {
-      // Validate required fields
-      if (!firstName || !lastName || !email || !message) {
-        return res.status(400).json({ 
-          error: 'First name, last name, email, and message are required' 
-        });
-      }
-  
-      // Basic email validation
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        return res.status(400).json({ error: 'Please provide a valid email address' });
-      }
-  
-      // Insert contact form data into database
-      const [result] = await pool.execute(
-        `INSERT INTO contact_messages 
+
+// ==================== CONTACT ROUTES ====================
+
+// Contact form endpoint
+app.post('/api/contact', async (req, res) => {
+  const { firstName, lastName, email, phone, company, message } = req.body;
+
+  try {
+    // Validate required fields
+    if (!firstName || !lastName || !email || !message) {
+      return res.status(400).json({
+        error: 'First name, last name, email, and message are required'
+      });
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Please provide a valid email address' });
+    }
+
+    // Insert contact form data into database
+    const [result] = await pool.execute(
+      `INSERT INTO contact_messages 
          (first_name, last_name, email, phone, company, message, created_at)
          VALUES (?, ?, ?, ?, ?, ?, NOW())`,
-        [firstName.trim(), lastName.trim(), email.trim(), phone || null, company || null, message.trim()]
-      );
-      
-      console.log('Contact message saved successfully:', {
-        id: result.insertId,
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        email: email.trim()
-      });
-  
-      res.status(201).json({
-        message: 'Contact message sent successfully',
-        contactId: result.insertId
-      });
-  
-    } catch (error) {
-      console.error('Contact form error:', error);
-      res.status(500).json({ error: 'Server error' });
-    }
-  });
-  
-  // Get contact messages (admin only)
-  app.get('/api/admin/contact-messages', authenticateToken, requireAdmin, async (req, res) => {
-    try {
-      const page = parseInt(req.query.page) || 1;
-      const limit = parseInt(req.query.limit) || 10;
-      const offset = (page - 1) * limit;
-  
-      const [messages] = await pool.execute(
-        `SELECT id, first_name, last_name, email, phone, company, message, created_at
+      [firstName.trim(), lastName.trim(), email.trim(), phone || null, company || null, message.trim()]
+    );
+
+    console.log('Contact message saved successfully:', {
+      id: result.insertId,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: email.trim()
+    });
+
+    res.status(201).json({
+      message: 'Contact message sent successfully',
+      contactId: result.insertId
+    });
+
+  } catch (error) {
+    console.error('Contact form error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get contact messages (admin only)
+app.get('/api/admin/contact-messages', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    const [messages] = await pool.execute(
+      `SELECT id, first_name, last_name, email, phone, company, message, created_at
          FROM contact_messages 
          ORDER BY created_at DESC 
          LIMIT ? OFFSET ?`,
-        [limit, offset]
-      );
-  
-      const [totalCount] = await pool.execute(
-        'SELECT COUNT(*) as total FROM contact_messages'
-      );
-  
-      res.json({
-        messages: messages,
-        pagination: {
-          currentPage: page,
-          totalPages: Math.ceil(totalCount[0].total / limit),
-          totalMessages: totalCount[0].total,
-          hasNextPage: page < Math.ceil(totalCount[0].total / limit),
-          hasPreviousPage: page > 1
-        }
-      });
-  
-    } catch (error) {
-      console.error('Get contact messages error:', error);
-      res.status(500).json({ error: 'Server error' });
-    }
-  });
-  
-  // ==================== ANALYTICS ROUTES ====================
-  
-  // Get analytics data (admin only)
-  app.get('/api/admin/analytics', authenticateToken, requireAdmin, async (req, res) => {
-    try {
-      // User growth data (last 6 months)
-      const [userGrowth] = await pool.execute(
-        `SELECT 
+      [limit, offset]
+    );
+
+    const [totalCount] = await pool.execute(
+      'SELECT COUNT(*) as total FROM contact_messages'
+    );
+
+    res.json({
+      messages: messages,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalCount[0].total / limit),
+        totalMessages: totalCount[0].total,
+        hasNextPage: page < Math.ceil(totalCount[0].total / limit),
+        hasPreviousPage: page > 1
+      }
+    });
+
+  } catch (error) {
+    console.error('Get contact messages error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ==================== ANALYTICS ROUTES ====================
+
+// Get analytics data (admin only)
+app.get('/api/admin/analytics', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    // User growth data (last 6 months)
+    const [userGrowth] = await pool.execute(
+      `SELECT 
            DATE_FORMAT(created_at, '%Y-%m') as month,
            COUNT(*) as count
          FROM users 
          WHERE created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
          GROUP BY DATE_FORMAT(created_at, '%Y-%m')
          ORDER BY month`
-      );
-  
-      // Course enrollment data
-      const [courseEnrollments] = await pool.execute(
-        `SELECT 
+    );
+
+    // Course enrollment data
+    const [courseEnrollments] = await pool.execute(
+      `SELECT 
            c.title,
            COUNT(e.id) as enrollments
          FROM courses c
@@ -3244,11 +3462,11 @@ app.get('/api/admin/service-requests', authenticateToken, async (req, res) => {
          GROUP BY c.id, c.title
          ORDER BY enrollments DESC
          LIMIT 10`
-      );
-  
-      // Revenue by month (mock calculation)
-      const [revenueData] = await pool.execute(
-        `SELECT 
+    );
+
+    // Revenue by month (mock calculation)
+    const [revenueData] = await pool.execute(
+      `SELECT 
            DATE_FORMAT(e.enrollment_date, '%Y-%m') as month,
            SUM(c.price) as revenue
          FROM enrollments e
@@ -3256,92 +3474,91 @@ app.get('/api/admin/service-requests', authenticateToken, async (req, res) => {
          WHERE e.enrollment_date >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
          GROUP BY DATE_FORMAT(e.enrollment_date, '%Y-%m')
          ORDER BY month`
-      );
-  
-      res.json({
-        userGrowth: userGrowth,
-        courseEnrollments: courseEnrollments,
-        revenueData: revenueData
-      });
-  
-    } catch (error) {
-      console.error('Get analytics error:', error);
-      res.status(500).json({ error: 'Server error' });
-    }
-  });
-  
-  // ==================== UTILITY ROUTES ====================
-  
-  // Health check endpoint
-  app.get('/api/health', (req, res) => {
-    res.json({ 
-      status: 'OK', 
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime()
-    });
-  });
-  
-  // Get server info
-  app.get('/api/info', (req, res) => {
+    );
+
     res.json({
-      name: 'Padak Dashboard API',
-      version: '1.0.0',
-      environment: process.env.NODE_ENV || 'development',
-      timestamp: new Date().toISOString()
+      userGrowth: userGrowth,
+      courseEnrollments: courseEnrollments,
+      revenueData: revenueData
     });
+
+  } catch (error) {
+    console.error('Get analytics error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ==================== UTILITY ROUTES ====================
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
   });
-  
-  // ==================== ERROR HANDLING ====================
-  
-  // 404 handler
-  app.use((req, res) => {
-    res.status(404).json({ 
-      error: 'Endpoint not found',
-      path: req.path,
-      method: req.method
-    });
+});
+
+// Get server info
+app.get('/api/info', (req, res) => {
+  res.json({
+    name: 'Padak Dashboard API',
+    version: '1.0.0',
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString()
   });
-  
-  // Global error handling middleware
-  app.use((err, req, res, next) => {
-    console.error('Unhandled error:', err);
-    
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'File too large' });
-    }
-    
-    if (err.message === 'Only image files are allowed for avatar') {
-      return res.status(400).json({ error: err.message });
-    }
-    
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
-    });
+});
+
+// ==================== ERROR HANDLING ====================
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    error: 'Endpoint not found',
+    path: req.path,
+    method: req.method
   });
-  
-  // ==================== SERVER STARTUP ====================
-  
-  // Graceful shutdown
-  process.on('SIGINT', async () => {
-    console.log('Received SIGINT. Graceful shutdown...');
-    await pool.end();
-    process.exit(0);
+});
+
+// Global error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({ error: 'File too large' });
+  }
+
+  if (err.message === 'Only image files are allowed for avatar') {
+    return res.status(400).json({ error: err.message });
+  }
+
+  res.status(500).json({
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
   });
-  
-  process.on('SIGTERM', async () => {
-    console.log('Received SIGTERM. Graceful shutdown...');
-    await pool.end();
-    process.exit(0);
-  });
-  
-  // Start server
-  app.listen(port, () => {
-    console.log(`🚀 Server running on port ${port}`);
-    console.log(`📊 Health check: http://localhost:${port}/api/health`);
-    console.log(`📚 API Info: http://localhost:${port}/api/info`);
-    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  });
-  
-  module.exports = app;
-        
+});
+
+// ==================== SERVER STARTUP ====================
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('Received SIGINT. Graceful shutdown...');
+  await pool.end();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('Received SIGTERM. Graceful shutdown...');
+  await pool.end();
+  process.exit(0);
+});
+
+// Start server
+app.listen(port, () => {
+  console.log(`🚀 Server running on port ${port}`);
+  console.log(`📊 Health check: http://localhost:${port}/api/health`);
+  console.log(`📚 API Info: http://localhost:${port}/api/info`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+});
+
+module.exports = app;
