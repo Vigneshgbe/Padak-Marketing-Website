@@ -8,10 +8,9 @@ import {
   Code,     // For service categories (example icon)
   Layers    // For service sub-categories (example icon)
 } from 'lucide-react';
-// CORRECTED IMPORT PATH:
 import StatCard from '../common/StatCard'; // Corrected path to go up one level, then into common
 
-import { Toaster } from 'react-hot-toast'; // For better notifications
+import toast from 'react-hot-toast'; // For better notifications
 import { Line, Bar } from 'react-chartjs-2'; // For Analytics page
 import {
   Chart as ChartJS,
@@ -60,8 +59,8 @@ import {
   Internship
 } from '../../../lib/types';
 
-// Environment variable for API base URL
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000';
+// CORRECTED: Access environment variables using import.meta.env for Vite
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
 // --- Reusable UI Components ---
 
@@ -593,7 +592,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialSection, onViewC
       // Contact messages has no status in DB, frontend just 'marks' it resolved
       if (activeSection === 'contacts') { delete payload.status; }
 
-      if (activeSection === 'calendar') { payload.user_id = req.user?.id || 1; } // Assuming Admin user_id is 1 or use actual user ID
+      if (activeSection === 'calendar') { 
+        // IMPORTANT: In a real app, `req.user.id` from backend auth is the current admin's ID.
+        // For local dev, if not logged in, this might be undefined. Assign a default or ensure auth.
+        payload.user_id = 1; // Assuming admin is user_id 1 for mock/dev purposes
+      }
 
       if (activeSection === 'service-categories') { payload.is_active = payload.is_active ? 1 : 0; }
       if (activeSection === 'service-sub-categories') {
@@ -1416,7 +1419,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialSection, onViewC
   };
 
   const renderFormFields = () => {
-    const commonInputClass = "w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500";
+    const commonInputClass = "w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:focus:ring-orange-500";
     const commonLabelClass = "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1";
     const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
       <div><label className={commonLabelClass}>{label}</label>{children}</div>);
@@ -1714,6 +1717,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialSection, onViewC
             <Field label="Applications Count"><input type="number" min="0" value={formData.applications_count || ''} onChange={(e) => setFormData({...formData, applications_count: parseInt(e.target.value)})} className={commonInputClass} /></Field>
             <Field label="Spots Available"><input type="number" min="1" value={formData.spots_available || ''} onChange={(e) => setFormData({...formData, spots_available: parseInt(e.target.value)})} className={commonInputClass} /></Field>
           </div>
+          {/* Note: is_active is NOT in original internship schema. Remove if it's not going to be added. */}
         </>);
 
       default: return <p>Form not implemented for this section</p>;
