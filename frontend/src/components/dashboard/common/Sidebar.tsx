@@ -53,7 +53,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     if (user?.accountType === 'admin') {
       return [
         { id: 'admin-dashboard', label: 'Admin Dashboard', icon: <LayoutDashboard size={20} /> },
-        { id: 'analytics', label: 'Analytics', icon: <BarChart size={20} /> },
+        { id: 'analytics', label: 'Analytics Data', icon: <BarChart size={20} /> },
         { id: 'users', label: 'User Management', icon: <Users size={20} />, isManagementSection: true },
         { id: 'courses', label: 'Course Management', icon: <BookOpen size={20} />, isManagementSection: true },
         { id: 'assignments', label: 'Assignment Manage', icon: <HardHat size={20} />, isManagementSection: true }, // Used HardHat
