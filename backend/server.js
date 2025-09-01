@@ -839,7 +839,7 @@ app.get('/api/users/:userId/internship-submissions', authenticateToken, async (r
       `SELECT
          sub.id, sub.internship_id, sub.status AS applicationStatus, sub.submitted_at AS applicationDate, 
          i.title AS internshipTitle, i.company AS companyName
-       FROM internship_submission sub -- Corrected table name
+       FROM internship_submission sub -- Corrected table name (singular)
        JOIN internships i ON sub.internship_id = i.id
        WHERE sub.user_id = ?
        ORDER BY sub.submitted_at DESC`,
@@ -866,8 +866,8 @@ app.get('/api/services', authenticateToken, async (req, res) => {
       `SELECT
           s.id, s.name, sc.id AS category_id, sc.name AS categoryName,
           s.description, s.price, s.duration, s.rating, s.reviews, s.features, s.popular
-       FROM service s  -- Corrected table name
-       JOIN service_category sc ON s.category_id = sc.id -- Corrected table name
+       FROM service s  -- Corrected table name (singular)
+       JOIN service_category sc ON s.category_id = sc.id -- Corrected table name (singular)
        ORDER BY s.popular DESC, s.name ASC`
     );
 
@@ -905,9 +905,9 @@ app.get('/api/users/:userId/service-requests', authenticateToken, async (req, re
           sr.timeline, sr.contact_method AS contactMethod,
           sr.additional_requirements AS additionalRequirements,
           sr.status, sr.created_at AS requestDate, sr.updated_at AS updatedAt
-       FROM service_request sr -- Corrected table name
-       JOIN service_sub_category ssc ON sr.subcategory_id = ssc.id -- Corrected table name
-       JOIN service_category sc ON ssc.category_id = sc.id -- Join to get parent category name
+       FROM service_request sr -- Corrected table name (singular)
+       JOIN service_sub_category ssc ON sr.subcategory_id = ssc.id -- Corrected table name (singular)
+       JOIN service_category sc ON ssc.category_id = sc.id -- Join to get parent category name (singular)
        WHERE sr.user_id = ?
        ORDER BY sr.created_at DESC`,
       [userId]
@@ -934,7 +934,7 @@ app.post('/api/service-requests', authenticateToken, async (req, res) => {
   }
 
   try {
-    // Note: Table name is 'service_request'.
+    // FIX: Table name is 'service_request' (singular).
     const [result] = await pool.execute(
       `INSERT INTO service_request (
          user_id, subcategory_id, full_name, email, phone, company, website,
@@ -962,9 +962,6 @@ app.get('/api/calendar/events', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Get course start/end dates for enrolled courses
-    // Note: Your 'courses' table has 'duration' (INT), not 'duration_weeks'.
-    // `created_at` is used as the course start date.
     const courseEventsQuery = `
       SELECT 
         c.id, c.title, c.description,
@@ -979,8 +976,6 @@ app.get('/api/calendar/events', authenticateToken, async (req, res) => {
       ORDER BY c.created_at ASC
     `;
 
-    // Get assignment deadlines
-    // Note: Table name is 'assignment_submission'.
     const assignmentEventsQuery = `
       SELECT 
         a.id, a.title, a.description, a.due_date as date,
@@ -994,7 +989,7 @@ app.get('/api/calendar/events', authenticateToken, async (req, res) => {
       FROM assignments a
       JOIN courses c ON a.course_id = c.id
       JOIN enrollments e ON c.id = e.course_id
-      LEFT JOIN assignment_submission s ON a.id = s.assignment_id AND s.user_id = ? -- Corrected table name
+      LEFT JOIN assignment_submissions s ON a.id = s.assignment_id AND s.user_id = ? -- Corrected table name (singular)
       WHERE e.user_id = ? AND e.status = 'active'
       ORDER BY a.due_date ASC
     `;
@@ -1057,7 +1052,7 @@ app.get('/api/calendar/events/date/:date', authenticateToken, async (req, res) =
       FROM assignments a
       JOIN courses c ON a.course_id = c.id
       JOIN enrollments e ON c.id = e.course_id
-      LEFT JOIN assignment_submission s ON a.id = s.assignment_id AND s.user_id = ? -- Corrected table name
+      LEFT JOIN assignment_submissions s ON a.id = s.assignment_id AND s.user_id = ? -- Corrected table name (singular)
       WHERE e.user_id = ? AND e.status = 'active' AND DATE(a.due_date) = ?
       
       UNION ALL
@@ -1115,7 +1110,7 @@ app.get('/api/calendar/upcoming', authenticateToken, async (req, res) => {
       FROM assignments a
       JOIN courses c ON a.course_id = c.id
       JOIN enrollments e ON c.id = e.course_id
-      LEFT JOIN assignment_submission s ON a.id = s.assignment_id AND s.user_id = ? -- Corrected table name
+      LEFT JOIN assignment_submissions s ON a.id = s.assignment_id AND s.user_id = ? -- Corrected table name (singular)
       WHERE e.user_id = ? AND e.status = 'active' AND a.due_date >= CURDATE() AND a.due_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
       ORDER BY date ASC
       LIMIT 10
@@ -1162,7 +1157,7 @@ app.get('/api/calendar/stats', authenticateToken, async (req, res) => {
       FROM assignments a
       JOIN courses c ON a.course_id = c.id
       JOIN enrollments e ON c.id = e.course_id
-      LEFT JOIN assignment_submission s ON a.id = s.assignment_id AND s.user_id = ? -- Corrected table name
+      LEFT JOIN assignment_submissions s ON a.id = s.assignment_id AND s.user_id = ? -- Corrected table name (singular)
       WHERE e.user_id = ?
     `;
 
@@ -1194,7 +1189,7 @@ app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) =
       FROM assignments a
       JOIN courses c ON a.course_id = c.id
       JOIN enrollments e ON c.id = e.course_id
-      LEFT JOIN assignment_submission s ON a.id = s.assignment_id AND s.user_id = ? -- Corrected table name
+      LEFT JOIN assignment_submissions s ON a.id = s.assignment_id AND s.user_id = ? -- Corrected table name (singular)
       WHERE e.user_id = ? AND e.status = 'active'
       ORDER BY a.due_date ASC
     `;
@@ -1338,7 +1333,7 @@ app.get('/api/enrollments/my-courses', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // FIX: Explicitly selecting image_url which IS in your schema.
+    // FIX: Explicitly selecting c.image_url which IS in your schema.
     const [enrollments] = await pool.execute(
       `SELECT e.*, c.id as course_id_alias, c.title, c.description,
               c.image_url, c.duration, c.level, c.category, c.price, c.thumbnail_url, c.is_active
@@ -1408,7 +1403,7 @@ app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) =
       FROM assignments a
       INNER JOIN courses c ON a.course_id = c.id
       INNER JOIN enrollments e ON c.id = e.course_id
-      LEFT JOIN assignment_submission s ON a.id = s.assignment_id AND s.user_id = ? -- Corrected table name
+      LEFT JOIN assignment_submissions s ON a.id = s.assignment_id AND s.user_id = ? -- Corrected table name (singular)
       WHERE e.user_id = ? AND c.is_active = TRUE
       ORDER BY a.due_date ASC
     `;
@@ -1443,7 +1438,7 @@ app.get('/api/assignments/all', authenticateToken, requireAdmin, async (req, res
         COUNT(s.id) as submission_count, COUNT(CASE WHEN s.status = 'graded' THEN 1 END) as graded_count
       FROM assignments a
       INNER JOIN courses c ON a.course_id = c.id
-      LEFT JOIN assignment_submission s ON a.id = s.assignment_id -- Corrected table name
+      LEFT JOIN assignment_submissions s ON a.id = s.assignment_id -- Corrected table name (singular)
       WHERE c.is_active = TRUE
       GROUP BY a.id, a.course_id, a.title, a.description, a.due_date, a.max_points, a.created_at, c.title, c.category
       ORDER BY a.due_date ASC
@@ -1478,11 +1473,11 @@ app.post('/api/assignments/submit', authenticateToken, assignmentUpload.single('
     );
     if (checkResults.length === 0) { return res.status(404).json({ error: 'Assignment not found or not enrolled' }); }
 
-    const [existingResults] = await pool.execute('SELECT id FROM assignment_submission WHERE assignment_id = ? AND user_id = ?', [assignment_id, req.user.id]); // Corrected table name
+    const [existingResults] = await pool.execute('SELECT id FROM assignment_submissions WHERE assignment_id = ? AND user_id = ?', [assignment_id, req.user.id]); // Corrected table name
     if (existingResults.length > 0) { return res.status(400).json({ error: 'Assignment already submitted' }); }
 
     const [insertResult] = await pool.execute(
-      `INSERT INTO assignment_submission (assignment_id, user_id, content, file_path, submitted_at, status) VALUES (?, ?, ?, ?, NOW(), 'submitted')`, // Corrected table name
+      `INSERT INTO assignment_submissions (assignment_id, user_id, content, file_path, submitted_at, status) VALUES (?, ?, ?, ?, NOW(), 'submitted')`, // Corrected table name
       [assignment_id, req.user.id, content || '', file_path]
     );
 
@@ -1500,7 +1495,7 @@ app.get('/api/assignments/download-submission/:id', authenticateToken, async (re
   try {
     const [results] = await pool.execute(
       `SELECT s.file_path, s.user_id, a.title, u.account_type
-       FROM assignment_submission s -- Corrected table name
+       FROM assignment_submissions s -- Corrected table name (singular)
        INNER JOIN assignments a ON s.assignment_id = a.id
        INNER JOIN users u ON u.id = ?
        WHERE s.id = ?
@@ -1547,7 +1542,7 @@ app.get('/api/assignments/course/:courseId', authenticateToken, async (req, res)
         s.id as submission_id, s.content as submission_content, s.file_path as submission_file_path,
         s.submitted_at, s.grade, s.feedback, s.status as submission_status
       FROM assignments a INNER JOIN courses c ON a.course_id = c.id
-      LEFT JOIN assignment_submission s ON a.id = s.assignment_id AND s.user_id = ? -- Corrected table name
+      LEFT JOIN assignment_submissions s ON a.id = s.assignment_id AND s.user_id = ? -- Corrected table name (singular)
       WHERE a.course_id = ?
       ORDER BY a.due_date ASC
     `;
@@ -1580,7 +1575,7 @@ app.put('/api/assignments/grade/:submissionId', authenticateToken, requireAdmin,
 
   try {
     const [result] = await pool.execute(
-      `UPDATE assignment_submission SET grade = ?, feedback = ?, status = 'graded' WHERE id = ?`, // Corrected table name
+      `UPDATE assignment_submissions SET grade = ?, feedback = ?, status = 'graded' WHERE id = ?`, // Corrected table name (singular)
       [grade, feedback || '', submissionId]
     );
     if (result.affectedRows === 0) { return res.status(404).json({ error: 'Submission not found' }); }
@@ -1623,7 +1618,7 @@ app.get('/api/certificates/my-certificates', authenticateToken, async (req, res)
       JOIN courses co ON c.course_id = co.id
       JOIN enrollments e ON c.user_id = e.user_id AND c.course_id = e.course_id
       LEFT JOIN assignments a ON a.course_id = co.id
-      LEFT JOIN assignment_submission asub ON asub.assignment_id = a.id AND asub.user_id = c.user_id -- Corrected table name
+      LEFT JOIN assignment_submissions asub ON asub.assignment_id = a.id AND asub.user_id = c.user_id -- Corrected table name (singular)
       WHERE c.user_id = ?
       GROUP BY c.id, c.user_id, c.course_id, c.certificate_url, c.issued_date, 
                co.title, co.description, co.category, co.level,
@@ -1843,7 +1838,7 @@ app.get('/api/resources/:id/download', authenticateToken, async (req, res) => {
     if (resource.type === 'tool') { return res.status(400).json({ error: 'Cannot download external tools' }); }
 
     await pool.execute(
-      `INSERT INTO download_log (user_id, resource_id, resource_name) VALUES (?, ?, ?)`,
+      `INSERT INTO download_log (user_id, resource_id, resource_name) VALUES (?, ?, ?)`, // resource_type is NOT NULL in schema
       [req.user.id, resourceId, resource.title]
     );
 
@@ -1920,7 +1915,7 @@ app.get('/api/user/internship-applications', authenticateToken, async (req, res)
          i.id AS internship_id, i.title, i.company, i.location, i.duration, i.type, i.level,
          i.description, i.requirements, i.benefits, i.applications_count, i.spots_available,
          i.posted_at AS internship_posted_at
-       FROM internship_submission sub -- Corrected table name
+       FROM internship_submission sub -- Corrected table name (singular)
        JOIN internships i ON sub.internship_id = i.id
        WHERE sub.user_id = ?
        ORDER BY sub.submitted_at DESC`,
