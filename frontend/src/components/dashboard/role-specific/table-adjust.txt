@@ -1,2 +1,6 @@
 ALTER TABLE contact_messages
 ADD COLUMN status ENUM('pending', 'contacted', 'resolved', 'closed') NOT NULL DEFAULT 'pending';
+
+npm install react-hot-toast
+
+npm install chart.js react-chartjs-2

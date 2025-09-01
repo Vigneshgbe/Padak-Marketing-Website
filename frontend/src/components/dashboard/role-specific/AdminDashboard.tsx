@@ -11,7 +11,7 @@ import {
 // CORRECTED IMPORT PATH:
 import StatCard from '../common/StatCard'; // Corrected path to go up one level, then into common
 
-import toast from 'react-hot-toast'; // For better notifications
+import { Toaster } from 'react-hot-toast'; // For better notifications
 import { Line, Bar } from 'react-chartjs-2'; // For Analytics page
 import {
   Chart as ChartJS,
