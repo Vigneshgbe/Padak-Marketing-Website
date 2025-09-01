@@ -2,8 +2,15 @@ import React from 'react';
 import {
   LayoutDashboard, BookOpen, ListChecks, BadgeCheck, Calendar,
   Users, Briefcase, BarChart, Settings, LogOut,
-  Shield, UserCheck, MessageSquare, HardHat, FileText,
-  Sun, Moon, User, Code, Layers, Mail, GraduationCap // Added Mail, GraduationCap, Code, Layers for new management sections
+  Shield, UserCheck, MessageSquare, FileText,
+  Sun, Moon, User,
+  // ADDED MISSING ICONS:
+  Award,      // For Certificate Management
+  HardHat,    // For Assignment Management
+  Code,       // For Service Categories
+  Layers,     // For Service Sub-Categories
+  Mail,       // For Contact Messages
+  GraduationCap // For Internship Management
 } from 'lucide-react';
 import { useAuth } from '../../../hooks/use-auth';
 
@@ -49,16 +56,16 @@ const Sidebar: React.FC<SidebarProps> = ({
         { id: 'analytics', label: 'Analytics', icon: <BarChart size={20} /> },
         { id: 'users', label: 'User Management', icon: <Users size={20} />, isManagementSection: true },
         { id: 'courses', label: 'Course Management', icon: <BookOpen size={20} />, isManagementSection: true },
-        { id: 'assignments', label: 'Assignment Management', icon: HardHat, isManagementSection: true },
-        { id: 'enrollments', label: 'Enrollment Management', icon: UserCheck, isManagementSection: true },
-        { id: 'certificates', label: 'Certificate Management', icon: Award, isManagementSection: true },
-        { id: 'service-categories', label: 'Service Categories', icon: Code, isManagementSection: true },
-        { id: 'service-sub-categories', label: 'Service Sub-Categories', icon: Layers, isManagementSection: true },
-        { id: 'service-offerings', label: 'Service Offerings', icon: Briefcase, isManagementSection: true }, // For the 'service' table
-        { id: 'service-requests', label: 'Service Requests', icon: MessageSquare, isManagementSection: true }, // For the 'service_request' table
-        { id: 'internships', label: 'Internship Management', icon: GraduationCap, isManagementSection: true },
-        { id: 'contacts', label: 'Contact Messages', icon: Mail, isManagementSection: true },
-        { id: 'calendar', label: 'Calendar Events', icon: Calendar, isManagementSection: true },
+        { id: 'assignments', label: 'Assignment Management', icon: <HardHat size={20} />, isManagementSection: true }, // Used HardHat
+        { id: 'enrollments', label: 'Enrollment Management', icon: <UserCheck size={20} />, isManagementSection: true },
+        { id: 'certificates', label: 'Certificate Management', icon: <Award size={20} />, isManagementSection: true }, // Used Award
+        { id: 'service-categories', label: 'Service Categories', icon: <Code size={20} />, isManagementSection: true }, // Used Code
+        { id: 'service-sub-categories', label: 'Service Sub-Categories', icon: <Layers size={20} />, isManagementSection: true }, // Used Layers
+        { id: 'service-offerings', label: 'Service Offerings', icon: <Briefcase size={20} />, isManagementSection: true },
+        { id: 'service-requests', label: 'Service Requests', icon: <MessageSquare size={20} />, isManagementSection: true },
+        { id: 'internships', label: 'Internship Management', icon: <GraduationCap size={20} />, isManagementSection: true }, // Used GraduationCap
+        { id: 'contacts', label: 'Contact Messages', icon: <Mail size={20} />, isManagementSection: true }, // Used Mail
+        { id: 'calendar', label: 'Calendar Events', icon: <Calendar size={20} />, isManagementSection: true },
         { id: 'settings', label: 'Settings', icon: <Settings size={20} /> }, // Admin specific settings
       ];
     }
@@ -68,7 +75,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
       { id: 'social', label: 'Social Feed', icon: <MessageSquare size={20} /> },
       { id: 'courses', label: 'My Courses', icon: <BookOpen size={20} /> },
-      { id: 'internships', label: 'Internships', icon: <Briefcase size={20} /> },
+      { id: 'internships', label: 'Internships', icon: <Briefcase size={20} /> }, // User-facing internships
       { id: 'assignments', label: 'Assignments', icon: <ListChecks size={20} /> },
       { id: 'certificates', label: 'Certificates', icon: <BadgeCheck size={20} /> },
       { id: 'calendar', label: 'Calendar', icon: <Calendar size={20} /> },
@@ -89,7 +96,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   // Determine which item is active, especially for admin management sections
   const isActive = (item: NavItem) => {
-    if (user?.accountType === 'admin' && item.isManagementSection) {
+    if (user?.accountType === 'admin') {
       return activeView === item.id;
     }
     return activeView === item.id;
