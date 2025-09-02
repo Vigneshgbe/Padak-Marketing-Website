@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Users, BookOpen, UserCheck, BarChart, PlusCircle, MessageSquare, GraduationCap, ChevronRight } from 'lucide-react';
 import StatCard from '../../../components/dashboard/common/StatCard';
 import { DashboardStats, RecentUser, RecentEnrollment, ServiceRequest } from '../../../lib/admin-types';
-import { useAdminData } from 'src/hooks/useAdminData';
+import { useAdminData } from '../../../hooks/useAdminData';
 
 const AdminOverview: React.FC = () => {
   const [adminStats, setAdminStats] = useState<DashboardStats>({
