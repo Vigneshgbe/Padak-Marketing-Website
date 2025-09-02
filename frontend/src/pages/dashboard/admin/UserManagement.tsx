@@ -15,11 +15,19 @@ const UserManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
 
-  const handleEditUser = (user: User) => {
-    setSelectedUser(user);
-    setModalType('edit');
-    setIsModalOpen(true);
-  };
+const handleEditUser = (user: User) => {
+  setSelectedUser(user);
+  setFormData({
+    first_name: user.first_name,
+    last_name: user.last_name,
+    email: user.email,
+    phone: user.phone || '',
+    account_type: user.account_type,
+    is_active: user.is_active
+  });
+  setModalType('edit');
+  setIsModalOpen(true);
+};
 
   const handleDeleteUser = (user: User) => {
     setSelectedUser(user);
@@ -27,11 +35,30 @@ const UserManagement: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleCreateUser = () => {
-    setSelectedUser(null);
-    setModalType('create');
-    setIsModalOpen(true);
-  };
+const handleCreateUser = () => {
+  setSelectedUser(null);
+  setFormData({
+    first_name: '',
+    last_name: '',
+    email: '',
+    phone: '',
+    account_type: 'student',
+    is_active: true
+  });
+  setModalType('create');
+  setIsModalOpen(true);
+};
+
+
+const [formData, setFormData] = useState({
+  first_name: '',
+  last_name: '',
+  email: '',
+  phone: '',
+  account_type: 'student',
+  is_active: true
+});
+
 
   const filteredUsers = users.filter((user: User) => {
     // Apply search filter
@@ -49,11 +76,30 @@ const UserManagement: React.FC = () => {
     return true;
   });
 
-  const handleSaveUser = async () => {
-    // Implementation for saving user
-    setIsModalOpen(false);
-    refetch();
-  };
+ const handleSaveUser = async () => {
+  try {
+    const url = modalType === 'create' 
+      ? '/api/admin/users' 
+      : `/api/admin/users/${selectedUser?.id}`;
+    
+    const method = modalType === 'create' ? 'POST' : 'PUT';
+    
+    const response = await fetch(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(formData)
+    });
+    
+    if (response.ok) {
+      setIsModalOpen(false);
+      refetch();
+    }
+  } catch (error) {
+    console.error('Error saving user:', error);
+  }
+};
 
   const handleDeleteConfirm = async () => {
     // Implementation for deleting user

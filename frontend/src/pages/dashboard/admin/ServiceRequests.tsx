@@ -13,23 +13,25 @@ const ServiceRequests: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
+  const [statusForm, setStatusForm] = useState({ status: 'pending' });
 
-  const handleEditRequest = (request: DetailedServiceRequest) => {
-    setSelectedRequest(request);
-    setIsModalOpen(true);
-  };
+ const handleEditRequest = (request: DetailedServiceRequest) => {
+  setSelectedRequest(request);
+  setStatusForm({ status: request.status });
+  setIsModalOpen(true);
+};
 
   const filteredRequests = requests.filter((request: DetailedServiceRequest) => {
     // Apply search filter
     if (searchTerm && !`${request.name} ${request.service} ${request.email}`.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false;
     }
-    
+
     // Apply status filter
     if (selectedFilter !== 'all' && request.status !== selectedFilter) {
       return false;
     }
-    
+
     return true;
   });
 
@@ -58,14 +60,13 @@ const ServiceRequests: React.FC = () => {
 
           <div className="relative">
             <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-            <select
-              value={selectedFilter}
+            <select value={selectedFilter}
               onChange={(e) => setSelectedFilter(e.target.value)}
               className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none"
             >
               <option value="all">All Statuses</option>
               <option value="pending">Pending</option>
-              <option value="in-process">In Process</option>
+              <option value="in-progress">In Progress</option> {/* Changed from in-process */}
               <option value="completed">Completed</option>
               <option value="cancelled">Cancelled</option>
             </select>
