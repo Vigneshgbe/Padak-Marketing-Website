@@ -1,18 +1,106 @@
 // src/pages/dashboard/admin/CalendarManagement.tsx
-import React, { useState } from 'react';
-import { Edit, Trash2, Plus, Search, Filter } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Edit, Trash2, Plus, Search, Filter, Save, X } from 'lucide-react';
 import DataTable from '../../../components/admin/DataTable';
 import Modal from '../../../components/admin/Modal';
-import { CalendarEvent } from '../../../lib/admin-types';
-import { useAdminData } from '../../../hooks/useAdminData';
+
+interface CalendarEvent {
+  id: number;
+  user_id: number | null;
+  title: string;
+  description: string | null;
+  event_date: string;
+  event_time: string | null;
+  event_type: string;
+  created_at: string;
+  updated_at: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+}
+
+interface User {
+  id: number;
+  first_name: string;
+  last_name: string;
+  email: string;
+}
 
 const CalendarManagement: React.FC = () => {
-  const { data: events, loading, error, refetch } = useAdminData('/api/admin/calendar-events');
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'create' | 'edit' | 'delete'>('create');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchEvents();
+    fetchUsers();
+  }, []);
+
+  const fetchEvents = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = 'http://localhost:5000';
+      const response = await fetch(`${baseURL}/api/admin/calendar-events`, {
+        method: 'GET',
+        headers,
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setEvents(data);
+      } else {
+        throw new Error('Failed to fetch calendar events');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchUsers = async () => {
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = 'http://localhost:5000';
+      const response = await fetch(`${baseURL}/api/admin/users`, {
+        method: 'GET',
+        headers,
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setUsers(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch users:', err);
+    }
+  };
 
   const handleEditEvent = (event: CalendarEvent) => {
     setSelectedEvent(event);
@@ -32,6 +120,94 @@ const CalendarManagement: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  const handleSaveEvent = async (formData: any) => {
+    try {
+      setSaving(true);
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = 'http://localhost:5000';
+      const url = modalType === 'create' 
+        ? `${baseURL}/api/admin/calendar-events`
+        : `${baseURL}/api/admin/calendar-events/${selectedEvent?.id}`;
+
+      const method = modalType === 'create' ? 'POST' : 'PUT';
+
+      const response = await fetch(url, {
+        method,
+        headers,
+        credentials: 'include',
+        body: JSON.stringify(formData)
+      });
+
+      if (response.ok) {
+        setIsModalOpen(false);
+        fetchEvents(); // Refresh the data
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to save calendar event');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save calendar event');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedEvent) return;
+
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = 'http://localhost:5000';
+      const response = await fetch(`${baseURL}/api/admin/calendar-events/${selectedEvent.id}`, {
+        method: 'DELETE',
+        headers,
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        setIsModalOpen(false);
+        fetchEvents(); // Refresh the data
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete calendar event');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete calendar event');
+    }
+  };
+
+  const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const formDataObj = Object.fromEntries(formData.entries());
+    
+    // Convert empty strings to null for optional fields
+    const processedData = {
+      ...formDataObj,
+      user_id: formDataObj.user_id ? parseInt(formDataObj.user_id as string) : null,
+      description: formDataObj.description || null,
+      event_time: formDataObj.event_time || null
+    };
+
+    handleSaveEvent(processedData);
+  };
+
   const filteredEvents = events.filter((event: CalendarEvent) => {
     // Apply search filter
     if (searchTerm && !`${event.title} ${event.description} ${event.event_type}`.toLowerCase().includes(searchTerm.toLowerCase())) {
@@ -46,16 +222,11 @@ const CalendarManagement: React.FC = () => {
     return true;
   });
 
-  const handleSaveEvent = async () => {
-    // Implementation for saving event
-    setIsModalOpen(false);
-    refetch();
-  };
-
-  const handleDeleteConfirm = async () => {
-    // Implementation for deleting event
-    setIsModalOpen(false);
-    refetch();
+  const getUserName = (event: CalendarEvent) => {
+    if (event.first_name && event.last_name) {
+      return `${event.first_name} ${event.last_name}`;
+    }
+    return event.email || 'System Event';
   };
 
   return (
@@ -115,7 +286,7 @@ const CalendarManagement: React.FC = () => {
           </div>
           <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
           <button
-            onClick={() => refetch()}
+            onClick={fetchEvents}
             className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
           >
             Retry
@@ -129,13 +300,23 @@ const CalendarManagement: React.FC = () => {
           columns={[
             { header: 'Title', accessor: 'title' },
             {
+              header: 'User',
+              accessor: (event) => getUserName(event)
+            },
+            {
               header: 'Description',
               accessor: (event) => (
                 <div className="max-w-xs truncate">{event.description || 'No description'}</div>
               )
             },
-            { header: 'Date', accessor: 'event_date' },
-            { header: 'Time', accessor: (event) => event.event_time || 'All day' },
+            { 
+              header: 'Date', 
+              accessor: (event) => new Date(event.event_date).toLocaleDateString() 
+            },
+            { 
+              header: 'Time', 
+              accessor: (event) => event.event_time || 'All day' 
+            },
             {
               header: 'Type',
               accessor: (event) => (
@@ -151,6 +332,7 @@ const CalendarManagement: React.FC = () => {
                   handleEditEvent(event);
                 }}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                title="Edit event"
               >
                 <Edit size={16} className="text-blue-500" />
               </button>
@@ -160,6 +342,7 @@ const CalendarManagement: React.FC = () => {
                   handleDeleteEvent(event);
                 }}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                title="Delete event"
               >
                 <Trash2 size={16} className="text-red-500" />
               </button>
@@ -175,84 +358,124 @@ const CalendarManagement: React.FC = () => {
         onClose={() => setIsModalOpen(false)}
         size="lg"
       >
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Event Title
-            </label>
-            <input
-              type="text"
-              defaultValue={selectedEvent?.title || ''}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Description
-            </label>
-            <textarea
-              defaultValue={selectedEvent?.description || ''}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <form onSubmit={handleFormSubmit}>
+          <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Event Date
+                Event Title *
               </label>
               <input
-                type="date"
-                defaultValue={selectedEvent?.event_date || ''}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
+                type="text"
+                name="title"
+                defaultValue={selectedEvent?.title || ''}
+                required
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Event Time
+                User (Optional)
               </label>
-              <input
-                type="time"
-                defaultValue={selectedEvent?.event_time || ''}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
+              <select
+                name="user_id"
+                defaultValue={selectedEvent?.user_id || ''}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+              >
+                <option value="">Select a user (optional)</option>
+                {users.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.first_name} {user.last_name} ({user.email})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Description
+              </label>
+              <textarea
+                name="description"
+                defaultValue={selectedEvent?.description || ''}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
               />
             </div>
-          </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Event Type
-            </label>
-            <select
-              defaultValue={selectedEvent?.event_type || 'custom'}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
-            >
-              <option value="custom">Custom</option>
-              <option value="webinar">Webinar</option>
-              <option value="workshop">Workshop</option>
-              <option value="meeting">Meeting</option>
-              <option value="deadline">Deadline</option>
-            </select>
-          </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Event Date *
+                </label>
+                <input
+                  type="date"
+                  name="event_date"
+                  defaultValue={selectedEvent?.event_date || ''}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                />
+              </div>
 
-          <div className="flex justify-end gap-2 mt-6">
-            <button
-              onClick={() => setIsModalOpen(false)}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSaveEvent}
-              className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600"
-            >
-              {modalType === 'create' ? 'Create' : 'Update'}
-            </button>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Event Time (Optional)
+                </label>
+                <input
+                  type="time"
+                  name="event_time"
+                  defaultValue={selectedEvent?.event_time || ''}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Event Type
+              </label>
+              <select
+                name="event_type"
+                defaultValue={selectedEvent?.event_type || 'custom'}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+              >
+                <option value="custom">Custom</option>
+                <option value="webinar">Webinar</option>
+                <option value="workshop">Workshop</option>
+                <option value="meeting">Meeting</option>
+                <option value="deadline">Deadline</option>
+              </select>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 disabled:opacity-50 flex items-center"
+              >
+                {saving ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    {modalType === 'create' ? 'Creating...' : 'Updating...'}
+                  </>
+                ) : (
+                  <>
+                    <Save size={16} className="mr-2" />
+                    {modalType === 'create' ? 'Create' : 'Update'}
+                  </>
+                )}
+              </button>
+            </div>
           </div>
-        </div>
+        </form>
       </Modal>
 
       {/* Delete Confirmation Modal */}
