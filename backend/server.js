@@ -3810,6 +3810,66 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
   }
 });
 
+// ==================== ADMIN ENROLLMENT MANAGEMENT ENDPOINTS ====================
+// GET all enrollments (admin only)
+app.get('/api/admin/enrollments', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [enrollments] = await pool.execute(`
+      SELECT 
+        e.id,
+        e.user_id,
+        CONCAT(u.first_name, ' ', u.last_name) as user_name,
+        e.course_id,
+        c.title as course_name,
+        e.progress,
+        e.status,
+        e.enrollment_date,
+        e.completion_date
+      FROM enrollments e
+      JOIN users u ON e.user_id = u.id
+      JOIN courses c ON e.course_id = c.id
+      ORDER BY e.enrollment_date DESC
+    `);
+
+    res.json(enrollments);
+  } catch (error) {
+    console.error('Error fetching enrollments:', error);
+    res.status(500).json({ error: 'Failed to fetch enrollments' });
+  }
+});
+
+// UPDATE enrollment (admin only)
+app.put('/api/admin/enrollments/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, progress, completion_date } = req.body;
+
+    await pool.execute(
+      'UPDATE enrollments SET status = ?, progress = ?, completion_date = ? WHERE id = ?',
+      [status, progress, status === 'completed' ? (completion_date || new Date()) : null, id]
+    );
+
+    res.json({ message: 'Enrollment updated successfully' });
+  } catch (error) {
+    console.error('Error updating enrollment:', error);
+    res.status(500).json({ error: 'Failed to update enrollment' });
+  }
+});
+
+// DELETE enrollment (admin only)
+app.delete('/api/admin/enrollments/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await pool.execute('DELETE FROM enrollments WHERE id = ?', [id]);
+
+    res.json({ message: 'Enrollment deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting enrollment:', error);
+    res.status(500).json({ error: 'Failed to delete enrollment' });
+  }
+});
+
 // ==================== UTILITY ROUTES ====================
 
 // Health check endpoint
