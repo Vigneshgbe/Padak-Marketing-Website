@@ -1,6 +1,6 @@
 // src/pages/dashboard/admin/CalendarManagement.tsx
 import React, { useState, useEffect } from 'react';
-import { Edit, Trash2, Plus, Search, Filter, Save, X } from 'lucide-react';
+import { Edit, Trash2, Plus, Search, Filter, Save } from 'lucide-react';
 import DataTable from '../../../components/admin/DataTable';
 import Modal from '../../../components/admin/Modal';
 import { useNavigate } from 'react-router-dom';
@@ -40,7 +40,7 @@ const CalendarManagement: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const navigate = useNavigate();
 
-  // Get API base URL - fixed to avoid process.env issues
+  // Get API base URL
   const getBaseURL = () => {
     return window.location.hostname === 'localhost' 
       ? 'http://localhost:5000' 
@@ -94,8 +94,7 @@ const CalendarManagement: React.FC = () => {
       const baseURL = getBaseURL();
       const response = await fetch(`${baseURL}/api/admin/calendar-events`, {
         method: 'GET',
-        headers,
-        credentials: 'include'
+        headers
       });
 
       if (response.status === 401) {
@@ -108,7 +107,8 @@ const CalendarManagement: React.FC = () => {
         setEvents(data);
         setError(null);
       } else {
-        throw new Error(`Failed to fetch calendar events: ${response.status} ${response.statusText}`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to fetch calendar events: ${response.status}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred while fetching events');
@@ -133,8 +133,7 @@ const CalendarManagement: React.FC = () => {
       const baseURL = getBaseURL();
       const response = await fetch(`${baseURL}/api/admin/users`, {
         method: 'GET',
-        headers,
-        credentials: 'include'
+        headers
       });
 
       if (response.status === 401) {
@@ -145,6 +144,8 @@ const CalendarManagement: React.FC = () => {
       if (response.ok) {
         const data = await response.json();
         setUsers(data);
+      } else {
+        console.error('Failed to fetch users:', response.statusText);
       }
     } catch (err) {
       console.error('Failed to fetch users:', err);
@@ -198,7 +199,6 @@ const CalendarManagement: React.FC = () => {
       const response = await fetch(url, {
         method,
         headers,
-        credentials: 'include',
         body: JSON.stringify(formData)
       });
 
@@ -240,8 +240,7 @@ const CalendarManagement: React.FC = () => {
       const baseURL = getBaseURL();
       const response = await fetch(`${baseURL}/api/admin/calendar-events/${selectedEvent.id}`, {
         method: 'DELETE',
-        headers,
-        credentials: 'include'
+        headers
       });
 
       if (response.status === 401) {
@@ -353,11 +352,14 @@ const CalendarManagement: React.FC = () => {
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6">
           <div className="flex items-center mb-4">
             <span className="text-red-500 mr-2">⚠️</span>
-            <h3 className="text-lg font-semibold text-red-700 dark:text-red-300">Error Loading Events</h3>
+            <h3 className="text-lg font-semibold text-red-700 dark:text-red-300">Error</h3>
           </div>
           <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
           <button
-            onClick={fetchEvents}
+            onClick={() => {
+              setError(null);
+              fetchEvents();
+            }}
             className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
           >
             Retry
@@ -454,7 +456,7 @@ const CalendarManagement: React.FC = () => {
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
               >
                 <option value="">Select a user (optional)</option>
-                {users?.map?.((user) => (
+                {users.map((user) => (
                   <option key={user.id} value={user.id}>
                     {user.first_name} {user.last_name} ({user.email})
                   </option>
