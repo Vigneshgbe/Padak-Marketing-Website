@@ -4,39 +4,121 @@ import { Trash2, Download, Search, PlusCircle, Edit3 } from 'lucide-react';
 import DataTable from '../../../components/admin/DataTable';
 import Modal from '../../../components/admin/Modal';
 import { Certificate, User, Course } from '../../../lib/admin-types';
-import { useAdminData } from '../../../hooks/useAdminData';
 
 interface CertificateFormData {
-  userId: number;
-  courseId: number;
-  certificateUrl: string;
+  user_id: number;
+  course_id: number;
+  certificate_url: string;
 }
 
 const CertificateManagement: React.FC = () => {
-  const { data: certificates, loading, error, refetch } = useAdminData('/api/certificates');
-  const { data: users } = useAdminData('/api/admin/users');
-  const { data: courses } = useAdminData('/api/courses');
-  
+  const [certificates, setCertificates] = useState<Certificate[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedCertificate, setSelectedCertificate] = useState<Certificate | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState<CertificateFormData>({
-    userId: 0,
-    courseId: 0,
-    certificateUrl: ''
+    user_id: 0,
+    course_id: 0,
+    certificate_url: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (selectedCertificate) {
-      setFormData({
-        userId: selectedCertificate.user.id,
-        courseId: selectedCertificate.course.id,
-        certificateUrl: selectedCertificate.certificateUrl || ''
+    fetchCertificates();
+    fetchUsers();
+    fetchCourses();
+  }, []);
+
+  const fetchCertificates = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = 'http://localhost:5000';
+      const response = await fetch(`${baseURL}/api/certificates`, {
+        method: 'GET',
+        headers,
+        credentials: 'include'
       });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCertificates(data);
+      } else {
+        throw new Error('Failed to fetch certificates');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
     }
-  }, [selectedCertificate]);
+  };
+
+  const fetchUsers = async () => {
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = 'http://localhost:5000';
+      const response = await fetch(`${baseURL}/api/admin/users`, {
+        method: 'GET',
+        headers,
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setUsers(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch users:', err);
+    }
+  };
+
+  const fetchCourses = async () => {
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = 'http://localhost:5000';
+      const response = await fetch(`${baseURL}/api/courses`, {
+        method: 'GET',
+        headers,
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCourses(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch courses:', err);
+    }
+  };
 
   const handleDeleteCertificate = (certificate: Certificate) => {
     setSelectedCertificate(certificate);
@@ -45,12 +127,17 @@ const CertificateManagement: React.FC = () => {
 
   const handleEditCertificate = (certificate: Certificate) => {
     setSelectedCertificate(certificate);
+    setFormData({
+      user_id: certificate.user.id,
+      course_id: certificate.course.id,
+      certificate_url: certificate.certificateUrl || ''
+    });
     setIsCreateModalOpen(true);
   };
 
   const handleCreateCertificate = () => {
     setSelectedCertificate(null);
-    setFormData({ userId: 0, courseId: 0, certificateUrl: '' });
+    setFormData({ user_id: 0, course_id: 0, certificate_url: '' });
     setIsCreateModalOpen(true);
   };
 
@@ -58,29 +145,37 @@ const CertificateManagement: React.FC = () => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: name === 'userId' || name === 'courseId' ? parseInt(value) : value
+      [name]: name === 'user_id' || name === 'course_id' ? parseInt(value) : value
     }));
   };
 
   const handleDeleteConfirm = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/certificates/${selectedCertificate?.id}`, {
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = 'http://localhost:5000';
+      const response = await fetch(`${baseURL}/api/certificates/${selectedCertificate?.id}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        headers,
+        credentials: 'include'
       });
 
       if (response.ok) {
         setIsModalOpen(false);
-        refetch();
+        fetchCertificates(); // Refresh the data
       } else {
-        console.error('Failed to delete certificate');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete certificate');
       }
-    } catch (error) {
-      console.error('Error deleting certificate:', error);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete certificate');
     }
   };
 
@@ -89,30 +184,38 @@ const CertificateManagement: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = 'http://localhost:5000';
       const url = selectedCertificate 
-        ? `/api/certificates/${selectedCertificate.id}`
-        : '/api/certificates';
-      
+        ? `${baseURL}/api/certificates/${selectedCertificate.id}`
+        : `${baseURL}/api/certificates`;
+
       const method = selectedCertificate ? 'PUT' : 'POST';
-      
+
       const response = await fetch(url, {
         method,
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
+        headers,
+        credentials: 'include',
         body: JSON.stringify(formData)
       });
 
       if (response.ok) {
         setIsCreateModalOpen(false);
-        refetch();
+        fetchCertificates(); // Refresh the data
       } else {
-        console.error('Failed to save certificate');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to save certificate');
       }
-    } catch (error) {
-      console.error('Error saving certificate:', error);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save certificate');
     } finally {
       setIsSubmitting(false);
     }
@@ -165,7 +268,7 @@ const CertificateManagement: React.FC = () => {
           </div>
           <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
           <button
-            onClick={() => refetch()}
+            onClick={fetchCertificates}
             className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
           >
             Retry
@@ -222,6 +325,7 @@ const CertificateManagement: React.FC = () => {
                   handleEditCertificate(cert);
                 }}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                title="Edit certificate"
               >
                 <Edit3 size={16} className="text-blue-500" />
               </button>
@@ -231,6 +335,7 @@ const CertificateManagement: React.FC = () => {
                   handleDeleteCertificate(cert);
                 }}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                title="Delete certificate"
               >
                 <Trash2 size={16} className="text-red-500" />
               </button>
@@ -277,14 +382,14 @@ const CertificateManagement: React.FC = () => {
           <div>
             <label className="block text-sm font-medium mb-1">Student</label>
             <select
-              name="userId"
-              value={formData.userId}
+              name="user_id"
+              value={formData.user_id}
               onChange={handleFormChange}
               required
               className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
             >
               <option value="">Select a student</option>
-              {users && users.map((user: User) => (
+              {users.map((user) => (
                 <option key={user.id} value={user.id}>
                   {user.firstName} {user.lastName} ({user.email})
                 </option>
@@ -295,14 +400,14 @@ const CertificateManagement: React.FC = () => {
           <div>
             <label className="block text-sm font-medium mb-1">Course</label>
             <select
-              name="courseId"
-              value={formData.courseId}
+              name="course_id"
+              value={formData.course_id}
               onChange={handleFormChange}
               required
               className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
             >
               <option value="">Select a course</option>
-              {courses && courses.map((course: Course) => (
+              {courses.map((course) => (
                 <option key={course.id} value={course.id}>
                   {course.title}
                 </option>
@@ -314,8 +419,8 @@ const CertificateManagement: React.FC = () => {
             <label className="block text-sm font-medium mb-1">Certificate URL</label>
             <input
               type="url"
-              name="certificateUrl"
-              value={formData.certificateUrl}
+              name="certificate_url"
+              value={formData.certificate_url}
               onChange={handleFormChange}
               placeholder="https://example.com/certificate.pdf"
               className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
