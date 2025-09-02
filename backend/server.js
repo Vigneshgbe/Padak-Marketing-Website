@@ -3733,10 +3733,16 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
   }
 });
 
-// DELETE /api/admin/users/:id - Delete a user
+// DELETE /api/admin/users/:id - Delete a user (admin only) - FIXED VERSION
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
+    const adminId = req.user.id;
+
+    // Prevent admin from deleting themselves
+    if (parseInt(userId) === parseInt(adminId)) {
+      return res.status(400).json({ error: 'You cannot delete your own account' });
+    }
 
     // Check if user exists
     const [users] = await pool.execute(
@@ -3749,7 +3755,6 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
     }
 
     // For safety, we'll do a soft delete by setting is_active to false
-    // If you want to permanently delete, use DELETE query instead
     await pool.execute(
       'UPDATE users SET is_active = false, updated_at = NOW() WHERE id = ?',
       [userId]
@@ -3759,7 +3764,7 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
 
   } catch (error) {
     console.error('Delete user error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error while deleting user' });
   }
 });
 

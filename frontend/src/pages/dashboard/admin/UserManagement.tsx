@@ -17,7 +17,7 @@ const UserManagement: React.FC = () => {
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [selectedAccountType, setSelectedAccountType] = useState('all');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
+  const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
 
   const [formData, setFormData] = useState({
     firstName: '',
@@ -120,7 +120,7 @@ const UserManagement: React.FC = () => {
       ...prev,
       [field]: value
     }));
-    
+
     // Clear error when user starts typing
     if (formErrors[field]) {
       setFormErrors(prev => ({
@@ -131,38 +131,38 @@ const UserManagement: React.FC = () => {
   };
 
   const validateForm = () => {
-    const errors: {[key: string]: string} = {};
-    
+    const errors: { [key: string]: string } = {};
+
     if (!formData.firstName.trim()) {
       errors.firstName = 'First name is required';
     }
-    
+
     if (!formData.lastName.trim()) {
       errors.lastName = 'Last name is required';
     }
-    
+
     if (!formData.email.trim()) {
       errors.email = 'Email is required';
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       errors.email = 'Please enter a valid email address';
     }
-    
+
     if ((modalType === 'create' || modalType === 'password') && !formData.password) {
       errors.password = 'Password is required';
     }
-    
+
     if ((modalType === 'create' || modalType === 'password') && formData.password && formData.password.length < 6) {
       errors.password = 'Password must be at least 6 characters long';
     }
-    
+
     if (formData.phone && !/^\+?[\d\s\-()]+$/.test(formData.phone)) {
       errors.phone = 'Please enter a valid phone number';
     }
-    
+
     if (formData.website && !/^https?:\/\/.+\..+/.test(formData.website)) {
       errors.website = 'Please enter a valid website URL (include http:// or https://)';
     }
-    
+
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -173,18 +173,18 @@ const UserManagement: React.FC = () => {
     if (searchTerm && !searchText.includes(searchTerm.toLowerCase())) {
       return false;
     }
-    
+
     // Apply status filter
     if (selectedFilter !== 'all') {
       if (selectedFilter === 'active' && !user.is_active) return false;
       if (selectedFilter === 'inactive' && user.is_active) return false;
     }
-    
+
     // Apply account type filter
     if (selectedAccountType !== 'all' && user.account_type !== selectedAccountType) {
       return false;
     }
-    
+
     return true;
   });
 
@@ -207,10 +207,10 @@ const UserManagement: React.FC = () => {
     }
 
     setIsSubmitting(true);
-    
+
     try {
       const baseURL = process.env.REACT_APP_API_URL || '';
-      
+
       if (modalType === 'create') {
         // Create new user
         const response = await fetch(`${baseURL}/api/admin/users`, {
@@ -230,7 +230,7 @@ const UserManagement: React.FC = () => {
             bio: formData.bio
           })
         });
-        
+
         if (!response.ok) {
           const errorData = await response.json();
           throw new Error(errorData.error || 'Failed to create user');
@@ -253,7 +253,7 @@ const UserManagement: React.FC = () => {
             bio: formData.bio
           })
         });
-        
+
         if (!response.ok) {
           const errorData = await response.json();
           throw new Error(errorData.error || 'Failed to update user');
@@ -268,19 +268,19 @@ const UserManagement: React.FC = () => {
             password: formData.password
           })
         });
-        
+
         if (!response.ok) {
           const errorData = await response.json();
           throw new Error(errorData.error || 'Failed to reset password');
         }
       }
-      
+
       setIsModalOpen(false);
       refetch();
-      
+
       // Show success message
       toast.success(`User ${modalType === 'create' ? 'created' : modalType === 'password' ? 'password reset' : 'updated'} successfully`);
-      
+
     } catch (error) {
       console.error(`Error ${modalType === 'create' ? 'creating' : modalType === 'password' ? 'resetting password' : 'updating'} user:`, error);
       toast.error(`Failed to ${modalType} user: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -290,37 +290,47 @@ const UserManagement: React.FC = () => {
   };
 
   const handleDeleteConfirm = async () => {
-    if (!selectedUser) return;
+  if (!selectedUser) return;
+  
+  setIsSubmitting(true);
+  
+  try {
+    const baseURL = ''; // Empty string for relative path
+    const url = `${baseURL}/api/admin/users/${selectedUser.id}`;
+    console.log('Making DELETE request to:', url);
     
-    setIsSubmitting(true);
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+      credentials: 'include'
+    });
     
-    try {
-      const baseURL = process.env.REACT_APP_API_URL || '';
-      
-      const response = await fetch(`${baseURL}/api/admin/users/${selectedUser.id}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(),
-        credentials: 'include'
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to delete user');
-      }
-      
-      setIsModalOpen(false);
-      refetch();
-      
-      // Show success message
-      toast.success('User deleted successfully');
-      
-    } catch (error) {
-      console.error('Error deleting user:', error);
-      toast.error(`Failed to delete user: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setIsSubmitting(false);
+    console.log('Response status:', response.status);
+    
+    // Check if response has content before trying to parse JSON
+    let responseData = {};
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      responseData = await response.json();
     }
-  };
+    
+    if (!response.ok) {
+      throw new Error(responseData.error || `Failed to delete user. Status: ${response.status}`);
+    }
+    
+    setIsModalOpen(false);
+    refetch();
+    
+    // Show success message
+    toast.success('User deleted successfully');
+    
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    toast.error(`Failed to delete user: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
@@ -417,13 +427,13 @@ const UserManagement: React.FC = () => {
         <DataTable<User>
           data={filteredUsers}
           columns={[
-            { 
-              header: 'Name', 
+            {
+              header: 'Name',
               accessor: (user) => `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'N/A'
             },
             { header: 'Email', accessor: 'email' },
-            { 
-              header: 'Account Type', 
+            {
+              header: 'Account Type',
               accessor: (user) => capitalizeAccountType(user.account_type || 'student')
             },
             {
@@ -432,8 +442,8 @@ const UserManagement: React.FC = () => {
                 <StatusBadge status={user.is_active ? 'Active' : 'Inactive'} />
               )
             },
-            { 
-              header: 'Join Date', 
+            {
+              header: 'Join Date',
               accessor: (user) => formatDate(user.created_at)
             }
           ]}
@@ -458,7 +468,7 @@ const UserManagement: React.FC = () => {
                 title="Reset Password"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-500">
-                  <path d="M15 7h2a5 5 0 0 1 0 10h-2m-6 0H7A5 5 0 0 1 7 7h2"/>
+                  <path d="M15 7h2a5 5 0 0 1 0 10h-2m-6 0H7A5 5 0 0 1 7 7h2" />
                 </svg>
               </button>
               <button
@@ -493,18 +503,17 @@ const UserManagement: React.FC = () => {
                 type="text"
                 value={formData.firstName}
                 onChange={(e) => handleInputChange('firstName', e.target.value)}
-                className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${
-                  formErrors.firstName 
-                    ? 'border-red-500 dark:border-red-500' 
+                className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${formErrors.firstName
+                    ? 'border-red-500 dark:border-red-500'
                     : 'border-gray-300 dark:border-gray-600'
-                }`}
+                  }`}
                 placeholder="Enter first name"
               />
               {formErrors.firstName && (
                 <p className="text-red-500 text-sm mt-1">{formErrors.firstName}</p>
               )}
             </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Last Name *
@@ -513,11 +522,10 @@ const UserManagement: React.FC = () => {
                 type="text"
                 value={formData.lastName}
                 onChange={(e) => handleInputChange('lastName', e.target.value)}
-                className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${
-                  formErrors.lastName 
-                    ? 'border-red-500 dark:border-red-500' 
+                className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${formErrors.lastName
+                    ? 'border-red-500 dark:border-red-500'
                     : 'border-gray-300 dark:border-gray-600'
-                }`}
+                  }`}
                 placeholder="Enter last name"
               />
               {formErrors.lastName && (
@@ -534,11 +542,10 @@ const UserManagement: React.FC = () => {
               type="email"
               value={formData.email}
               onChange={(e) => handleInputChange('email', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${
-                formErrors.email 
-                  ? 'border-red-500 dark:border-red-500' 
+              className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${formErrors.email
+                  ? 'border-red-500 dark:border-red-500'
                   : 'border-gray-300 dark:border-gray-600'
-              }`}
+                }`}
               placeholder="Enter email address"
             />
             {formErrors.email && (
@@ -554,11 +561,10 @@ const UserManagement: React.FC = () => {
               type="text"
               value={formData.phone}
               onChange={(e) => handleInputChange('phone', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${
-                formErrors.phone 
-                  ? 'border-red-500 dark:border-red-500' 
+              className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${formErrors.phone
+                  ? 'border-red-500 dark:border-red-500'
                   : 'border-gray-300 dark:border-gray-600'
-              }`}
+                }`}
               placeholder="Enter phone number"
             />
             {formErrors.phone && (
@@ -575,11 +581,10 @@ const UserManagement: React.FC = () => {
                 type="password"
                 value={formData.password}
                 onChange={(e) => handleInputChange('password', e.target.value)}
-                className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${
-                  formErrors.password 
-                    ? 'border-red-500 dark:border-red-500' 
+                className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${formErrors.password
+                    ? 'border-red-500 dark:border-red-500'
                     : 'border-gray-300 dark:border-gray-600'
-                }`}
+                  }`}
                 placeholder="Enter password (minimum 6 characters)"
               />
               {formErrors.password && (
@@ -642,11 +647,10 @@ const UserManagement: React.FC = () => {
               type="url"
               value={formData.website}
               onChange={(e) => handleInputChange('website', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${
-                formErrors.website 
-                  ? 'border-red-500 dark:border-red-500' 
+              className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${formErrors.website
+                  ? 'border-red-500 dark:border-red-500'
                   : 'border-gray-300 dark:border-gray-600'
-              }`}
+                }`}
               placeholder="https://example.com"
             />
             {formErrors.website && (
@@ -709,11 +713,10 @@ const UserManagement: React.FC = () => {
               type="password"
               value={formData.password}
               onChange={(e) => handleInputChange('password', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${
-                formErrors.password 
-                  ? 'border-red-500 dark:border-red-500' 
+              className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${formErrors.password
+                  ? 'border-red-500 dark:border-red-500'
                   : 'border-gray-300 dark:border-gray-600'
-              }`}
+                }`}
               placeholder="Enter new password (minimum 6 characters)"
             />
             {formErrors.password && (
@@ -752,7 +755,7 @@ const UserManagement: React.FC = () => {
       >
         <div className="space-y-4">
           <p className="text-gray-700 dark:text-gray-300">
-            Are you sure you want to delete user <strong>{selectedUser?.first_name} {selectedUser?.last_name}</strong>? 
+            Are you sure you want to delete user <strong>{selectedUser?.first_name} {selectedUser?.last_name}</strong>?
             This action cannot be undone and will permanently remove all associated data.
           </p>
 
