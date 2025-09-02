@@ -383,7 +383,7 @@ const CalendarManagement: React.FC = () => {
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
               >
                 <option value="">Select a user (optional)</option>
-                {users.map((user) => (
+                {users?.map?.((user) => (
                   <option key={user.id} value={user.id}>
                     {user.first_name} {user.last_name} ({user.email})
                   </option>
