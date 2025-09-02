@@ -103,7 +103,59 @@ export const useAdminData = (endpoint: string) => {
             updated_at: '14 Jun 2025'
           }
         ];
-      // Add more mock data for other endpoints
+      case '/api/admin/recent-users':
+        return [
+          {
+            id: 1,
+            first_name: 'John',
+            last_name: 'Doe',
+            email: 'john@example.com',
+            account_type: 'student',
+            created_at: '15 Jun 2025'
+          },
+          {
+            id: 2,
+            first_name: 'Jane',
+            last_name: 'Smith',
+            email: 'jane@example.com',
+            account_type: 'professional',
+            created_at: '14 Jun 2025'
+          }
+        ];
+      case '/api/admin/recent-enrollments':
+        return [
+          {
+            id: 1,
+            user_name: 'John Doe',
+            course_name: 'Digital Marketing Fundamentals',
+            date: '15 Jul 2025',
+            status: 'active'
+          },
+          {
+            id: 2,
+            user_name: 'Jane Smith',
+            course_name: 'Advanced SEO Techniques',
+            date: '14 Jul 2025',
+            status: 'completed'
+          }
+        ];
+      case '/api/admin/service-requests':
+        return [
+          {
+            id: 1,
+            name: 'Alex Johnson',
+            service: 'SEO Optimization',
+            date: '15 Jul 2025',
+            status: 'pending'
+          },
+          {
+            id: 2,
+            name: 'Sarah Williams',
+            service: 'Social Media Marketing',
+            date: '14 Jul 2025',
+            status: 'in-process'
+          }
+        ];
       default:
         return [];
     }
