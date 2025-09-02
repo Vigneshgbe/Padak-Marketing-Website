@@ -3307,53 +3307,6 @@ app.get('/api/admin/recent-enrollments', authenticateToken, async (req, res) => 
   }
 });
 
-// Service Requests
-app.get('/api/admin/service-requests', authenticateToken, async (req, res) => {
-  try {
-    // First, let's check what the actual table name is
-    const [tables] = await pool.execute(`
-      SHOW TABLES LIKE 'service%sub%categories'
-    `);
-
-    let tableQuery;
-    if (tables.length > 0) {
-      // Use the actual table name from database
-      const tableName = Object.values(tables[0])[0];
-      console.log(`Found subcategory table: ${tableName}`);
-
-      tableQuery = `
-        SELECT sr.id, sr.full_name as name, 
-               sc.name as service,
-               DATE_FORMAT(sr.created_at, '%d %b %Y') as date,
-               sr.status
-        FROM service_requests sr
-        JOIN ${tableName} sc ON sr.subcategory_id = sc.id
-        ORDER BY sr.created_at DESC
-        LIMIT 5
-      `;
-    } else {
-      // Fallback if table not found - return service requests without join
-      console.log('Subcategory table not found, using fallback query');
-      tableQuery = `
-        SELECT sr.id, sr.full_name as name, 
-               'Unknown Service' as service,
-               DATE_FORMAT(sr.created_at, '%d %b %Y') as date,
-               sr.status
-        FROM service_requests sr
-        ORDER BY sr.created_at DESC
-        LIMIT 5
-      `;
-    }
-
-    const [requests] = await pool.execute(tableQuery);
-    res.json(requests);
-  } catch (error) {
-    console.error('Error fetching service requests:', error);
-    res.status(500).json({ error: 'Failed to fetch service requests', details: error.message });
-  }
-});
-
-
 // ==================== CONTACT ROUTES ====================
 
 // Contact form endpoint
@@ -4578,7 +4531,8 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
 });
 
 // ==================== ADMIN SERVICE REQUEST MANAGEMENT PAGE ====================
-// GET /api/admin/service-requests - Get all service requests
+
+// Updated GET endpoint for service requests
 app.get('/api/admin/service-requests', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const [requests] = await pool.execute(`
@@ -4596,9 +4550,14 @@ app.get('/api/admin/service-requests', authenticateToken, requireAdmin, async (r
         sr.budget_range,
         sr.timeline,
         sr.contact_method,
-        sr.additional_requirements
+        sr.additional_requirements,
+        sr.user_id,
+        u.first_name as user_first_name,
+        u.last_name as user_last_name,
+        u.account_type as user_account_type
       FROM service_requests sr
-      JOIN service_subcategories sc ON sr.subcategory_id = sc.id
+      LEFT JOIN service_subcategories sc ON sr.subcategory_id = sc.id
+      LEFT JOIN users u ON sr.user_id = u.id
       ORDER BY sr.created_at DESC
     `);
 
@@ -4606,6 +4565,35 @@ app.get('/api/admin/service-requests', authenticateToken, requireAdmin, async (r
   } catch (error) {
     console.error('Error fetching service requests:', error);
     res.status(500).json({ error: 'Failed to fetch service requests', details: error.message });
+  }
+});
+
+// Updated PUT endpoint for service requests
+app.put('/api/admin/service-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, project_details, budget_range, timeline, additional_requirements } = req.body;
+
+    const [result] = await pool.execute(
+      `UPDATE service_requests SET 
+        status = ?, 
+        project_details = ?, 
+        budget_range = ?, 
+        timeline = ?, 
+        additional_requirements = ?, 
+        updated_at = NOW() 
+       WHERE id = ?`,
+      [status, project_details, budget_range, timeline, additional_requirements, id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Service request not found' });
+    }
+
+    res.json({ message: 'Service request updated successfully' });
+  } catch (error) {
+    console.error('Error updating service request:', error);
+    res.status(500).json({ error: 'Failed to update service request', details: error.message });
   }
 });
 
