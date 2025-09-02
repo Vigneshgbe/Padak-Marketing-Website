@@ -4019,6 +4019,121 @@ app.post('/api/admin/courses/:id/thumbnail', authenticateToken, requireAdmin, as
   }
 });
 
+// ==================== ADMIN ASSIGNMENT MANAGEMENT ENDPOINTS ====================
+
+// GET all assignments (admin only)
+app.get('/api/admin/assignments', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [assignments] = await pool.execute(`
+      SELECT 
+        a.id,
+        a.course_id,
+        a.title,
+        a.description,
+        a.due_date,
+        a.max_points,
+        a.created_at,
+        c.title as course_title
+      FROM assignments a
+      LEFT JOIN courses c ON a.course_id = c.id
+      ORDER BY a.created_at DESC
+    `);
+
+    res.json(assignments);
+  } catch (error) {
+    console.error('Error fetching assignments:', error);
+    res.status(500).json({ error: 'Failed to fetch assignments' });
+  }
+});
+
+// CREATE new assignment (admin only)
+app.post('/api/admin/assignments', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const {
+      title,
+      course_id,
+      description,
+      due_date,
+      max_points
+    } = req.body;
+
+    // Validate required fields
+    if (!title || !course_id || !due_date || !max_points) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const [result] = await pool.execute(
+      `INSERT INTO assignments 
+        (title, course_id, description, due_date, max_points)
+        VALUES (?, ?, ?, ?, ?)`,
+      [title, course_id, description, due_date, max_points]
+    );
+
+    res.status(201).json({ 
+      message: 'Assignment created successfully',
+      assignmentId: result.insertId
+    });
+  } catch (error) {
+    console.error('Error creating assignment:', error);
+    res.status(500).json({ error: 'Failed to create assignment' });
+  }
+});
+
+// UPDATE assignment (admin only)
+app.put('/api/admin/assignments/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      title,
+      course_id,
+      description,
+      due_date,
+      max_points
+    } = req.body;
+
+    // Validate required fields
+    if (!title || !course_id || !due_date || !max_points) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    await pool.execute(
+      `UPDATE assignments SET 
+        title = ?, course_id = ?, description = ?, due_date = ?, max_points = ?
+        WHERE id = ?`,
+      [title, course_id, description, due_date, max_points, id]
+    );
+
+    res.json({ message: 'Assignment updated successfully' });
+  } catch (error) {
+    console.error('Error updating assignment:', error);
+    res.status(500).json({ error: 'Failed to update assignment' });
+  }
+});
+
+// DELETE assignment (admin only)
+app.delete('/api/admin/assignments/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if assignment has submissions
+    const [submissions] = await pool.execute(
+      'SELECT COUNT(*) as count FROM assignment_submissions WHERE assignment_id = ?',
+      [id]
+    );
+
+    if (submissions[0].count > 0) {
+      return res.status(400).json({ error: 'Cannot delete assignment with existing submissions' });
+    }
+
+    await pool.execute('DELETE FROM assignments WHERE id = ?', [id]);
+
+    res.json({ message: 'Assignment deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting assignment:', error);
+    res.status(500).json({ error: 'Failed to delete assignment' });
+  }
+});
+
 // ==================== UTILITY ROUTES ====================
 
 // Health check endpoint
