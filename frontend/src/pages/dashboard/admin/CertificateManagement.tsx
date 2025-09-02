@@ -1,36 +1,129 @@
 // src/pages/dashboard/admin/CertificateManagement.tsx
-import React, { useState } from 'react';
-import { Trash2, Download, Search } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Trash2, Download, Search, PlusCircle, Edit3 } from 'lucide-react';
 import DataTable from '../../../components/admin/DataTable';
 import Modal from '../../../components/admin/Modal';
-import { Certificate } from '../../../lib/admin-types';
+import { Certificate, User, Course } from '../../../lib/admin-types';
 import { useAdminData } from '../../../hooks/useAdminData';
 
+interface CertificateFormData {
+  userId: number;
+  courseId: number;
+  certificateUrl: string;
+}
+
 const CertificateManagement: React.FC = () => {
-  const { data: certificates, loading, error, refetch } = useAdminData('/api/admin/certificates');
+  const { data: certificates, loading, error, refetch } = useAdminData('/api/certificates');
+  const { data: users } = useAdminData('/api/admin/users');
+  const { data: courses } = useAdminData('/api/courses');
+  
   const [selectedCertificate, setSelectedCertificate] = useState<Certificate | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [formData, setFormData] = useState<CertificateFormData>({
+    userId: 0,
+    courseId: 0,
+    certificateUrl: ''
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (selectedCertificate) {
+      setFormData({
+        userId: selectedCertificate.user.id,
+        courseId: selectedCertificate.course.id,
+        certificateUrl: selectedCertificate.certificateUrl || ''
+      });
+    }
+  }, [selectedCertificate]);
 
   const handleDeleteCertificate = (certificate: Certificate) => {
     setSelectedCertificate(certificate);
     setIsModalOpen(true);
   };
 
-  const filteredCertificates = certificates.filter((certificate: Certificate) => {
-    // Apply search filter
-    if (searchTerm && !`${certificate.user_name} ${certificate.course_title}`.toLowerCase().includes(searchTerm.toLowerCase())) {
-      return false;
-    }
-    
-    return true;
-  });
+  const handleEditCertificate = (certificate: Certificate) => {
+    setSelectedCertificate(certificate);
+    setIsCreateModalOpen(true);
+  };
+
+  const handleCreateCertificate = () => {
+    setSelectedCertificate(null);
+    setFormData({ userId: 0, courseId: 0, certificateUrl: '' });
+    setIsCreateModalOpen(true);
+  };
+
+  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: name === 'userId' || name === 'courseId' ? parseInt(value) : value
+    }));
+  };
 
   const handleDeleteConfirm = async () => {
-    // Implementation for deleting certificate
-    setIsModalOpen(false);
-    refetch();
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/certificates/${selectedCertificate?.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        setIsModalOpen(false);
+        refetch();
+      } else {
+        console.error('Failed to delete certificate');
+      }
+    } catch (error) {
+      console.error('Error deleting certificate:', error);
+    }
   };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      const token = localStorage.getItem('token');
+      const url = selectedCertificate 
+        ? `/api/certificates/${selectedCertificate.id}`
+        : '/api/certificates';
+      
+      const method = selectedCertificate ? 'PUT' : 'POST';
+      
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(formData)
+      });
+
+      if (response.ok) {
+        setIsCreateModalOpen(false);
+        refetch();
+      } else {
+        console.error('Failed to save certificate');
+      }
+    } catch (error) {
+      console.error('Error saving certificate:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const filteredCertificates = certificates.filter((certificate: Certificate) => {
+    if (searchTerm && !`${certificate.user.firstName} ${certificate.user.lastName} ${certificate.course.title}`.toLowerCase().includes(searchTerm.toLowerCase())) {
+      return false;
+    }
+    return true;
+  });
 
   return (
     <div className="space-y-6">
@@ -48,6 +141,13 @@ const CertificateManagement: React.FC = () => {
               className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500"
             />
           </div>
+          <button
+            onClick={handleCreateCertificate}
+            className="flex items-center gap-2 bg-orange-500 text-white px-4 py-2 rounded-md hover:bg-orange-600 transition-colors"
+          >
+            <PlusCircle size={16} />
+            Issue Certificate
+          </button>
         </div>
       </div>
 
@@ -77,14 +177,20 @@ const CertificateManagement: React.FC = () => {
         <DataTable<Certificate>
           data={filteredCertificates}
           columns={[
-            { header: 'Student', accessor: 'user_name' },
-            { header: 'Course', accessor: 'course_title' },
-            { header: 'Issued Date', accessor: 'issued_date' },
+            { 
+              header: 'Student', 
+              accessor: (cert) => `${cert.user.firstName} ${cert.user.lastName}` 
+            },
+            { header: 'Course', accessor: 'course.title' },
+            { 
+              header: 'Issued Date', 
+              accessor: (cert) => new Date(cert.issuedDate).toLocaleDateString() 
+            },
             {
               header: 'Certificate',
-              accessor: (cert) => (
+              accessor: (cert) => cert.certificateUrl ? (
                 <a
-                  href={cert.certificate_url}
+                  href={cert.certificateUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-500 hover:underline"
@@ -92,19 +198,32 @@ const CertificateManagement: React.FC = () => {
                 >
                   View Certificate
                 </a>
+              ) : (
+                <span className="text-gray-500">No URL</span>
               )
             }
           ]}
           actions={(cert) => (
             <div className="flex space-x-2">
+              {cert.certificateUrl && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(cert.certificateUrl, '_blank');
+                  }}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                >
+                  <Download size={16} className="text-green-500" />
+                </button>
+              )}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  window.open(cert.certificate_url, '_blank');
+                  handleEditCertificate(cert);
                 }}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
               >
-                <Download size={16} className="text-green-500" />
+                <Edit3 size={16} className="text-blue-500" />
               </button>
               <button
                 onClick={(e) => {
@@ -128,7 +247,7 @@ const CertificateManagement: React.FC = () => {
         size="md"
       >
         <div className="space-y-4">
-          <p>Are you sure you want to delete the certificate for {selectedCertificate?.user_name} - {selectedCertificate?.course_title}? This action cannot be undone.</p>
+          <p>Are you sure you want to delete the certificate for {selectedCertificate?.user.firstName} {selectedCertificate?.user.lastName} - {selectedCertificate?.course.title}? This action cannot be undone.</p>
 
           <div className="flex justify-end gap-2 mt-6">
             <button
@@ -145,6 +264,81 @@ const CertificateManagement: React.FC = () => {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Create/Edit Certificate Modal */}
+      <Modal
+        isOpen={isCreateModalOpen}
+        title={selectedCertificate ? "Edit Certificate" : "Issue New Certificate"}
+        onClose={() => setIsCreateModalOpen(false)}
+        size="lg"
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Student</label>
+            <select
+              name="userId"
+              value={formData.userId}
+              onChange={handleFormChange}
+              required
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
+            >
+              <option value="">Select a student</option>
+              {users && users.map((user: User) => (
+                <option key={user.id} value={user.id}>
+                  {user.firstName} {user.lastName} ({user.email})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Course</label>
+            <select
+              name="courseId"
+              value={formData.courseId}
+              onChange={handleFormChange}
+              required
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
+            >
+              <option value="">Select a course</option>
+              {courses && courses.map((course: Course) => (
+                <option key={course.id} value={course.id}>
+                  {course.title}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Certificate URL</label>
+            <input
+              type="url"
+              name="certificateUrl"
+              value={formData.certificateUrl}
+              onChange={handleFormChange}
+              placeholder="https://example.com/certificate.pdf"
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 mt-6">
+            <button
+              type="button"
+              onClick={() => setIsCreateModalOpen(false)}
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 disabled:opacity-50"
+            >
+              {isSubmitting ? 'Saving...' : (selectedCertificate ? 'Update' : 'Issue Certificate')}
+            </button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

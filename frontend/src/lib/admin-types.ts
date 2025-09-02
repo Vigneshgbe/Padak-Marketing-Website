@@ -121,3 +121,36 @@ export interface DashboardStats {
   pendingContacts: number;
   pendingServiceRequests: number;
 }
+
+// src/lib/admin-types.ts
+export interface Certificate {
+  id: number;
+  userId: number;
+  courseId: number;
+  certificateUrl: string;
+  issuedDate: string;
+  course: {
+    id: number;
+    title: string;
+    instructorName: string;
+    category: string;
+    difficultyLevel: string;
+  };
+  user: {
+    id: number;
+    firstName: string;
+    lastName: string;
+    email: string;
+  };
+  enrollment: {
+    completionDate: string;
+  };
+}
+
+export interface User {
+  id: number;
+  firstName: string;
+  lastName: string;
+  email: string;
+  accountType: string;
+}
