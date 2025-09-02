@@ -4208,6 +4208,193 @@ app.delete('/api/admin/contact-messages/:id', authenticateToken, requireAdmin, a
   }
 });
 
+// ==================== ADMIN SERVICE MANAGEMENT ENDPOINTS ====================
+
+// Get all services (admin only)
+app.get('/api/admin/services', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [services] = await pool.execute(`
+      SELECT 
+        s.*,
+        sc.name as category_name,
+        sc.id as category_id
+      FROM services s
+      LEFT JOIN service_categories sc ON s.category_id = sc.id
+      ORDER BY s.created_at DESC
+    `);
+
+    // Parse JSON fields
+    const parsedServices = services.map(service => ({
+      ...service,
+      features: service.features ? JSON.parse(service.features) : [],
+      is_active: service.is_active === 1,
+      popular: service.popular === 1
+    }));
+
+    res.json(parsedServices);
+  } catch (error) {
+    console.error('Error fetching services:', error);
+    res.status(500).json({ error: 'Failed to fetch services' });
+  }
+});
+
+// Get service by ID (admin only)
+app.get('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const [services] = await pool.execute(`
+      SELECT 
+        s.*,
+        sc.name as category_name,
+        sc.id as category_id
+      FROM services s
+      LEFT JOIN service_categories sc ON s.category_id = sc.id
+      WHERE s.id = ?
+    `, [id]);
+
+    if (services.length === 0) {
+      return res.status(404).json({ error: 'Service not found' });
+    }
+
+    const service = services[0];
+    // Parse JSON fields
+    service.features = service.features ? JSON.parse(service.features) : [];
+    service.is_active = service.is_active === 1;
+    service.popular = service.popular === 1;
+
+    res.json(service);
+  } catch (error) {
+    console.error('Error fetching service:', error);
+    res.status(500).json({ error: 'Failed to fetch service' });
+  }
+});
+
+// Create new service (admin only)
+app.post('/api/admin/services', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const {
+      name,
+      category_id,
+      description,
+      price,
+      duration,
+      features,
+      popular,
+      is_active
+    } = req.body;
+
+    // Validate required fields
+    if (!name || !category_id || !price) {
+      return res.status(400).json({ error: 'Name, category, and price are required' });
+    }
+
+    const [result] = await pool.execute(`
+      INSERT INTO services 
+        (name, category_id, description, price, duration, features, popular, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+    `, [
+      name,
+      category_id,
+      description || null,
+      price,
+      duration || null,
+      features ? JSON.stringify(features) : null,
+      popular ? 1 : 0,
+      is_active ? 1 : 0
+    ]);
+
+    res.status(201).json({
+      message: 'Service created successfully',
+      serviceId: result.insertId
+    });
+  } catch (error) {
+    console.error('Error creating service:', error);
+    res.status(500).json({ error: 'Failed to create service' });
+  }
+});
+
+// Update service (admin only)
+app.put('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      name,
+      category_id,
+      description,
+      price,
+      duration,
+      features,
+      popular,
+      is_active
+    } = req.body;
+
+    // Check if service exists
+    const [services] = await pool.execute('SELECT id FROM services WHERE id = ?', [id]);
+    if (services.length === 0) {
+      return res.status(404).json({ error: 'Service not found' });
+    }
+
+    await pool.execute(`
+      UPDATE services 
+      SET name = ?, category_id = ?, description = ?, price = ?, duration = ?, 
+          features = ?, popular = ?, is_active = ?, updated_at = NOW()
+      WHERE id = ?
+    `, [
+      name,
+      category_id,
+      description || null,
+      price,
+      duration || null,
+      features ? JSON.stringify(features) : null,
+      popular ? 1 : 0,
+      is_active ? 1 : 0,
+      id
+    ]);
+
+    res.json({ message: 'Service updated successfully' });
+  } catch (error) {
+    console.error('Error updating service:', error);
+    res.status(500).json({ error: 'Failed to update service' });
+  }
+});
+
+// Delete service (admin only)
+app.delete('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if service exists
+    const [services] = await pool.execute('SELECT id FROM services WHERE id = ?', [id]);
+    if (services.length === 0) {
+      return res.status(404).json({ error: 'Service not found' });
+    }
+
+    await pool.execute('DELETE FROM services WHERE id = ?', [id]);
+
+    res.json({ message: 'Service deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting service:', error);
+    res.status(500).json({ error: 'Failed to delete service' });
+  }
+});
+
+// Get service categories (admin only)
+app.get('/api/admin/service-categories', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [categories] = await pool.execute(`
+      SELECT * FROM service_categories 
+      WHERE is_active = 1 
+      ORDER BY name
+    `);
+
+    res.json(categories);
+  } catch (error) {
+    console.error('Error fetching service categories:', error);
+    res.status(500).json({ error: 'Failed to fetch service categories' });
+  }
+});
+
 // ==================== UTILITY ROUTES ====================
 
 // Health check endpoint
