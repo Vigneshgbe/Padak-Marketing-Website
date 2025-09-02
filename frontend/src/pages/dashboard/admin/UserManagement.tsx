@@ -9,40 +9,43 @@ import { useAdminData } from '../../../hooks/useAdminData';
 import { toast } from 'react-hot-toast';
 
 const UserManagement: React.FC = () => {
-  // Since /api/admin/users doesn't exist, we'll use a different approach
-  const { data: users, loading, error, refetch } = useAdminData('/api/auth/users'); // This endpoint doesn't exist either, we'll need to create it
+  const { data: usersData, loading, error, refetch } = useAdminData('/api/admin/users');
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalType, setModalType] = useState<'create' | 'edit' | 'delete'>('create');
+  const [modalType, setModalType] = useState<'create' | 'edit' | 'delete' | 'password'>('create');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
+  const [selectedAccountType, setSelectedAccountType] = useState('all');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
 
   const [formData, setFormData] = useState({
-    first_name: '',
-    last_name: '',
+    firstName: '',
+    lastName: '',
     email: '',
     phone: '',
-    password: '', // Only for create
-    account_type: 'student' as 'student' | 'professional' | 'business' | 'agency',
-    is_active: true,
+    password: '', // Only for create and password reset
+    accountType: 'student' as 'student' | 'professional' | 'business' | 'agency' | 'admin',
+    isActive: true,
     company: '',
     website: '',
     bio: ''
   });
 
+  // Extract users from response data
+  const users = usersData?.users || [];
+
   // Reset form when modal closes
   useEffect(() => {
     if (!isModalOpen) {
       setFormData({
-        first_name: '',
-        last_name: '',
+        firstName: '',
+        lastName: '',
         email: '',
         phone: '',
         password: '',
-        account_type: 'student',
-        is_active: true,
+        accountType: 'student',
+        isActive: true,
         company: '',
         website: '',
         bio: ''
@@ -55,13 +58,13 @@ const UserManagement: React.FC = () => {
   const handleEditUser = (user: User) => {
     setSelectedUser(user);
     setFormData({
-      first_name: user.first_name || '',
-      last_name: user.last_name || '',
+      firstName: user.first_name || '',
+      lastName: user.last_name || '',
       email: user.email || '',
       phone: user.phone || '',
       password: '', // Never populate password for edit
-      account_type: user.account_type as 'student' | 'professional' | 'business' | 'agency',
-      is_active: user.is_active ?? true,
+      accountType: user.account_type as 'student' | 'professional' | 'business' | 'agency' | 'admin',
+      isActive: user.is_active ?? true,
       company: user.company || '',
       website: user.website || '',
       bio: user.bio || ''
@@ -76,16 +79,34 @@ const UserManagement: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  const handleResetPassword = (user: User) => {
+    setSelectedUser(user);
+    setFormData({
+      firstName: user.first_name || '',
+      lastName: user.last_name || '',
+      email: user.email || '',
+      phone: user.phone || '',
+      password: '', // Reset password field
+      accountType: user.account_type as 'student' | 'professional' | 'business' | 'agency' | 'admin',
+      isActive: user.is_active ?? true,
+      company: user.company || '',
+      website: user.website || '',
+      bio: user.bio || ''
+    });
+    setModalType('password');
+    setIsModalOpen(true);
+  };
+
   const handleCreateUser = () => {
     setSelectedUser(null);
     setFormData({
-      first_name: '',
-      last_name: '',
+      firstName: '',
+      lastName: '',
       email: '',
       phone: '',
       password: '',
-      account_type: 'student',
-      is_active: true,
+      accountType: 'student',
+      isActive: true,
       company: '',
       website: '',
       bio: ''
@@ -112,12 +133,12 @@ const UserManagement: React.FC = () => {
   const validateForm = () => {
     const errors: {[key: string]: string} = {};
     
-    if (!formData.first_name.trim()) {
-      errors.first_name = 'First name is required';
+    if (!formData.firstName.trim()) {
+      errors.firstName = 'First name is required';
     }
     
-    if (!formData.last_name.trim()) {
-      errors.last_name = 'Last name is required';
+    if (!formData.lastName.trim()) {
+      errors.lastName = 'Last name is required';
     }
     
     if (!formData.email.trim()) {
@@ -126,11 +147,11 @@ const UserManagement: React.FC = () => {
       errors.email = 'Please enter a valid email address';
     }
     
-    if (modalType === 'create' && !formData.password) {
-      errors.password = 'Password is required for new users';
+    if ((modalType === 'create' || modalType === 'password') && !formData.password) {
+      errors.password = 'Password is required';
     }
     
-    if (modalType === 'create' && formData.password && formData.password.length < 6) {
+    if ((modalType === 'create' || modalType === 'password') && formData.password && formData.password.length < 6) {
       errors.password = 'Password must be at least 6 characters long';
     }
     
@@ -146,29 +167,7 @@ const UserManagement: React.FC = () => {
     return Object.keys(errors).length === 0;
   };
 
-  // For now, we'll use mock data since the API endpoint doesn't exist
-  const mockUsers: User[] = [
-    {
-      id: 1,
-      first_name: 'John',
-      last_name: 'Doe',
-      email: 'john@example.com',
-      account_type: 'student',
-      is_active: true,
-      created_at: '2025-06-15T00:00:00.000Z'
-    },
-    {
-      id: 2,
-      first_name: 'Jane',
-      last_name: 'Smith',
-      email: 'jane@example.com',
-      account_type: 'professional',
-      is_active: true,
-      created_at: '2025-06-14T00:00:00.000Z'
-    }
-  ];
-
-  const filteredUsers = (users && Array.isArray(users) ? users : mockUsers).filter((user: User) => {
+  const filteredUsers = users.filter((user: User) => {
     // Apply search filter
     const searchText = `${user.first_name || ''} ${user.last_name || ''} ${user.email || ''}`.toLowerCase();
     if (searchTerm && !searchText.includes(searchTerm.toLowerCase())) {
@@ -179,7 +178,11 @@ const UserManagement: React.FC = () => {
     if (selectedFilter !== 'all') {
       if (selectedFilter === 'active' && !user.is_active) return false;
       if (selectedFilter === 'inactive' && user.is_active) return false;
-      if (['student', 'professional', 'business', 'agency'].includes(selectedFilter) && user.account_type !== selectedFilter) return false;
+    }
+    
+    // Apply account type filter
+    if (selectedAccountType !== 'all' && user.account_type !== selectedAccountType) {
+      return false;
     }
     
     return true;
@@ -206,22 +209,22 @@ const UserManagement: React.FC = () => {
     setIsSubmitting(true);
     
     try {
-      // Use a relative URL since we don't know the exact API URL in the frontend
-      const baseURL = ''; // Empty string for relative path
+      const baseURL = process.env.REACT_APP_API_URL || '';
       
       if (modalType === 'create') {
-        // Use the registration endpoint for creating new users
-        const response = await fetch(`${baseURL}/api/register`, {
+        // Create new user
+        const response = await fetch(`${baseURL}/api/admin/users`, {
           method: 'POST',
           headers: getAuthHeaders(),
           credentials: 'include',
           body: JSON.stringify({
-            firstName: formData.first_name,
-            lastName: formData.last_name,
+            firstName: formData.firstName,
+            lastName: formData.lastName,
             email: formData.email,
             phone: formData.phone,
             password: formData.password,
-            accountType: formData.account_type,
+            accountType: formData.accountType,
+            isActive: formData.isActive,
             company: formData.company,
             website: formData.website,
             bio: formData.bio
@@ -233,15 +236,18 @@ const UserManagement: React.FC = () => {
           throw new Error(errorData.error || 'Failed to create user');
         }
       } else if (modalType === 'edit' && selectedUser) {
-        // Use the profile update endpoint for editing users
-        const response = await fetch(`${baseURL}/api/auth/profile`, {
+        // Update existing user
+        const response = await fetch(`${baseURL}/api/admin/users/${selectedUser.id}`, {
           method: 'PUT',
           headers: getAuthHeaders(),
           credentials: 'include',
           body: JSON.stringify({
-            firstName: formData.first_name,
-            lastName: formData.last_name,
+            firstName: formData.firstName,
+            lastName: formData.lastName,
+            email: formData.email,
             phone: formData.phone,
+            accountType: formData.accountType,
+            isActive: formData.isActive,
             company: formData.company,
             website: formData.website,
             bio: formData.bio
@@ -252,17 +258,31 @@ const UserManagement: React.FC = () => {
           const errorData = await response.json();
           throw new Error(errorData.error || 'Failed to update user');
         }
+      } else if (modalType === 'password' && selectedUser) {
+        // Reset password
+        const response = await fetch(`${baseURL}/api/admin/users/${selectedUser.id}/password`, {
+          method: 'PUT',
+          headers: getAuthHeaders(),
+          credentials: 'include',
+          body: JSON.stringify({
+            password: formData.password
+          })
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to reset password');
+        }
       }
       
       setIsModalOpen(false);
-      // Refetch users if we have a real API endpoint
-      if (refetch) refetch();
+      refetch();
       
       // Show success message
-      toast.success(`User ${modalType === 'create' ? 'created' : 'updated'} successfully`);
+      toast.success(`User ${modalType === 'create' ? 'created' : modalType === 'password' ? 'password reset' : 'updated'} successfully`);
       
     } catch (error) {
-      console.error(`Error ${modalType === 'create' ? 'creating' : 'updating'} user:`, error);
+      console.error(`Error ${modalType === 'create' ? 'creating' : modalType === 'password' ? 'resetting password' : 'updating'} user:`, error);
       toast.error(`Failed to ${modalType} user: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsSubmitting(false);
@@ -275,21 +295,30 @@ const UserManagement: React.FC = () => {
     setIsSubmitting(true);
     
     try {
-      // Use a relative URL since we don't know the exact API URL in the frontend
-      const baseURL = ''; // Empty string for relative path
+      const baseURL = process.env.REACT_APP_API_URL || '';
       
-      // Since the server.js doesn't have a user deletion endpoint,
-      // we'll simulate it by setting is_active to false
-      // This would require backend changes to support proper deletion
-      // For now, we'll just show an error
-      throw new Error('User deletion is not implemented in the API');
+      const response = await fetch(`${baseURL}/api/admin/users/${selectedUser.id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete user');
+      }
+      
+      setIsModalOpen(false);
+      refetch();
+      
+      // Show success message
+      toast.success('User deleted successfully');
       
     } catch (error) {
-      console.error('Error updating user status:', error);
-      toast.error('User deletion is not supported in the current API version');
+      console.error('Error deleting user:', error);
+      toast.error(`Failed to delete user: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsSubmitting(false);
-      setIsModalOpen(false);
     }
   };
 
@@ -330,13 +359,25 @@ const UserManagement: React.FC = () => {
               onChange={(e) => setSelectedFilter(e.target.value)}
               className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none"
             >
-              <option value="all">All Users</option>
+              <option value="all">All Status</option>
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
-              <option value="student">Students</option>
-              <option value="professional">Professionals</option>
+            </select>
+          </div>
+
+          <div className="relative">
+            <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+            <select
+              value={selectedAccountType}
+              onChange={(e) => setSelectedAccountType(e.target.value)}
+              className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none"
+            >
+              <option value="all">All Types</option>
+              <option value="student">Student</option>
+              <option value="professional">Professional</option>
               <option value="business">Business</option>
               <option value="agency">Agency</option>
+              <option value="admin">Admin</option>
             </select>
           </div>
 
@@ -364,7 +405,7 @@ const UserManagement: React.FC = () => {
           </div>
           <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
           <button
-            onClick={() => refetch && refetch()}
+            onClick={() => refetch()}
             className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
           >
             Retry
@@ -372,7 +413,7 @@ const UserManagement: React.FC = () => {
         </div>
       )}
 
-      {!loading && (
+      {!loading && !error && (
         <DataTable<User>
           data={filteredUsers}
           columns={[
@@ -411,6 +452,18 @@ const UserManagement: React.FC = () => {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
+                  handleResetPassword(user);
+                }}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                title="Reset Password"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-500">
+                  <path d="M15 7h2a5 5 0 0 1 0 10h-2m-6 0H7A5 5 0 0 1 7 7h2"/>
+                </svg>
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
                   handleDeleteUser(user);
                 }}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
@@ -438,17 +491,17 @@ const UserManagement: React.FC = () => {
               </label>
               <input
                 type="text"
-                value={formData.first_name}
-                onChange={(e) => handleInputChange('first_name', e.target.value)}
+                value={formData.firstName}
+                onChange={(e) => handleInputChange('firstName', e.target.value)}
                 className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${
-                  formErrors.first_name 
+                  formErrors.firstName 
                     ? 'border-red-500 dark:border-red-500' 
                     : 'border-gray-300 dark:border-gray-600'
                 }`}
                 placeholder="Enter first name"
               />
-              {formErrors.first_name && (
-                <p className="text-red-500 text-sm mt-1">{formErrors.first_name}</p>
+              {formErrors.firstName && (
+                <p className="text-red-500 text-sm mt-1">{formErrors.firstName}</p>
               )}
             </div>
             
@@ -458,17 +511,17 @@ const UserManagement: React.FC = () => {
               </label>
               <input
                 type="text"
-                value={formData.last_name}
-                onChange={(e) => handleInputChange('last_name', e.target.value)}
+                value={formData.lastName}
+                onChange={(e) => handleInputChange('lastName', e.target.value)}
                 className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${
-                  formErrors.last_name 
+                  formErrors.lastName 
                     ? 'border-red-500 dark:border-red-500' 
                     : 'border-gray-300 dark:border-gray-600'
                 }`}
                 placeholder="Enter last name"
               />
-              {formErrors.last_name && (
-                <p className="text-red-500 text-sm mt-1">{formErrors.last_name}</p>
+              {formErrors.lastName && (
+                <p className="text-red-500 text-sm mt-1">{formErrors.lastName}</p>
               )}
             </div>
           </div>
@@ -541,14 +594,15 @@ const UserManagement: React.FC = () => {
                 Account Type
               </label>
               <select
-                value={formData.account_type}
-                onChange={(e) => handleInputChange('account_type', e.target.value)}
+                value={formData.accountType}
+                onChange={(e) => handleInputChange('accountType', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
               >
                 <option value="student">Student</option>
                 <option value="professional">Professional</option>
                 <option value="business">Business</option>
                 <option value="agency">Agency</option>
+                <option value="admin">Admin</option>
               </select>
             </div>
 
@@ -557,8 +611,8 @@ const UserManagement: React.FC = () => {
                 Status
               </label>
               <select
-                value={formData.is_active ? "1" : "0"}
-                onChange={(e) => handleInputChange('is_active', e.target.value === "1")}
+                value={formData.isActive ? "1" : "0"}
+                onChange={(e) => handleInputChange('isActive', e.target.value === "1")}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
               >
                 <option value="1">Active</option>
@@ -630,6 +684,60 @@ const UserManagement: React.FC = () => {
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
               )}
               {modalType === 'create' ? 'Create' : 'Update'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Password Reset Modal */}
+      <Modal
+        isOpen={isModalOpen && modalType === 'password'}
+        title="Reset Password"
+        onClose={() => setIsModalOpen(false)}
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700 dark:text-gray-300">
+            Reset password for <strong>{selectedUser?.first_name} {selectedUser?.last_name}</strong>
+          </p>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              New Password *
+            </label>
+            <input
+              type="password"
+              value={formData.password}
+              onChange={(e) => handleInputChange('password', e.target.value)}
+              className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${
+                formErrors.password 
+                  ? 'border-red-500 dark:border-red-500' 
+                  : 'border-gray-300 dark:border-gray-600'
+              }`}
+              placeholder="Enter new password (minimum 6 characters)"
+            />
+            {formErrors.password && (
+              <p className="text-red-500 text-sm mt-1">{formErrors.password}</p>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 mt-6">
+            <button
+              onClick={() => setIsModalOpen(false)}
+              disabled={isSubmitting}
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveUser}
+              disabled={isSubmitting}
+              className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {isSubmitting && (
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+              )}
+              Reset Password
             </button>
           </div>
         </div>

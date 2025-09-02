@@ -3353,72 +3353,6 @@ app.get('/api/admin/service-requests', authenticateToken, async (req, res) => {
   }
 });
 
-// GET /api/admin/users - Get all users (admin only)
-app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const offset = (page - 1) * limit;
-
-    // Get users with pagination
-    const [users] = await pool.execute(
-      `SELECT id, first_name, last_name, email, phone, account_type, 
-              profile_image, company, website, bio, is_active, email_verified,
-              created_at, updated_at
-       FROM users 
-       ORDER BY created_at DESC 
-       LIMIT ? OFFSET ?`,
-      [limit, offset]
-    );
-
-    // Get total count
-    const [totalCount] = await pool.execute('SELECT COUNT(*) as total FROM users');
-
-    res.json({
-      users: users,
-      pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(totalCount[0].total / limit),
-        totalUsers: totalCount[0].total,
-        hasNextPage: page < Math.ceil(totalCount[0].total / limit),
-        hasPreviousPage: page > 1
-      }
-    });
-
-  } catch (error) {
-    console.error('Get users error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// DELETE /api/admin/users/:id - Delete a user (admin only)
-app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const userId = req.params.id;
-
-    // Check if user exists
-    const [users] = await pool.execute(
-      'SELECT * FROM users WHERE id = ?',
-      [userId]
-    );
-
-    if (users.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    // Delete user (or set is_active to false for soft delete)
-    await pool.execute(
-      'UPDATE users SET is_active = false WHERE id = ?',
-      [userId]
-    );
-
-    res.json({ message: 'User deleted successfully' });
-
-  } catch (error) {
-    console.error('Delete user error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
 
 // ==================== CONTACT ROUTES ====================
 
@@ -3551,6 +3485,322 @@ app.get('/api/admin/analytics', authenticateToken, requireAdmin, async (req, res
 
   } catch (error) {
     console.error('Get analytics error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ==================== ADMIN USER MANAGEMENT ENDPOINTS ====================
+
+// GET /api/admin/users - Get all users with pagination and filtering
+app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+    const accountType = req.query.accountType;
+    const status = req.query.status;
+    const search = req.query.search;
+
+    let whereClauses = [];
+    let queryParams = [];
+
+    // Add filters if provided
+    if (accountType && accountType !== 'all') {
+      whereClauses.push('account_type = ?');
+      queryParams.push(accountType);
+    }
+
+    if (status && status !== 'all') {
+      const isActive = status === 'active' ? 1 : 0;
+      whereClauses.push('is_active = ?');
+      queryParams.push(isActive);
+    }
+
+    if (search) {
+      whereClauses.push('(first_name LIKE ? OR last_name LIKE ? OR email LIKE ?)');
+      queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    // Build WHERE clause
+    const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+    // Get users with pagination
+    const [users] = await pool.execute(
+      `SELECT id, first_name, last_name, email, phone, account_type, 
+              profile_image, company, website, bio, is_active, email_verified,
+              created_at, updated_at
+       FROM users 
+       ${whereClause}
+       ORDER BY created_at DESC 
+       LIMIT ? OFFSET ?`,
+      [...queryParams, limit, offset]
+    );
+
+    // Get total count
+    const [totalCountResult] = await pool.execute(
+      `SELECT COUNT(*) as total FROM users ${whereClause}`,
+      queryParams
+    );
+
+    res.json({
+      users: users,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalCountResult[0].total / limit),
+        totalUsers: totalCountResult[0].total,
+        hasNextPage: page < Math.ceil(totalCountResult[0].total / limit),
+        hasPreviousPage: page > 1
+      }
+    });
+
+  } catch (error) {
+    console.error('Get users error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/admin/users/:id - Get a specific user
+app.get('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    const [users] = await pool.execute(
+      `SELECT id, first_name, last_name, email, phone, account_type, 
+              profile_image, company, website, bio, is_active, email_verified,
+              created_at, updated_at
+       FROM users 
+       WHERE id = ?`,
+      [userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json(users[0]);
+  } catch (error) {
+    console.error('Get user error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/admin/users - Create a new user
+app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { firstName, lastName, email, phone, password, accountType, isActive, company, website, bio } = req.body;
+
+    // Validate required fields
+    if (!firstName || !lastName || !email || !password) {
+      return res.status(400).json({
+        error: 'First name, last name, email, and password are required'
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Please provide a valid email address' });
+    }
+
+    // Validate password strength
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    }
+
+    // Check if email exists
+    const [existingUsers] = await pool.execute(
+      'SELECT * FROM users WHERE email = ?',
+      [email]
+    );
+
+    if (existingUsers.length > 0) {
+      return res.status(400).json({ error: 'Email already exists' });
+    }
+
+    // Hash password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    // Insert new user
+    const [result] = await pool.execute(
+      `INSERT INTO users 
+       (first_name, last_name, email, phone, password_hash, account_type, is_active, company, website, bio, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [firstName.trim(), lastName.trim(), email.trim(), phone || null, hashedPassword, 
+       accountType || 'student', isActive !== undefined ? isActive : true, 
+       company || null, website || null, bio || null]
+    );
+
+    // Create user stats entry
+    await pool.execute(
+      'INSERT INTO user_stats (user_id) VALUES (?)',
+      [result.insertId]
+    );
+
+    console.log('User created successfully by admin:', { userId: result.insertId, email });
+    
+    // Get the newly created user to return
+    const [newUser] = await pool.execute(
+      `SELECT id, first_name, last_name, email, phone, account_type, 
+              profile_image, company, website, bio, is_active, email_verified,
+              created_at, updated_at
+       FROM users 
+       WHERE id = ?`,
+      [result.insertId]
+    );
+
+    res.status(201).json({
+      message: 'User created successfully',
+      user: newUser[0]
+    });
+
+  } catch (error) {
+    console.error('Create user error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/admin/users/:id - Update a user
+app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { firstName, lastName, email, phone, accountType, isActive, company, website, bio } = req.body;
+
+    // Check if user exists
+    const [users] = await pool.execute(
+      'SELECT * FROM users WHERE id = ?',
+      [userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Validate email if changed
+    if (email && email !== users[0].email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({ error: 'Please provide a valid email address' });
+      }
+
+      // Check if new email already exists
+      const [existingUsers] = await pool.execute(
+        'SELECT * FROM users WHERE email = ? AND id != ?',
+        [email, userId]
+      );
+
+      if (existingUsers.length > 0) {
+        return res.status(400).json({ error: 'Email already exists' });
+      }
+    }
+
+    // Update user
+    await pool.execute(
+      `UPDATE users SET 
+       first_name = ?, last_name = ?, email = ?, phone = ?, account_type = ?, 
+       is_active = ?, company = ?, website = ?, bio = ?, updated_at = NOW()
+       WHERE id = ?`,
+      [firstName || users[0].first_name, 
+       lastName || users[0].last_name, 
+       email || users[0].email, 
+       phone || users[0].phone, 
+       accountType || users[0].account_type,
+       isActive !== undefined ? isActive : users[0].is_active,
+       company || users[0].company,
+       website || users[0].website,
+       bio || users[0].bio,
+       userId]
+    );
+
+    // Get the updated user to return
+    const [updatedUser] = await pool.execute(
+      `SELECT id, first_name, last_name, email, phone, account_type, 
+              profile_image, company, website, bio, is_active, email_verified,
+              created_at, updated_at
+       FROM users 
+       WHERE id = ?`,
+      [userId]
+    );
+
+    res.json({
+      message: 'User updated successfully',
+      user: updatedUser[0]
+    });
+
+  } catch (error) {
+    console.error('Update user error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/admin/users/:id - Delete a user
+app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    // Check if user exists
+    const [users] = await pool.execute(
+      'SELECT * FROM users WHERE id = ?',
+      [userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // For safety, we'll do a soft delete by setting is_active to false
+    // If you want to permanently delete, use DELETE query instead
+    await pool.execute(
+      'UPDATE users SET is_active = false, updated_at = NOW() WHERE id = ?',
+      [userId]
+    );
+
+    res.json({ message: 'User deleted successfully' });
+
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/admin/users/:id/password - Reset user password (admin only)
+app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({ error: 'Password is required' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    }
+
+    // Check if user exists
+    const [users] = await pool.execute(
+      'SELECT * FROM users WHERE id = ?',
+      [userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Hash new password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    // Update password
+    await pool.execute(
+      'UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?',
+      [hashedPassword, userId]
+    );
+
+    res.json({ message: 'Password reset successfully' });
+
+  } catch (error) {
+    console.error('Reset password error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
