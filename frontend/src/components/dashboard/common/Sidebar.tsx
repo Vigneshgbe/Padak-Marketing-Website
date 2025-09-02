@@ -48,25 +48,21 @@ const Sidebar: React.FC<SidebarProps> = ({
     />
   );
 
-  const getNavItems = (): NavItem[] => {
+   const getNavItems = (): NavItem[] => {
     // Admin navigation items
     if (user?.accountType === 'admin') {
       return [
-        { id: 'admin-dashboard', label: 'Admin Dashboard', icon: <LayoutDashboard size={20} /> },
-        { id: 'analytics', label: 'Analytics Data', icon: <BarChart size={20} /> },
-        { id: 'users', label: 'User Management', icon: <Users size={20} />, isManagementSection: true },
-        { id: 'courses', label: 'Course Management', icon: <BookOpen size={20} />, isManagementSection: true },
-        { id: 'assignments', label: 'Assignment Manage', icon: <HardHat size={20} />, isManagementSection: true }, // Used HardHat
-        { id: 'enrollments', label: 'Enrollment Manage', icon: <UserCheck size={20} />, isManagementSection: true },
-        { id: 'certificates', label: 'Certificate Manage', icon: <Award size={20} />, isManagementSection: true }, // Used Award
-        { id: 'service-categories', label: 'Service Categories', icon: <Code size={20} />, isManagementSection: true }, // Used Code
-        { id: 'service-sub-categories', label: 'Sub-Categories', icon: <Layers size={20} />, isManagementSection: true }, // Used Layers
-        { id: 'service-offerings', label: 'Service Offerings', icon: <Briefcase size={20} />, isManagementSection: true },
-        { id: 'service-requests', label: 'Service Requests', icon: <MessageSquare size={20} />, isManagementSection: true },
-        { id: 'internships', label: 'Internship Manage', icon: <GraduationCap size={20} />, isManagementSection: true }, // Used GraduationCap
-        { id: 'contacts', label: 'Contact Messages', icon: <Mail size={20} />, isManagementSection: true }, // Used Mail
-        { id: 'calendar', label: 'Calendar Events', icon: <Calendar size={20} />, isManagementSection: true },
-        { id: 'settings', label: 'Settings', icon: <Settings size={20} /> }, // Admin specific settings
+        { id: 'dashboard', label: 'Admin Dashboard', icon: <LayoutDashboard size={20} /> },
+        { id: 'admin-users', label: 'User Management', icon: <Users size={20} /> },
+        { id: 'admin-courses', label: 'Course Management', icon: <BookOpen size={20} /> },
+        { id: 'admin-assignments', label: 'Assignment Management', icon: <ListChecks size={20} /> },
+        { id: 'admin-enrollments', label: 'Enrollment Management', icon: <UserCheck size={20} /> },
+        { id: 'admin-certificates', label: 'Certificate Management', icon: <BadgeCheck size={20} /> },
+        { id: 'admin-services', label: 'Service Management', icon: <Briefcase size={20} /> },
+        { id: 'admin-contacts', label: 'Contact Messages', icon: <MessageSquare size={20} /> },
+        { id: 'admin-calendar', label: 'Calendar Events', icon: <Calendar size={20} /> },
+        { id: 'admin-service-requests', label: 'Service Requests', icon: <FileText size={20} /> },
+        { id: 'settings', label: 'Settings', icon: <Settings size={20} /> },
       ];
     }
 

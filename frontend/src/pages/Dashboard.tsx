@@ -1,4 +1,4 @@
-// src/pages/Dashboard.tsx
+// src/pages/Dashboard.tsx (updated)
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/use-auth';
 import { Navigate } from 'react-router-dom';
@@ -9,7 +9,6 @@ import StudentDashboard from '../components/dashboard/role-specific/StudentDashb
 import ProfessionalDashboard from '../components/dashboard/role-specific/ProfessionalDashboard';
 import BusinessDashboard from '../components/dashboard/role-specific/BusinessDashboard';
 import AgencyDashboard from '../components/dashboard/role-specific/AgencyDashboard';
-import AdminDashboard from '../components/dashboard/role-specific/AdminDashboard';
 import DashboardHome from './dashboard/DashboardHome';
 import SocialFeed from '../components/dashboard/social/SocialFeed';
 import MyCourses from './dashboard/MyCourses';
@@ -21,6 +20,18 @@ import Services from './dashboard/Services';
 import Settings from './dashboard/Settings';
 import { UserStats } from '../lib/types';
 import Interns from './Interns';
+
+// Admin pages
+import AdminOverview from './dashboard/admin/AdminOverview';
+import UserManagement from './dashboard/admin/UserManagement';
+import CourseManagement from './dashboard/admin/CourseManagement';
+import AssignmentManagement from './dashboard/admin/AssignmentManagement';
+import EnrollmentManagement from './dashboard/admin/EnrollmentManagement';
+import CertificateManagement from './dashboard/admin/CertificateManagement';
+import ServiceManagement from './dashboard/admin/ServiceManagement';
+import ContactManagement from './dashboard/admin/ContactManagement';
+import CalendarManagement from './dashboard/admin/CalendarManagement';
+import ServiceRequests from './dashboard/admin/ServiceRequests';
 
 const Dashboard: React.FC = () => {
   const { user, loading } = useAuth();
@@ -83,13 +94,39 @@ const Dashboard: React.FC = () => {
         case 'agency':
           return <AgencyDashboard user={user} stats={userStats} />;
         case 'admin':
-          return <AdminDashboard />;
+          return <AdminOverview />;
         default:
           return <DashboardHome user={user} stats={userStats} />;
       }
     }
 
-    // Render other views
+    // Admin specific views
+    if (user.accountType === 'admin') {
+      switch (activeView) {
+        case 'admin-users':
+          return <UserManagement />;
+        case 'admin-courses':
+          return <CourseManagement />;
+        case 'admin-assignments':
+          return <AssignmentManagement />;
+        case 'admin-enrollments':
+          return <EnrollmentManagement />;
+        case 'admin-certificates':
+          return <CertificateManagement />;
+        case 'admin-services':
+          return <ServiceManagement />;
+        case 'admin-contacts':
+          return <ContactManagement />;
+        case 'admin-calendar':
+          return <CalendarManagement />;
+        case 'admin-service-requests':
+          return <ServiceRequests />;
+        default:
+          return <AdminOverview />;
+      }
+    }
+
+    // Render other views for non-admin users
     switch (activeView) {
       case 'social':
         return <SocialFeed />;
