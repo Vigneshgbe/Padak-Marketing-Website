@@ -3811,6 +3811,7 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
 });
 
 // ==================== ADMIN ENROLLMENT MANAGEMENT ENDPOINTS ====================
+
 // GET all enrollments (admin only)
 app.get('/api/admin/enrollments', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -3867,6 +3868,153 @@ app.delete('/api/admin/enrollments/:id', authenticateToken, requireAdmin, async 
   } catch (error) {
     console.error('Error deleting enrollment:', error);
     res.status(500).json({ error: 'Failed to delete enrollment' });
+  }
+});
+
+// ==================== ADMIN COURSE MANAGEMENT ENDPOINTS ====================
+// GET all courses (admin only)
+app.get('/api/admin/courses', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [courses] = await pool.execute(`
+      SELECT 
+        id,
+        title,
+        description,
+        instructor_name,
+        duration_weeks,
+        difficulty_level,
+        category,
+        price,
+        thumbnail,
+        is_active,
+        created_at,
+        updated_at
+      FROM courses 
+      ORDER BY created_at DESC
+    `);
+
+    res.json(courses);
+  } catch (error) {
+    console.error('Error fetching courses:', error);
+    res.status(500).json({ error: 'Failed to fetch courses' });
+  }
+});
+
+// CREATE new course (admin only)
+app.post('/api/admin/courses', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const {
+      title,
+      description,
+      instructor_name,
+      duration_weeks,
+      difficulty_level,
+      category,
+      price,
+      is_active
+    } = req.body;
+
+    // Validate required fields
+    if (!title || !instructor_name || !duration_weeks || !difficulty_level || !category || !price) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const [result] = await pool.execute(
+      `INSERT INTO courses 
+        (title, description, instructor_name, duration_weeks, difficulty_level, category, price, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [title, description, instructor_name, duration_weeks, difficulty_level, category, price, is_active || 1]
+    );
+
+    res.status(201).json({ 
+      message: 'Course created successfully',
+      courseId: result.insertId
+    });
+  } catch (error) {
+    console.error('Error creating course:', error);
+    res.status(500).json({ error: 'Failed to create course' });
+  }
+});
+
+// UPDATE course (admin only)
+app.put('/api/admin/courses/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      title,
+      description,
+      instructor_name,
+      duration_weeks,
+      difficulty_level,
+      category,
+      price,
+      is_active
+    } = req.body;
+
+    // Validate required fields
+    if (!title || !instructor_name || !duration_weeks || !difficulty_level || !category || !price) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    await pool.execute(
+      `UPDATE courses SET 
+        title = ?, description = ?, instructor_name = ?, duration_weeks = ?, 
+        difficulty_level = ?, category = ?, price = ?, is_active = ?, updated_at = NOW()
+        WHERE id = ?`,
+      [title, description, instructor_name, duration_weeks, difficulty_level, category, price, is_active, id]
+    );
+
+    res.json({ message: 'Course updated successfully' });
+  } catch (error) {
+    console.error('Error updating course:', error);
+    res.status(500).json({ error: 'Failed to update course' });
+  }
+});
+
+// DELETE course (admin only)
+app.delete('/api/admin/courses/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if course has enrollments
+    const [enrollments] = await pool.execute(
+      'SELECT COUNT(*) as count FROM enrollments WHERE course_id = ?',
+      [id]
+    );
+
+    if (enrollments[0].count > 0) {
+      return res.status(400).json({ error: 'Cannot delete course with active enrollments' });
+    }
+
+    await pool.execute('DELETE FROM courses WHERE id = ?', [id]);
+
+    res.json({ message: 'Course deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting course:', error);
+    res.status(500).json({ error: 'Failed to delete course' });
+  }
+});
+
+// Upload course thumbnail
+app.post('/api/admin/courses/:id/thumbnail', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const thumbnailPath = `/uploads/courses/${req.file.filename}`;
+
+    await pool.execute(
+      'UPDATE courses SET thumbnail = ?, updated_at = NOW() WHERE id = ?',
+      [thumbnailPath, id]
+    );
+
+    res.json({ message: 'Thumbnail uploaded successfully', thumbnail: thumbnailPath });
+  } catch (error) {
+    console.error('Error uploading thumbnail:', error);
+    res.status(500).json({ error: 'Failed to upload thumbnail' });
   }
 });
 
