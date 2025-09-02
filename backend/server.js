@@ -4100,24 +4100,43 @@ app.delete('/api/admin/assignments/:id', authenticateToken, requireAdmin, async 
 
 // ==================== ADMIN CONTACT MESSAGES ENDPOINTS ====================
 
-// Get contact messages (admin only)
+// Get contact messages (admin only) - CORRECTED VERSION
 app.get('/api/admin/contact-messages', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const offset = (page - 1) * limit;
 
+    // Check if status column exists in the table
+    let statusColumnExists = true;
+    try {
+      await pool.execute('SELECT status FROM contact_messages LIMIT 1');
+    } catch (error) {
+      statusColumnExists = false;
+    }
+
+    const selectFields = statusColumnExists 
+      ? `id, first_name, last_name, email, phone, company, message, status, created_at`
+      : `id, first_name, last_name, email, phone, company, message, created_at`;
+
     const [messages] = await pool.execute(
-      `SELECT id, first_name, last_name, email, phone, company, message, created_at
-         FROM contact_messages 
-         ORDER BY created_at DESC 
-         LIMIT ? OFFSET ?`,
+      `SELECT ${selectFields}
+       FROM contact_messages 
+       ORDER BY created_at DESC 
+       LIMIT ? OFFSET ?`,
       [limit, offset]
     );
 
     const [totalCount] = await pool.execute(
       'SELECT COUNT(*) as total FROM contact_messages'
     );
+
+    // If status column doesn't exist, add default status to each message
+    if (!statusColumnExists) {
+      messages.forEach(message => {
+        message.status = 'pending';
+      });
+    }
 
     res.json({
       messages: messages,
@@ -4130,50 +4149,6 @@ app.get('/api/admin/contact-messages', authenticateToken, requireAdmin, async (r
       }
     });
 
-  } catch (error) {
-    console.error('Get contact messages error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// GET all contact messages (admin only)
-app.get('/api/admin/contact-messages', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const offset = (page - 1) * limit;
-
-    const [messages] = await pool.execute(
-      `SELECT 
-        id,
-        first_name,
-        last_name,
-        email,
-        phone,
-        company,
-        message,
-        status,
-        created_at
-      FROM contact_messages 
-      ORDER BY created_at DESC 
-      LIMIT ? OFFSET ?`,
-      [limit, offset]
-    );
-
-    const [totalCount] = await pool.execute(
-      'SELECT COUNT(*) as total FROM contact_messages'
-    );
-
-    res.json({
-      messages: messages,
-      pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(totalCount[0].total / limit),
-        totalMessages: totalCount[0].total,
-        hasNextPage: page < Math.ceil(totalCount[0].total / limit),
-        hasPreviousPage: page > 1
-      }
-    });
   } catch (error) {
     console.error('Error fetching contact messages:', error);
     res.status(500).json({ error: 'Failed to fetch contact messages' });
@@ -4185,6 +4160,23 @@ app.put('/api/admin/contact-messages/:id', authenticateToken, requireAdmin, asyn
   try {
     const { id } = req.params;
     const { status } = req.body;
+
+    // First check if status column exists
+    let statusColumnExists = true;
+    try {
+      await pool.execute('SELECT status FROM contact_messages LIMIT 1');
+    } catch (error) {
+      statusColumnExists = false;
+      
+      // If status column doesn't exist, add it to the table
+      if (!statusColumnExists) {
+        await pool.execute(`
+          ALTER TABLE contact_messages 
+          ADD COLUMN status ENUM('pending', 'contacted', 'resolved', 'closed') DEFAULT 'pending'
+        `);
+        statusColumnExists = true;
+      }
+    }
 
     if (!status || !['pending', 'contacted', 'resolved', 'closed'].includes(status)) {
       return res.status(400).json({ error: 'Invalid status value' });

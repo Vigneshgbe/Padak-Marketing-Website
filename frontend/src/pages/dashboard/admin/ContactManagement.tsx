@@ -53,7 +53,9 @@ const ContactManagement: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json();
-        setContacts(data.messages || data);
+        // Handle both response formats (array or object with messages property)
+        const messages = Array.isArray(data) ? data : (data.messages || []);
+        setContacts(messages);
       } else {
         throw new Error('Failed to fetch contact messages');
       }
