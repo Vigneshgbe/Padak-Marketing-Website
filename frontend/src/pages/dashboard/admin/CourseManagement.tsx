@@ -1,19 +1,58 @@
 // src/pages/dashboard/admin/CourseManagement.tsx
-import React, { useState } from 'react';
-import { Edit, Trash2, Plus, Search, Filter } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Edit, Trash2, Plus, Search, Filter, Save, X, Upload } from 'lucide-react';
 import DataTable from '../../../components/admin/DataTable';
 import StatusBadge from '../../../components/admin/StatusBadge';
 import Modal from '../../../components/admin/Modal';
 import { Course } from '../../../lib/admin-types';
-import { useAdminData } from '../../../hooks/useAdminData';
 
 const CourseManagement: React.FC = () => {
-  const { data: courses, loading, error, refetch } = useAdminData('/api/admin/courses');
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'create' | 'edit' | 'delete'>('create');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
+  const [saving, setSaving] = useState(false);
+  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
+
+  useEffect(() => {
+    fetchCourses();
+  }, []);
+
+  const fetchCourses = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = 'http://localhost:5000';
+      const response = await fetch(`${baseURL}/api/admin/courses`, {
+        method: 'GET',
+        headers,
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCourses(data);
+      } else {
+        throw new Error('Failed to fetch courses');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleEditCourse = (course: Course) => {
     setSelectedCourse(course);
@@ -33,6 +72,92 @@ const CourseManagement: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  const handleSaveCourse = async (formData: FormData) => {
+    try {
+      setSaving(true);
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {};
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = 'http://localhost:5000';
+      const url = modalType === 'create' 
+        ? `${baseURL}/api/admin/courses`
+        : `${baseURL}/api/admin/courses/${selectedCourse?.id}`;
+
+      const method = modalType === 'create' ? 'POST' : 'PUT';
+
+      const response = await fetch(url, {
+        method,
+        headers,
+        credentials: 'include',
+        body: formData
+      });
+
+      if (response.ok) {
+        setIsModalOpen(false);
+        setThumbnailFile(null);
+        fetchCourses(); // Refresh the data
+      } else {
+        throw new Error('Failed to save course');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save course');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedCourse) return;
+
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = 'http://localhost:5000';
+      const response = await fetch(`${baseURL}/api/admin/courses/${selectedCourse.id}`, {
+        method: 'DELETE',
+        headers,
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        setIsModalOpen(false);
+        fetchCourses(); // Refresh the data
+      } else {
+        throw new Error('Failed to delete course');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete course');
+    }
+  };
+
+  const handleThumbnailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setThumbnailFile(e.target.files[0]);
+    }
+  };
+
+  const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    
+    if (thumbnailFile) {
+      formData.append('thumbnail', thumbnailFile);
+    }
+
+    handleSaveCourse(formData);
+  };
+
   const filteredCourses = courses.filter((course: Course) => {
     // Apply search filter
     if (searchTerm && !`${course.title} ${course.instructor_name} ${course.category}`.toLowerCase().includes(searchTerm.toLowerCase())) {
@@ -48,18 +173,6 @@ const CourseManagement: React.FC = () => {
     
     return true;
   });
-
-  const handleSaveCourse = async () => {
-    // Implementation for saving course
-    setIsModalOpen(false);
-    refetch();
-  };
-
-  const handleDeleteConfirm = async () => {
-    // Implementation for deleting course
-    setIsModalOpen(false);
-    refetch();
-  };
 
   return (
     <div className="space-y-6">
@@ -118,7 +231,7 @@ const CourseManagement: React.FC = () => {
           </div>
           <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
           <button
-            onClick={() => refetch()}
+            onClick={fetchCourses}
             className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
           >
             Retry
@@ -134,7 +247,7 @@ const CourseManagement: React.FC = () => {
             { header: 'Instructor', accessor: 'instructor_name' },
             {
               header: 'Price',
-              accessor: (course) => `₹${course.price.toLocaleString()}`
+              accessor: (course) => `₹${course.price?.toLocaleString() || '0'}`
             },
             {
               header: 'Difficulty',
@@ -157,6 +270,7 @@ const CourseManagement: React.FC = () => {
                   handleEditCourse(course);
                 }}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                title="Edit course"
               >
                 <Edit size={16} className="text-blue-500" />
               </button>
@@ -166,6 +280,7 @@ const CourseManagement: React.FC = () => {
                   handleDeleteCourse(course);
                 }}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                title="Delete course"
               >
                 <Trash2 size={16} className="text-red-500" />
               </button>
@@ -178,125 +293,190 @@ const CourseManagement: React.FC = () => {
       <Modal
         isOpen={isModalOpen && (modalType === 'create' || modalType === 'edit')}
         title={modalType === 'create' ? 'Create New Course' : 'Edit Course'}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setThumbnailFile(null);
+        }}
         size="lg"
       >
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Course Title
-            </label>
-            <input
-              type="text"
-              defaultValue={selectedCourse?.title || ''}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Instructor Name
-            </label>
-            <input
-              type="text"
-              defaultValue={selectedCourse?.instructor_name || ''}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Description
-            </label>
-            <textarea
-              defaultValue={selectedCourse?.description || ''}
-              rows={4}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <form onSubmit={handleFormSubmit}>
+          <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Category
+                Course Title *
               </label>
               <input
                 type="text"
-                defaultValue={selectedCourse?.category || ''}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
+                name="title"
+                defaultValue={selectedCourse?.title || ''}
+                required
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Difficulty Level
-              </label>
-              <select
-                defaultValue={selectedCourse?.difficulty_level || ''}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
-              >
-                <option value="beginner">Beginner</option>
-                <option value="intermediate">Intermediate</option>
-                <option value="advanced">Advanced</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Duration (Weeks)
+                Instructor Name *
               </label>
               <input
-                type="number"
-                min="1"
-                defaultValue={selectedCourse?.duration_weeks || ''}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Price (₹)
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                defaultValue={selectedCourse?.price || ''}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
+                type="text"
+                name="instructor_name"
+                defaultValue={selectedCourse?.instructor_name || ''}
+                required
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Status
+                Description
               </label>
-              <select
-                defaultValue={selectedCourse?.is_active ? "1" : "0"}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
+              <textarea
+                name="description"
+                defaultValue={selectedCourse?.description || ''}
+                rows={4}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Category *
+                </label>
+                <input
+                  type="text"
+                  name="category"
+                  defaultValue={selectedCourse?.category || ''}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Difficulty Level *
+                </label>
+                <select
+                  name="difficulty_level"
+                  defaultValue={selectedCourse?.difficulty_level || 'beginner'}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                >
+                  <option value="beginner">Beginner</option>
+                  <option value="intermediate">Intermediate</option>
+                  <option value="advanced">Advanced</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Duration (Weeks) *
+                </label>
+                <input
+                  type="number"
+                  name="duration_weeks"
+                  min="1"
+                  defaultValue={selectedCourse?.duration_weeks || ''}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Price (₹) *
+                </label>
+                <input
+                  type="number"
+                  name="price"
+                  min="0"
+                  step="0.01"
+                  defaultValue={selectedCourse?.price || ''}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Status
+                </label>
+                <select
+                  name="is_active"
+                  defaultValue={selectedCourse?.is_active ? "1" : "0"}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                >
+                  <option value="1">Active</option>
+                  <option value="0">Inactive</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Thumbnail
+              </label>
+              <div className="flex items-center gap-2">
+                <label className="flex-1 cursor-pointer">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleThumbnailChange}
+                    className="hidden"
+                  />
+                  <div className="flex items-center justify-center gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
+                    <Upload size={16} />
+                    <span>{thumbnailFile ? thumbnailFile.name : 'Choose thumbnail'}</span>
+                  </div>
+                </label>
+              </div>
+              {selectedCourse?.thumbnail && !thumbnailFile && (
+                <div className="mt-2">
+                  <p className="text-sm text-gray-500">Current thumbnail:</p>
+                  <img 
+                    src={selectedCourse.thumbnail} 
+                    alt="Course thumbnail" 
+                    className="h-20 object-cover rounded mt-1"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setThumbnailFile(null);
+                }}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+                disabled={saving}
               >
-                <option value="1">Active</option>
-                <option value="0">Inactive</option>
-              </select>
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 disabled:opacity-50 flex items-center"
+              >
+                {saving ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    {modalType === 'create' ? 'Creating...' : 'Updating...'}
+                  </>
+                ) : (
+                  <>
+                    <Save size={16} className="mr-2" />
+                    {modalType === 'create' ? 'Create' : 'Update'}
+                  </>
+                )}
+              </button>
             </div>
           </div>
-
-          <div className="flex justify-end gap-2 mt-6">
-            <button
-              onClick={() => setIsModalOpen(false)}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSaveCourse}
-              className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600"
-            >
-              {modalType === 'create' ? 'Create' : 'Update'}
-            </button>
-          </div>
-        </div>
+        </form>
       </Modal>
 
       {/* Delete Confirmation Modal */}
