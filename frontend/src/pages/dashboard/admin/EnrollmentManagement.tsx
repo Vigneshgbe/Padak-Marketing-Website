@@ -24,12 +24,12 @@ const EnrollmentManagement: React.FC = () => {
     if (searchTerm && !`${enrollment.user_name} ${enrollment.course_name}`.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false;
     }
-    
+
     // Apply status filter
     if (selectedFilter !== 'all' && enrollment.status !== selectedFilter) {
       return false;
     }
-    
+
     return true;
   });
 
@@ -66,7 +66,7 @@ const EnrollmentManagement: React.FC = () => {
               <option value="all">All Statuses</option>
               <option value="active">Active</option>
               <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
+              <option value="dropped">Dropped</option> {/* Changed from cancelled */}
             </select>
           </div>
         </div>
@@ -88,7 +88,7 @@ const EnrollmentManagement: React.FC = () => {
           <button
             onClick={() => refetch()}
             className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
-            >
+          >
             Retry
           </button>
         </div>
