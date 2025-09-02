@@ -1,24 +1,18 @@
+// src/components/dashboard/common/Sidebar.tsx (updated)
 import React from 'react';
 import {
   LayoutDashboard, BookOpen, ListChecks, BadgeCheck, Calendar,
   Users, Briefcase, BarChart, Settings, LogOut,
   Shield, UserCheck, MessageSquare, FileText,
   Sun, Moon, User,
-  // ADDED MISSING ICONS:
-  Award,      // For Certificate Management
-  HardHat,    // For Assignment Management
-  Code,       // For Service Categories
-  Layers,     // For Service Sub-Categories
-  Mail,       // For Contact Messages
-  GraduationCap // For Internship Management
+  Award, HardHat, Mail, GraduationCap
 } from 'lucide-react';
 import { useAuth } from '../../../hooks/use-auth';
 
 interface NavItem {
-  id: string; // Corresponds to activeView state
+  id: string;
   label: string;
   icon: React.ReactNode;
-  isManagementSection?: boolean; // New prop to indicate if it's an AdminDashboard section
 }
 
 interface SidebarProps {
@@ -48,20 +42,20 @@ const Sidebar: React.FC<SidebarProps> = ({
     />
   );
 
-   const getNavItems = (): NavItem[] => {
+  const getNavItems = (): NavItem[] => {
     // Admin navigation items
     if (user?.accountType === 'admin') {
       return [
         { id: 'dashboard', label: 'Admin Dashboard', icon: <LayoutDashboard size={20} /> },
         { id: 'admin-users', label: 'User Management', icon: <Users size={20} /> },
         { id: 'admin-courses', label: 'Course Management', icon: <BookOpen size={20} /> },
-        { id: 'admin-assignments', label: 'Assignment Management', icon: <ListChecks size={20} /> },
+        { id: 'admin-assignments', label: 'Assignment Management', icon: <HardHat size={20} /> },
         { id: 'admin-enrollments', label: 'Enrollment Management', icon: <UserCheck size={20} /> },
-        { id: 'admin-certificates', label: 'Certificate Management', icon: <BadgeCheck size={20} /> },
+        { id: 'admin-certificates', label: 'Certificate Management', icon: <Award size={20} /> },
         { id: 'admin-services', label: 'Service Management', icon: <Briefcase size={20} /> },
-        { id: 'admin-contacts', label: 'Contact Messages', icon: <MessageSquare size={20} /> },
+        { id: 'admin-contacts', label: 'Contact Messages', icon: <Mail size={20} /> },
         { id: 'admin-calendar', label: 'Calendar Events', icon: <Calendar size={20} /> },
-        { id: 'admin-service-requests', label: 'Service Requests', icon: <FileText size={20} /> },
+        { id: 'admin-service-requests', label: 'Service Requests', icon: <MessageSquare size={20} /> },
         { id: 'settings', label: 'Settings', icon: <Settings size={20} /> },
       ];
     }
@@ -71,7 +65,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
       { id: 'social', label: 'Social Feed', icon: <MessageSquare size={20} /> },
       { id: 'courses', label: 'My Courses', icon: <BookOpen size={20} /> },
-      { id: 'internships', label: 'Internships', icon: <Briefcase size={20} /> }, // User-facing internships
+      { id: 'internships', label: 'Internships', icon: <Briefcase size={20} /> },
       { id: 'assignments', label: 'Assignments', icon: <ListChecks size={20} /> },
       { id: 'certificates', label: 'Certificates', icon: <BadgeCheck size={20} /> },
       { id: 'calendar', label: 'Calendar', icon: <Calendar size={20} /> },
@@ -88,16 +82,12 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const navItems = getNavItems();
 
-  if (!user) return null; // Should ideally be handled by Dashboard.tsx redirect
+  if (!user) return null;
 
-  // Determine which item is active, especially for admin management sections
+  // Determine which item is active
   const isActive = (item: NavItem) => {
-    if (user?.accountType === 'admin') {
-      return activeView === item.id;
-    }
     return activeView === item.id;
   };
-
 
   return (
     <aside className="fixed lg:static z-30 h-screen w-64 bg-white dark:bg-gray-800 shadow-lg flex flex-col">
