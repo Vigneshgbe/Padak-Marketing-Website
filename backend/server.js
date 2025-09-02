@@ -3400,42 +3400,6 @@ app.post('/api/contact', async (req, res) => {
   }
 });
 
-// Get contact messages (admin only)
-app.get('/api/admin/contact-messages', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const offset = (page - 1) * limit;
-
-    const [messages] = await pool.execute(
-      `SELECT id, first_name, last_name, email, phone, company, message, created_at
-         FROM contact_messages 
-         ORDER BY created_at DESC 
-         LIMIT ? OFFSET ?`,
-      [limit, offset]
-    );
-
-    const [totalCount] = await pool.execute(
-      'SELECT COUNT(*) as total FROM contact_messages'
-    );
-
-    res.json({
-      messages: messages,
-      pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(totalCount[0].total / limit),
-        totalMessages: totalCount[0].total,
-        hasNextPage: page < Math.ceil(totalCount[0].total / limit),
-        hasPreviousPage: page > 1
-      }
-    });
-
-  } catch (error) {
-    console.error('Get contact messages error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
 // ==================== ANALYTICS ROUTES ====================
 
 // Get analytics data (admin only)
@@ -4131,6 +4095,124 @@ app.delete('/api/admin/assignments/:id', authenticateToken, requireAdmin, async 
   } catch (error) {
     console.error('Error deleting assignment:', error);
     res.status(500).json({ error: 'Failed to delete assignment' });
+  }
+});
+
+// ==================== ADMIN CONTACT MESSAGES ENDPOINTS ====================
+
+// Get contact messages (admin only)
+app.get('/api/admin/contact-messages', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    const [messages] = await pool.execute(
+      `SELECT id, first_name, last_name, email, phone, company, message, created_at
+         FROM contact_messages 
+         ORDER BY created_at DESC 
+         LIMIT ? OFFSET ?`,
+      [limit, offset]
+    );
+
+    const [totalCount] = await pool.execute(
+      'SELECT COUNT(*) as total FROM contact_messages'
+    );
+
+    res.json({
+      messages: messages,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalCount[0].total / limit),
+        totalMessages: totalCount[0].total,
+        hasNextPage: page < Math.ceil(totalCount[0].total / limit),
+        hasPreviousPage: page > 1
+      }
+    });
+
+  } catch (error) {
+    console.error('Get contact messages error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET all contact messages (admin only)
+app.get('/api/admin/contact-messages', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    const [messages] = await pool.execute(
+      `SELECT 
+        id,
+        first_name,
+        last_name,
+        email,
+        phone,
+        company,
+        message,
+        status,
+        created_at
+      FROM contact_messages 
+      ORDER BY created_at DESC 
+      LIMIT ? OFFSET ?`,
+      [limit, offset]
+    );
+
+    const [totalCount] = await pool.execute(
+      'SELECT COUNT(*) as total FROM contact_messages'
+    );
+
+    res.json({
+      messages: messages,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalCount[0].total / limit),
+        totalMessages: totalCount[0].total,
+        hasNextPage: page < Math.ceil(totalCount[0].total / limit),
+        hasPreviousPage: page > 1
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching contact messages:', error);
+    res.status(500).json({ error: 'Failed to fetch contact messages' });
+  }
+});
+
+// UPDATE contact message status (admin only)
+app.put('/api/admin/contact-messages/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!status || !['pending', 'contacted', 'resolved', 'closed'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status value' });
+    }
+
+    await pool.execute(
+      'UPDATE contact_messages SET status = ? WHERE id = ?',
+      [status, id]
+    );
+
+    res.json({ message: 'Contact message updated successfully' });
+  } catch (error) {
+    console.error('Error updating contact message:', error);
+    res.status(500).json({ error: 'Failed to update contact message' });
+  }
+});
+
+// DELETE contact message (admin only)
+app.delete('/api/admin/contact-messages/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await pool.execute('DELETE FROM contact_messages WHERE id = ?', [id]);
+
+    res.json({ message: 'Contact message deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting contact message:', error);
+    res.status(500).json({ error: 'Failed to delete contact message' });
   }
 });
 

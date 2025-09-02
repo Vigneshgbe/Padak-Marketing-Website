@@ -1,19 +1,68 @@
 // src/pages/dashboard/admin/ContactManagement.tsx
-import React, { useState } from 'react';
-import { Edit, Trash2, Mail, Phone, Search, Filter } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Edit, Trash2, Mail, Phone, Search, Filter, Save, X } from 'lucide-react';
 import DataTable from '../../../components/admin/DataTable';
 import StatusBadge from '../../../components/admin/StatusBadge';
 import Modal from '../../../components/admin/Modal';
-import { ContactMessage } from '../../../lib/admin-types';
-import { useAdminData } from '../../../hooks/useAdminData';
+
+interface ContactMessage {
+  id: number;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  company: string;
+  message: string;
+  status: 'pending' | 'contacted' | 'resolved' | 'closed';
+  created_at: string;
+}
 
 const ContactManagement: React.FC = () => {
-  const { data: contacts, loading, error, refetch } = useAdminData('/api/admin/contact-messages');
+  const [contacts, setContacts] = useState<ContactMessage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedContact, setSelectedContact] = useState<ContactMessage | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'edit' | 'delete'>('edit');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchContacts();
+  }, []);
+
+  const fetchContacts = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = 'http://localhost:5000';
+      const response = await fetch(`${baseURL}/api/admin/contact-messages`, {
+        method: 'GET',
+        headers,
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setContacts(data.messages || data);
+      } else {
+        throw new Error('Failed to fetch contact messages');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleEditContact = (contact: ContactMessage) => {
     setSelectedContact(contact);
@@ -27,7 +76,83 @@ const ContactManagement: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const filteredContacts = contacts.filter((contact: ContactMessage) => {
+  const handleSaveContact = async (formData: any) => {
+    if (!selectedContact) return;
+
+    try {
+      setSaving(true);
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = 'http://localhost:5000';
+      const response = await fetch(`${baseURL}/api/admin/contact-messages/${selectedContact.id}`, {
+        method: 'PUT',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify(formData)
+      });
+
+      if (response.ok) {
+        setIsModalOpen(false);
+        fetchContacts(); // Refresh the data
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to update contact message');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update contact message');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedContact) return;
+
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = 'http://localhost:5000';
+      const response = await fetch(`${baseURL}/api/admin/contact-messages/${selectedContact.id}`, {
+        method: 'DELETE',
+        headers,
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        setIsModalOpen(false);
+        fetchContacts(); // Refresh the data
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete contact message');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete contact message');
+    }
+  };
+
+  const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const formDataObj = Object.fromEntries(formData.entries());
+    
+    handleSaveContact(formDataObj);
+  };
+
+  const filteredContacts = contacts.filter((contact) => {
     // Apply search filter
     if (searchTerm && !`${contact.first_name} ${contact.last_name} ${contact.email} ${contact.message}`.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false;
@@ -41,16 +166,9 @@ const ContactManagement: React.FC = () => {
     return true;
   });
 
-  const handleSaveContact = async () => {
-    // Implementation for saving contact
-    setIsModalOpen(false);
-    refetch();
-  };
-
-  const handleDeleteConfirm = async () => {
-    // Implementation for deleting contact
-    setIsModalOpen(false);
-    refetch();
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString();
   };
 
   return (
@@ -101,7 +219,7 @@ const ContactManagement: React.FC = () => {
           </div>
           <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
           <button
-            onClick={() => refetch()}
+            onClick={fetchContacts}
             className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
           >
             Retry
@@ -121,7 +239,7 @@ const ContactManagement: React.FC = () => {
                 <div className="max-w-xs truncate">{contact.message}</div>
               )
             },
-            { header: 'Date', accessor: 'created_at' },
+            { header: 'Date', accessor: (contact) => formatDate(contact.created_at) },
             {
               header: 'Status',
               accessor: (contact) => (
@@ -137,6 +255,7 @@ const ContactManagement: React.FC = () => {
                   handleEditContact(contact);
                 }}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                title="Edit contact"
               >
                 <Edit size={16} className="text-blue-500" />
               </button>
@@ -146,6 +265,7 @@ const ContactManagement: React.FC = () => {
                   handleDeleteContact(contact);
                 }}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                title="Delete contact"
               >
                 <Trash2 size={16} className="text-red-500" />
               </button>
@@ -161,113 +281,137 @@ const ContactManagement: React.FC = () => {
         onClose={() => setIsModalOpen(false)}
         size="lg"
       >
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                First Name
-              </label>
-              <input
-                type="text"
-                defaultValue={selectedContact?.first_name || ''}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
-                disabled
-              />
+        {selectedContact && (
+          <form onSubmit={handleFormSubmit}>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    First Name
+                  </label>
+                  <input
+                    type="text"
+                    name="first_name"
+                    defaultValue={selectedContact.first_name}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                    disabled
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Last Name
+                  </label>
+                  <input
+                    type="text"
+                    name="last_name"
+                    defaultValue={selectedContact.last_name}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                    disabled
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  name="email"
+                  defaultValue={selectedContact.email}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                  disabled
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Phone
+                  </label>
+                  <input
+                    type="text"
+                    name="phone"
+                    defaultValue={selectedContact.phone || ''}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                    disabled
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Company
+                  </label>
+                  <input
+                    type="text"
+                    name="company"
+                    defaultValue={selectedContact.company || ''}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                    disabled
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Message
+                </label>
+                <textarea
+                  name="message"
+                  defaultValue={selectedContact.message}
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                  disabled
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Status
+                </label>
+                <select
+                  name="status"
+                  defaultValue={selectedContact.status}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="contacted">Contacted</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="closed">Closed</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 disabled:opacity-50 flex items-center"
+                >
+                  {saving ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Updating...
+                    </>
+                  ) : (
+                    <>
+                      <Save size={16} className="mr-2" />
+                      Update
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Last Name
-              </label>
-              <input
-                type="text"
-                defaultValue={selectedContact?.last_name || ''}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
-                disabled
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Email
-            </label>
-            <input
-              type="email"
-              defaultValue={selectedContact?.email || ''}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
-              disabled
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Phone
-              </label>
-              <input
-                type="text"
-                defaultValue={selectedContact?.phone || ''}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
-                disabled
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Company
-              </label>
-              <input
-                type="text"
-                defaultValue={selectedContact?.company || ''}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
-                disabled
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Message
-            </label>
-            <textarea
-              defaultValue={selectedContact?.message || ''}
-              rows={4}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
-              disabled
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Status
-            </label>
-            <select
-              defaultValue={selectedContact?.status || 'pending'}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
-            >
-              <option value="pending">Pending</option>
-              <option value="contacted">Contacted</option>
-              <option value="resolved">Resolved</option>
-              <option value="closed">Closed</option>
-            </select>
-          </div>
-
-          <div className="flex justify-end gap-2 mt-6">
-            <button
-              onClick={() => setIsModalOpen(false)}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSaveContact}
-              className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600"
-            >
-              Update
-            </button>
-          </div>
-        </div>
+          </form>
+        )}
       </Modal>
 
       {/* Delete Confirmation Modal */}
