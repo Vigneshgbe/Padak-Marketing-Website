@@ -72,11 +72,13 @@ const CourseManagement: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleSaveCourse = async (formData: FormData) => {
+  const handleSaveCourse = async (formData: any) => {
     try {
       setSaving(true);
       const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-      const headers: HeadersInit = {};
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
 
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
@@ -93,20 +95,49 @@ const CourseManagement: React.FC = () => {
         method,
         headers,
         credentials: 'include',
-        body: formData
+        body: JSON.stringify(formData)
       });
 
       if (response.ok) {
+        // If there's a thumbnail file, upload it separately
+        if (thumbnailFile && selectedCourse?.id) {
+          await uploadThumbnail(selectedCourse.id, thumbnailFile);
+        }
+        
         setIsModalOpen(false);
         setThumbnailFile(null);
         fetchCourses(); // Refresh the data
       } else {
-        throw new Error('Failed to save course');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to save course');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save course');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const uploadThumbnail = async (courseId: number, file: File) => {
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const formData = new FormData();
+      formData.append('thumbnail', file);
+
+      const response = await fetch(`http://localhost:5000/api/admin/courses/${courseId}/thumbnail`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to upload thumbnail');
+      }
+    } catch (error) {
+      console.error('Thumbnail upload error:', error);
+      throw error;
     }
   };
 
@@ -134,7 +165,8 @@ const CourseManagement: React.FC = () => {
         setIsModalOpen(false);
         fetchCourses(); // Refresh the data
       } else {
-        throw new Error('Failed to delete course');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete course');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete course');
@@ -150,12 +182,17 @@ const CourseManagement: React.FC = () => {
   const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const formDataObj = Object.fromEntries(formData.entries());
     
-    if (thumbnailFile) {
-      formData.append('thumbnail', thumbnailFile);
-    }
+    // Convert string values to appropriate types
+    const processedData = {
+      ...formDataObj,
+      duration_weeks: parseInt(formDataObj.duration_weeks as string),
+      price: parseFloat(formDataObj.price as string),
+      is_active: formDataObj.is_active === '1'
+    };
 
-    handleSaveCourse(formData);
+    handleSaveCourse(processedData);
   };
 
   const filteredCourses = courses.filter((course: Course) => {

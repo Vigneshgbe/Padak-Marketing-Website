@@ -3872,6 +3872,7 @@ app.delete('/api/admin/enrollments/:id', authenticateToken, requireAdmin, async 
 });
 
 // ==================== ADMIN COURSE MANAGEMENT ENDPOINTS ====================
+
 // GET all courses (admin only)
 app.get('/api/admin/courses', authenticateToken, requireAdmin, async (req, res) => {
   try {
