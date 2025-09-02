@@ -4577,6 +4577,81 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
   }
 });
 
+// ==================== ADMIN SERVICE REQUEST MANAGEMENT PAGE ====================
+// GET /api/admin/service-requests - Get all service requests
+app.get('/api/admin/service-requests', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [requests] = await pool.execute(`
+      SELECT 
+        sr.id,
+        sr.full_name as name,
+        sc.name as service,
+        DATE_FORMAT(sr.created_at, '%d %b %Y') as date,
+        sr.status,
+        sr.email,
+        sr.phone,
+        sr.company,
+        sr.website,
+        sr.project_details,
+        sr.budget_range,
+        sr.timeline,
+        sr.contact_method,
+        sr.additional_requirements
+      FROM service_requests sr
+      JOIN service_subcategories sc ON sr.subcategory_id = sc.id
+      ORDER BY sr.created_at DESC
+    `);
+
+    res.json(requests);
+  } catch (error) {
+    console.error('Error fetching service requests:', error);
+    res.status(500).json({ error: 'Failed to fetch service requests', details: error.message });
+  }
+});
+
+// PUT /api/admin/service-requests/:id - Update service request status
+app.put('/api/admin/service-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const [result] = await pool.execute(
+      'UPDATE service_requests SET status = ?, updated_at = NOW() WHERE id = ?',
+      [status, id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Service request not found' });
+    }
+
+    res.json({ message: 'Service request updated successfully' });
+  } catch (error) {
+    console.error('Error updating service request:', error);
+    res.status(500).json({ error: 'Failed to update service request', details: error.message });
+  }
+});
+
+// DELETE /api/admin/service-requests/:id - Delete service request
+app.delete('/api/admin/service-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [result] = await pool.execute(
+      'DELETE FROM service_requests WHERE id = ?',
+      [id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Service request not found' });
+    }
+
+    res.json({ message: 'Service request deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting service request:', error);
+    res.status(500).json({ error: 'Failed to delete service request', details: error.message });
+  }
+});
+
 // ==================== UTILITY ROUTES ====================
 
 // Health check endpoint
