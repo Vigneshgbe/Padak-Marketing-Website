@@ -3733,7 +3733,7 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
   }
 });
 
-// DELETE /api/admin/users/:id - Delete a user (admin only) - FIXED VERSION
+// DELETE /api/admin/users/:id - Delete a user
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
