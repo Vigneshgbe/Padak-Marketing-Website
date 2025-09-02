@@ -4395,6 +4395,188 @@ app.get('/api/admin/service-categories', authenticateToken, requireAdmin, async 
   }
 });
 
+// ==================== ADMIN CALENDAR MANAGEMENT ENDPOINTS ====================
+
+// Get all calendar events (admin only)
+app.get('/api/admin/calendar-events', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [events] = await pool.execute(`
+      SELECT 
+        cce.*,
+        u.first_name,
+        u.last_name,
+        u.email
+      FROM custom_calendar_events cce
+      LEFT JOIN users u ON cce.user_id = u.id
+      ORDER BY cce.event_date DESC, cce.event_time DESC
+    `);
+
+    res.json(events);
+  } catch (error) {
+    console.error('Error fetching calendar events:', error);
+    res.status(500).json({ error: 'Failed to fetch calendar events' });
+  }
+});
+
+// Get calendar event by ID (admin only)
+app.get('/api/admin/calendar-events/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const [events] = await pool.execute(`
+      SELECT 
+        cce.*,
+        u.first_name,
+        u.last_name,
+        u.email
+      FROM custom_calendar_events cce
+      LEFT JOIN users u ON cce.user_id = u.id
+      WHERE cce.id = ?
+    `, [id]);
+
+    if (events.length === 0) {
+      return res.status(404).json({ error: 'Calendar event not found' });
+    }
+
+    res.json(events[0]);
+  } catch (error) {
+    console.error('Error fetching calendar event:', error);
+    res.status(500).json({ error: 'Failed to fetch calendar event' });
+  }
+});
+
+// Create new calendar event (admin only)
+app.post('/api/admin/calendar-events', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const {
+      user_id,
+      title,
+      description,
+      event_date,
+      event_time,
+      event_type
+    } = req.body;
+
+    // Validate required fields
+    if (!title || !event_date) {
+      return res.status(400).json({ error: 'Title and date are required' });
+    }
+
+    // Validate date format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(event_date)) {
+      return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
+    }
+
+    const [result] = await pool.execute(`
+      INSERT INTO custom_calendar_events 
+        (user_id, title, description, event_date, event_time, event_type, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+    `, [
+      user_id || null,
+      title,
+      description || null,
+      event_date,
+      event_time || null,
+      event_type || 'custom'
+    ]);
+
+    res.status(201).json({
+      message: 'Calendar event created successfully',
+      eventId: result.insertId
+    });
+  } catch (error) {
+    console.error('Error creating calendar event:', error);
+    res.status(500).json({ error: 'Failed to create calendar event' });
+  }
+});
+
+// Update calendar event (admin only)
+app.put('/api/admin/calendar-events/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      user_id,
+      title,
+      description,
+      event_date,
+      event_time,
+      event_type
+    } = req.body;
+
+    // Check if event exists
+    const [events] = await pool.execute('SELECT id FROM custom_calendar_events WHERE id = ?', [id]);
+    if (events.length === 0) {
+      return res.status(404).json({ error: 'Calendar event not found' });
+    }
+
+    // Validate date format if provided
+    if (event_date) {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(event_date)) {
+        return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
+      }
+    }
+
+    await pool.execute(`
+      UPDATE custom_calendar_events 
+      SET user_id = ?, title = ?, description = ?, event_date = ?, 
+          event_time = ?, event_type = ?, updated_at = NOW()
+      WHERE id = ?
+    `, [
+      user_id || null,
+      title,
+      description || null,
+      event_date,
+      event_time || null,
+      event_type || 'custom',
+      id
+    ]);
+
+    res.json({ message: 'Calendar event updated successfully' });
+  } catch (error) {
+    console.error('Error updating calendar event:', error);
+    res.status(500).json({ error: 'Failed to update calendar event' });
+  }
+});
+
+// Delete calendar event (admin only)
+app.delete('/api/admin/calendar-events/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if event exists
+    const [events] = await pool.execute('SELECT id FROM custom_calendar_events WHERE id = ?', [id]);
+    if (events.length === 0) {
+      return res.status(404).json({ error: 'Calendar event not found' });
+    }
+
+    await pool.execute('DELETE FROM custom_calendar_events WHERE id = ?', [id]);
+
+    res.json({ message: 'Calendar event deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting calendar event:', error);
+    res.status(500).json({ error: 'Failed to delete calendar event' });
+  }
+});
+
+// Get all users for dropdown (admin only)
+app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [users] = await pool.execute(`
+      SELECT id, first_name, last_name, email 
+      FROM users 
+      WHERE is_active = 1 
+      ORDER BY first_name, last_name
+    `);
+
+    res.json(users);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
 // ==================== UTILITY ROUTES ====================
 
 // Health check endpoint
