@@ -1,31 +1,111 @@
 // src/pages/dashboard/admin/ServiceManagement.tsx
-import React, { useState } from 'react';
-import { Edit, Trash2, Plus, Search, Filter } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Edit, Trash2, Plus, Search, Filter, Save, X } from 'lucide-react';
 import DataTable from '../../../components/admin/DataTable';
 import StatusBadge from '../../../components/admin/StatusBadge';
 import Modal from '../../../components/admin/Modal';
-import { useAdminData } from '../../../hooks/useAdminData';
 
 interface Service {
   id: number;
   name: string;
-  category: string;
+  category_id: number;
+  category_name: string;
+  description: string;
   price: number;
   duration: string;
   rating: number;
   reviews: number;
+  features: string[];
   popular: boolean;
   is_active: boolean;
   created_at: string;
+  updated_at: string;
+}
+
+interface ServiceCategory {
+  id: number;
+  name: string;
+  description: string;
+  icon: string;
+  is_active: boolean;
 }
 
 const ServiceManagement: React.FC = () => {
-  const { data: services, loading, error, refetch } = useAdminData('/api/admin/services');
+  const [services, setServices] = useState<Service[]>([]);
+  const [categories, setCategories] = useState<ServiceCategory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'create' | 'edit' | 'delete'>('create');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
+  const [saving, setSaving] = useState(false);
+  const [featureInput, setFeatureInput] = useState('');
+
+  useEffect(() => {
+    fetchServices();
+    fetchCategories();
+  }, []);
+
+  const fetchServices = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = 'http://localhost:5000';
+      const response = await fetch(`${baseURL}/api/admin/services`, {
+        method: 'GET',
+        headers,
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setServices(data);
+      } else {
+        throw new Error('Failed to fetch services');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = 'http://localhost:5000';
+      const response = await fetch(`${baseURL}/api/admin/service-categories`, {
+        method: 'GET',
+        headers,
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCategories(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch categories:', err);
+    }
+  };
 
   const handleEditService = (service: Service) => {
     setSelectedService(service);
@@ -45,9 +125,105 @@ const ServiceManagement: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  const handleSaveService = async (formData: any) => {
+    try {
+      setSaving(true);
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = 'http://localhost:5000';
+      const url = modalType === 'create' 
+        ? `${baseURL}/api/admin/services`
+        : `${baseURL}/api/admin/services/${selectedService?.id}`;
+
+      const method = modalType === 'create' ? 'POST' : 'PUT';
+
+      // Prepare features array
+      const features = formData.features ? formData.features.split('\n').filter((f: string) => f.trim()) : [];
+
+      const response = await fetch(url, {
+        method,
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({
+          ...formData,
+          features: features,
+          popular: formData.popular === '1',
+          is_active: formData.is_active === '1'
+        })
+      });
+
+      if (response.ok) {
+        setIsModalOpen(false);
+        fetchServices(); // Refresh the data
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to save service');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save service');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedService) return;
+
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = 'http://localhost:5000';
+      const response = await fetch(`${baseURL}/api/admin/services/${selectedService.id}`, {
+        method: 'DELETE',
+        headers,
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        setIsModalOpen(false);
+        fetchServices(); // Refresh the data
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete service');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete service');
+    }
+  };
+
+  const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const formDataObj = Object.fromEntries(formData.entries());
+    handleSaveService(formDataObj);
+  };
+
+  const addFeature = () => {
+    if (featureInput.trim()) {
+      const featuresTextarea = document.getElementById('features') as HTMLTextAreaElement;
+      const currentFeatures = featuresTextarea.value;
+      featuresTextarea.value = currentFeatures ? `${currentFeatures}\n${featureInput}` : featureInput;
+      setFeatureInput('');
+    }
+  };
+
   const filteredServices = services.filter((service: Service) => {
     // Apply search filter
-    if (searchTerm && !`${service.name} ${service.category}`.toLowerCase().includes(searchTerm.toLowerCase())) {
+    if (searchTerm && !`${service.name} ${service.category_name}`.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false;
     }
     
@@ -60,18 +236,6 @@ const ServiceManagement: React.FC = () => {
     
     return true;
   });
-
-  const handleSaveService = async () => {
-    // Implementation for saving service
-    setIsModalOpen(false);
-    refetch();
-  };
-
-  const handleDeleteConfirm = async () => {
-    // Implementation for deleting service
-    setIsModalOpen(false);
-    refetch();
-  };
 
   return (
     <div className="space-y-6">
@@ -128,7 +292,7 @@ const ServiceManagement: React.FC = () => {
           </div>
           <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
           <button
-            onClick={() => refetch()}
+            onClick={fetchServices}
             className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
           >
             Retry
@@ -141,7 +305,7 @@ const ServiceManagement: React.FC = () => {
           data={filteredServices}
           columns={[
             { header: 'Name', accessor: 'name' },
-            { header: 'Category', accessor: 'category' },
+            { header: 'Category', accessor: 'category_name' },
             {
               header: 'Price',
               accessor: (service) => `₹${service.price.toLocaleString()}`
@@ -172,6 +336,7 @@ const ServiceManagement: React.FC = () => {
                   handleEditService(service);
                 }}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                title="Edit service"
               >
                 <Edit size={16} className="text-blue-500" />
               </button>
@@ -181,6 +346,7 @@ const ServiceManagement: React.FC = () => {
                   handleDeleteService(service);
                 }}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                title="Delete service"
               >
                 <Trash2 size={16} className="text-red-500" />
               </button>
@@ -196,101 +362,172 @@ const ServiceManagement: React.FC = () => {
         onClose={() => setIsModalOpen(false)}
         size="lg"
       >
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Service Name
-            </label>
-            <input
-              type="text"
-              defaultValue={selectedService?.name || ''}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Category
-            </label>
-            <input
-              type="text"
-              defaultValue={selectedService?.category || ''}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <form onSubmit={handleFormSubmit}>
+          <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Price (₹)
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                defaultValue={selectedService?.price || ''}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Duration
+                Service Name *
               </label>
               <input
                 type="text"
-                defaultValue={selectedService?.duration || ''}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
+                name="name"
+                defaultValue={selectedService?.name || ''}
+                required
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
               />
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Status
+                Category *
               </label>
               <select
-                defaultValue={selectedService?.is_active ? "1" : "0"}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
+                name="category_id"
+                defaultValue={selectedService?.category_id || ''}
+                required
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
               >
-                <option value="1">Active</option>
-                <option value="0">Inactive</option>
+                <option value="">Select a category</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
               </select>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Popular
+                Description
               </label>
-              <select
-                defaultValue={selectedService?.popular ? "1" : "0"}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
+              <textarea
+                name="description"
+                defaultValue={selectedService?.description || ''}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Price (₹) *
+                </label>
+                <input
+                  type="number"
+                  name="price"
+                  min="0"
+                  step="0.01"
+                  defaultValue={selectedService?.price || ''}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Duration
+                </label>
+                <input
+                  type="text"
+                  name="duration"
+                  defaultValue={selectedService?.duration || ''}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Features (one per line)
+              </label>
+              <div className="flex gap-2 mb-2">
+                <input
+                  type="text"
+                  value={featureInput}
+                  onChange={(e) => setFeatureInput(e.target.value)}
+                  placeholder="Add a feature"
+                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                />
+                <button
+                  type="button"
+                  onClick={addFeature}
+                  className="px-3 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600"
+                >
+                  Add
+                </button>
+              </div>
+              <textarea
+                id="features"
+                name="features"
+                defaultValue={selectedService?.features?.join('\n') || ''}
+                rows={4}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Status
+                </label>
+                <select
+                  name="is_active"
+                  defaultValue={selectedService?.is_active ? "1" : "0"}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                >
+                  <option value="1">Active</option>
+                  <option value="0">Inactive</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Popular
+                </label>
+                <select
+                  name="popular"
+                  defaultValue={selectedService?.popular ? "1" : "0"}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                >
+                  <option value="1">Yes</option>
+                  <option value="0">No</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+                disabled={saving}
               >
-                <option value="1">Yes</option>
-                <option value="0">No</option>
-              </select>
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 disabled:opacity-50 flex items-center"
+              >
+                {saving ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    {modalType === 'create' ? 'Creating...' : 'Updating...'}
+                  </>
+                ) : (
+                  <>
+                    <Save size={16} className="mr-2" />
+                    {modalType === 'create' ? 'Create' : 'Update'}
+                  </>
+                )}
+              </button>
             </div>
           </div>
-
-          <div className="flex justify-end gap-2 mt-6">
-            <button
-              onClick={() => setIsModalOpen(false)}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSaveService}
-              className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600"
-            >
-              {modalType === 'create' ? 'Create' : 'Update'}
-            </button>
-          </div>
-        </div>
+        </form>
       </Modal>
 
-       {/* Delete Confirmation Modal */}
+      {/* Delete Confirmation Modal */}
       <Modal
         isOpen={isModalOpen && modalType === 'delete'}
         title="Delete Service"
