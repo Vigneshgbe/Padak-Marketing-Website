@@ -3353,6 +3353,73 @@ app.get('/api/admin/service-requests', authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/admin/users - Get all users (admin only)
+app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    // Get users with pagination
+    const [users] = await pool.execute(
+      `SELECT id, first_name, last_name, email, phone, account_type, 
+              profile_image, company, website, bio, is_active, email_verified,
+              created_at, updated_at
+       FROM users 
+       ORDER BY created_at DESC 
+       LIMIT ? OFFSET ?`,
+      [limit, offset]
+    );
+
+    // Get total count
+    const [totalCount] = await pool.execute('SELECT COUNT(*) as total FROM users');
+
+    res.json({
+      users: users,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalCount[0].total / limit),
+        totalUsers: totalCount[0].total,
+        hasNextPage: page < Math.ceil(totalCount[0].total / limit),
+        hasPreviousPage: page > 1
+      }
+    });
+
+  } catch (error) {
+    console.error('Get users error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/admin/users/:id - Delete a user (admin only)
+app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    // Check if user exists
+    const [users] = await pool.execute(
+      'SELECT * FROM users WHERE id = ?',
+      [userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Delete user (or set is_active to false for soft delete)
+    await pool.execute(
+      'UPDATE users SET is_active = false WHERE id = ?',
+      [userId]
+    );
+
+    res.json({ message: 'User deleted successfully' });
+
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ==================== CONTACT ROUTES ====================
 
 // Contact form endpoint
