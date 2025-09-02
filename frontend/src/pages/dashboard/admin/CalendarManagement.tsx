@@ -38,6 +38,14 @@ const CalendarManagement: React.FC = () => {
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [saving, setSaving] = useState(false);
 
+  // Get API base URL - fixed to avoid process.env issues
+  const getBaseURL = () => {
+    // Use environment variable if available, otherwise default to localhost
+    return window.location.hostname === 'localhost' 
+      ? 'http://localhost:5000' 
+      : `${window.location.origin}`;
+  };
+
   useEffect(() => {
     fetchEvents();
     fetchUsers();
@@ -55,8 +63,8 @@ const CalendarManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-      const response = await fetch(`${baseURL}/api/calendar/events`, {
+      const baseURL = getBaseURL();
+      const response = await fetch(`${baseURL}/api/admin/calendar-events`, {
         method: 'GET',
         headers,
         credentials: 'include'
@@ -64,12 +72,7 @@ const CalendarManagement: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json();
-        // Filter only custom events (the ones we can manage)
-        const customEvents = data.filter((event: any) => event.type === 'custom');
-        setEvents(customEvents);
-      } else if (response.status === 404) {
-        // Custom events table might not exist yet, set empty array
-        setEvents([]);
+        setEvents(data);
       } else {
         throw new Error('Failed to fetch calendar events');
       }
@@ -91,7 +94,7 @@ const CalendarManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+      const baseURL = getBaseURL();
       const response = await fetch(`${baseURL}/api/admin/users`, {
         method: 'GET',
         headers,
@@ -137,14 +140,14 @@ const CalendarManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+      const baseURL = getBaseURL();
       
       let url, method;
       if (modalType === 'create') {
-        url = `${baseURL}/api/calendar/events`;
+        url = `${baseURL}/api/admin/calendar-events`;
         method = 'POST';
       } else {
-        url = `${baseURL}/api/calendar/events/${selectedEvent?.id}`;
+        url = `${baseURL}/api/admin/calendar-events/${selectedEvent?.id}`;
         method = 'PUT';
       }
 
@@ -182,8 +185,8 @@ const CalendarManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-      const response = await fetch(`${baseURL}/api/calendar/events/${selectedEvent.id}`, {
+      const baseURL = getBaseURL();
+      const response = await fetch(`${baseURL}/api/admin/calendar-events/${selectedEvent.id}`, {
         method: 'DELETE',
         headers,
         credentials: 'include'
@@ -208,11 +211,12 @@ const CalendarManagement: React.FC = () => {
     
     // Convert empty strings to null for optional fields
     const processedData = {
+      user_id: formDataObj.user_id ? parseInt(formDataObj.user_id as string) : null,
       title: formDataObj.title as string,
       description: formDataObj.description || null,
-      date: formDataObj.event_date as string,
-      time: formDataObj.event_time || null,
-      type: formDataObj.event_type as string
+      event_date: formDataObj.event_date as string,
+      event_time: formDataObj.event_time || null,
+      event_type: formDataObj.event_type as string
     };
 
     handleSaveEvent(processedData);
@@ -381,6 +385,24 @@ const CalendarManagement: React.FC = () => {
                 required
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                User (Optional)
+              </label>
+              <select
+                name="user_id"
+                defaultValue={selectedEvent?.user_id || ''}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+              >
+                <option value="">Select a user (optional)</option>
+                {users?.map?.((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.first_name} {user.last_name} ({user.email})
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
