@@ -6,6 +6,7 @@ import StatusBadge from '../../../components/admin/StatusBadge';
 import Modal from '../../../components/admin/Modal';
 import { User } from '../../../lib/admin-types';
 import { useAdminData } from '../../../hooks/useAdminData';
+import { toast } from 'react-hot-toast'; // Make sure to install this package
 
 const UserManagement: React.FC = () => {
   const { data: users, loading, error, refetch } = useAdminData('/api/admin/users');
@@ -161,6 +162,19 @@ const UserManagement: React.FC = () => {
     return true;
   }) : [];
 
+  const getAuthHeaders = (): HeadersInit => {
+    const token = localStorage.getItem('adminToken') || localStorage.getItem('token') || localStorage.getItem('authToken');
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json'
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    return headers;
+  };
+
   const handleSaveUser = async () => {
     if (!validateForm()) {
       return;
@@ -169,9 +183,10 @@ const UserManagement: React.FC = () => {
     setIsSubmitting(true);
     
     try {
+      const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
       const url = modalType === 'create' 
-        ? '/api/admin/users' 
-        : `/api/admin/users/${selectedUser?.id}`;
+        ? `${baseURL}/api/admin/users` 
+        : `${baseURL}/api/admin/users/${selectedUser?.id}`;
       
       const method = modalType === 'create' ? 'POST' : 'PUT';
       
@@ -183,10 +198,8 @@ const UserManagement: React.FC = () => {
       
       const response = await fetch(url, {
         method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`, // Add auth if needed
-        },
+        headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify(payload)
       });
       
@@ -200,13 +213,12 @@ const UserManagement: React.FC = () => {
       setIsModalOpen(false);
       refetch();
       
-      // Show success message (you might want to add a toast notification here)
-      console.log(`User ${modalType === 'create' ? 'created' : 'updated'} successfully:`, result);
+      // Show success message
+      toast.success(`User ${modalType === 'create' ? 'created' : 'updated'} successfully`);
       
     } catch (error) {
       console.error(`Error ${modalType === 'create' ? 'creating' : 'updating'} user:`, error);
-      // You might want to show an error toast notification here
-      alert(`Failed to ${modalType} user: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(`Failed to ${modalType} user: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -218,11 +230,11 @@ const UserManagement: React.FC = () => {
     setIsSubmitting(true);
     
     try {
-      const response = await fetch(`/api/admin/users/${selectedUser.id}`, {
+      const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+      const response = await fetch(`${baseURL}/api/admin/users/${selectedUser.id}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`, // Add auth if needed
-        }
+        headers: getAuthHeaders(),
+        credentials: 'include'
       });
       
       if (!response.ok) {
@@ -234,11 +246,11 @@ const UserManagement: React.FC = () => {
       refetch();
       
       // Show success message
-      console.log('User deleted successfully');
+      toast.success('User deleted successfully');
       
     } catch (error) {
       console.error('Error deleting user:', error);
-      alert(`Failed to delete user: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(`Failed to delete user: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsSubmitting(false);
     }
