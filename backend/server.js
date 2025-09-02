@@ -3253,7 +3253,7 @@ app.get('/api/admin/dashboard-stats', authenticateToken, requireAdmin, async (re
       // Fix: contact_messages table has no 'status' column. Using date for 'pending'.
       pool.execute('SELECT COUNT(*) as count FROM contact_messages WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)'),
       // Fix: Using singular 'service_request' table name
-      pool.execute('SELECT COUNT(*) as count FROM service_request WHERE status = "pending"')
+      pool.execute('SELECT COUNT(*) as count FROM service_requests WHERE status = "pending"')
     ]);
 
     res.json({
@@ -3319,7 +3319,7 @@ app.get('/api/admin/recent-service-requests', authenticateToken, requireAdmin, a
              ssc.name as service, -- Alias ssc.name as 'service' for frontend display
              DATE_FORMAT(sr.created_at, '%d %b %Y') as date,
              sr.status
-      FROM service_request sr
+      FROM service_requests sr
       JOIN service_sub_category ssc ON sr.subcategory_id = ssc.id
       ORDER BY sr.created_at DESC
       LIMIT 5
@@ -4187,8 +4187,8 @@ app.delete('/api/admin/calendar-events/:id', authenticateToken, requireAdmin, as
 // Using plural 'service-categories' for API consistency with frontend expectation
 app.get('/api/admin/service-categories', authenticateToken, requireAdmin, async (req, res) => {
   const { limit = 10, offset = 0, search = '' } = req.query;
-  let query = `SELECT id, name, description, icon, is_active, DATE_FORMAT(created_at, '%d %b %Y') as created_at FROM service_category`;
-  let countQuery = `SELECT COUNT(*) as total FROM service_category`;
+  let query = `SELECT id, name, description, icon, is_active, DATE_FORMAT(created_at, '%d %b %Y') as created_at FROM service_categories`;
+  let countQuery = `SELECT COUNT(*) as total FROM service_categories`;
   const queryParams = [];
   const countParams = [];
   const conditions = [];
@@ -4219,7 +4219,7 @@ app.get('/api/admin/service-categories', authenticateToken, requireAdmin, async 
 
 app.get('/api/admin/service-categories/lookup', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const [categories] = await pool.execute('SELECT id, name FROM service_category WHERE is_active = 1 ORDER BY name');
+    const [categories] = await pool.execute('SELECT id, name FROM service_categories WHERE is_active = 1 ORDER BY name');
     res.json(categories);
   } catch (error) {
     console.error('Error fetching service category lookup:', error);
@@ -4229,7 +4229,7 @@ app.get('/api/admin/service-categories/lookup', authenticateToken, requireAdmin,
 
 app.get('/api/admin/service-categories/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const [rows] = await pool.execute('SELECT id, name, description, icon, is_active, DATE_FORMAT(created_at, \'%d %b %Y\') as created_at FROM service_category WHERE id = ?', [req.params.id]);
+    const [rows] = await pool.execute('SELECT id, name, description, icon, is_active, DATE_FORMAT(created_at, \'%d %b %Y\') as created_at FROM service_categories WHERE id = ?', [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ message: 'Service category not found' });
     res.json(rows[0]);
   } catch (error) {
@@ -4242,7 +4242,7 @@ app.post('/api/admin/service-categories', authenticateToken, requireAdmin, async
   const { name, description, icon, is_active } = req.body;
   if (!name) return res.status(400).json({ message: 'Category name is required' });
   try {
-    const [result] = await pool.execute('INSERT INTO service_category (name, description, icon, is_active) VALUES (?, ?, ?, ?)', [name, description, icon, is_active]);
+    const [result] = await pool.execute('INSERT INTO service_categories (name, description, icon, is_active) VALUES (?, ?, ?, ?)', [name, description, icon, is_active]);
     res.status(201).json({ id: result.insertId, message: 'Service category created successfully' });
   } catch (error) {
     console.error('Error creating service category:', error);
@@ -4257,7 +4257,7 @@ app.put('/api/admin/service-categories/:id', authenticateToken, requireAdmin, as
   const { name, description, icon, is_active } = req.body;
   const categoryId = req.params.id;
   try {
-    const [result] = await pool.execute('UPDATE service_category SET name=?, description=?, icon=?, is_active=? WHERE id = ?', [name, description, icon, is_active, categoryId]);
+    const [result] = await pool.execute('UPDATE service_categories SET name=?, description=?, icon=?, is_active=? WHERE id = ?', [name, description, icon, is_active, categoryId]);
     if (result.affectedRows === 0) return res.status(404).json({ message: 'Service category not found' });
     res.json({ message: 'Service category updated successfully' });
   } catch (error) {
@@ -4271,7 +4271,7 @@ app.put('/api/admin/service-categories/:id', authenticateToken, requireAdmin, as
 
 app.delete('/api/admin/service-categories/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const [result] = await pool.execute('DELETE FROM service_category WHERE id = ?', [req.params.id]);
+    const [result] = await pool.execute('DELETE FROM service_categories WHERE id = ?', [req.params.id]);
     if (result.affectedRows === 0) return res.status(404).json({ message: 'Service category not found' });
     res.json({ message: 'Service category deleted successfully' });
   } catch (error) {
@@ -4288,10 +4288,10 @@ app.get('/api/admin/service-sub-categories', authenticateToken, requireAdmin, as
   let query = `
     SELECT ssc.id, ssc.name, ssc.description, ssc.base_price, ssc.is_active, DATE_FORMAT(ssc.created_at, '%d %b %Y') as created_at,
            sc.name as category_name
-    FROM service_sub_category ssc
-    JOIN service_category sc ON ssc.category_id = sc.id
+    FROM service_subcategories ssc
+    JOIN service_categories sc ON ssc.category_id = sc.id
   `;
-  let countQuery = `SELECT COUNT(*) as total FROM service_sub_category ssc JOIN service_category sc ON ssc.category_id = sc.id`;
+  let countQuery = `SELECT COUNT(*) as total FROM service_subcategories ssc JOIN service_categories sc ON ssc.category_id = sc.id`;
   const queryParams = [];
   const countParams = [];
   const conditions = [];
@@ -4327,7 +4327,7 @@ app.get('/api/admin/service-sub-categories', authenticateToken, requireAdmin, as
 
 app.get('/api/admin/service-sub-categories/lookup', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const [subcategories] = await pool.execute('SELECT id, name, category_id FROM service_sub_category WHERE is_active = 1 ORDER BY name');
+    const [subcategories] = await pool.execute('SELECT id, name, category_id FROM service_subcategories WHERE is_active = 1 ORDER BY name');
     res.json(subcategories);
   } catch (error) {
     console.error('Error fetching service subcategory lookup:', error);
@@ -4338,7 +4338,7 @@ app.get('/api/admin/service-sub-categories/lookup', authenticateToken, requireAd
 
 app.get('/api/admin/service-sub-categories/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const [rows] = await pool.execute('SELECT id, category_id, name, description, base_price, is_active, DATE_FORMAT(created_at, \'%d %b %Y\') as created_at FROM service_sub_category WHERE id = ?', [req.params.id]);
+    const [rows] = await pool.execute('SELECT id, category_id, name, description, base_price, is_active, DATE_FORMAT(created_at, \'%d %b %Y\') as created_at FROM service_subcategories WHERE id = ?', [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ message: 'Service subcategory not found' });
     res.json(rows[0]);
   } catch (error) {
@@ -4380,7 +4380,7 @@ app.put('/api/admin/service-sub-categories/:id', authenticateToken, requireAdmin
 
 app.delete('/api/admin/service-sub-categories/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const [result] = await pool.execute('DELETE FROM service_sub_category WHERE id = ?', [req.params.id]);
+    const [result] = await pool.execute('DELETE FROM service_subcategories WHERE id = ?', [req.params.id]);
     if (result.affectedRows === 0) return res.status(404).json({ message: 'Service subcategory not found' });
     res.json({ message: 'Service subcategory deleted successfully' });
   } catch (error) {
@@ -4397,10 +4397,10 @@ app.get('/api/admin/services', authenticateToken, requireAdmin, async (req, res)
   let query = `
     SELECT s.id, s.name, s.category_id, s.description, s.price, s.duration, s.rating, s.reviews, s.features, s.popular, DATE_FORMAT(s.created_at, '%d %b %Y') as created_at,
            sc.name as category_name
-    FROM service s
-    JOIN service_category sc ON s.category_id = sc.id
+    FROM services s
+    JOIN service_categories sc ON s.category_id = sc.id
   `;
-  let countQuery = `SELECT COUNT(*) as total FROM service s JOIN service_category sc ON s.category_id = sc.id`;
+  let countQuery = `SELECT COUNT(*) as total FROM services s JOIN service_categories sc ON s.category_id = sc.id`;
   const queryParams = [];
   const countParams = [];
   const conditions = [];
@@ -4439,8 +4439,8 @@ app.get('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, 
     const [rows] = await pool.execute(`
       SELECT s.id, s.name, s.category_id, s.description, s.price, s.duration, s.rating, s.reviews, s.features, s.popular, DATE_FORMAT(s.created_at, '%d %b %Y') as created_at,
              sc.name as category_name
-      FROM service s
-      JOIN service_category sc ON s.category_id = sc.id
+      FROM services s
+      JOIN service_categories sc ON s.category_id = sc.id
       WHERE s.id = ?
     `, [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ message: 'Service offering not found' });
@@ -4484,7 +4484,7 @@ app.put('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, 
 
 app.delete('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const [result] = await pool.execute('DELETE FROM service WHERE id = ?', [req.params.id]);
+    const [result] = await pool.execute('DELETE FROM services WHERE id = ?', [req.params.id]);
     if (result.affectedRows === 0) return res.status(404).json({ message: 'Service offering not found' });
     res.json({ message: 'Service offering deleted successfully' });
   } catch (error) {
@@ -4501,10 +4501,10 @@ app.get('/api/admin/service-requests', authenticateToken, requireAdmin, async (r
   let query = `
     SELECT sr.id, sr.user_id, sr.subcategory_id, sr.full_name as name, sr.email, sr.phone, sr.company, sr.website, sr.project_details, sr.budget_range, sr.timeline, sr.contact_method, sr.additional_requirements, DATE_FORMAT(sr.created_at, '%d %b %Y') as date, sr.status,
            ssc.name as service_name
-    FROM service_request sr
-    JOIN service_sub_category ssc ON sr.subcategory_id = ssc.id
+    FROM service_requests sr
+    JOIN service_subcategories ssc ON sr.subcategory_id = ssc.id
   `;
-  let countQuery = `SELECT COUNT(*) as total FROM service_request sr JOIN service_sub_category ssc ON sr.subcategory_id = ssc.id`;
+  let countQuery = `SELECT COUNT(*) as total FROM service_requests sr JOIN service_subcategories ssc ON sr.subcategory_id = ssc.id`;
   const queryParams = [];
   const countParams = [];
   const conditions = [];
@@ -4543,7 +4543,7 @@ app.get('/api/admin/service-requests/:id', authenticateToken, requireAdmin, asyn
     const [rows] = await pool.execute(`
       SELECT sr.id, sr.user_id, sr.subcategory_id, sr.full_name as name, sr.email, sr.phone, sr.company, sr.website, sr.project_details, sr.budget_range, sr.timeline, sr.contact_method, sr.additional_requirements, DATE_FORMAT(sr.created_at, '%d %b %Y') as date, sr.status,
              ssc.name as service_name
-      FROM service_request sr
+      FROM service_requests sr
       JOIN service_sub_category ssc ON sr.subcategory_id = ssc.id
       WHERE sr.id = ?
     `, [req.params.id]);
@@ -4592,7 +4592,7 @@ app.put('/api/admin/service-requests/:id', authenticateToken, requireAdmin, asyn
 
 app.delete('/api/admin/service-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const [result] = await pool.execute('DELETE FROM service_request WHERE id = ?', [req.params.id]);
+    const [result] = await pool.execute('DELETE FROM service_requests WHERE id = ?', [req.params.id]);
     if (result.affectedRows === 0) return res.status(404).json({ message: 'Service request not found' });
     res.json({ message: 'Service request deleted successfully' });
   } catch (error) {
