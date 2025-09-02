@@ -86,10 +86,15 @@ const CertificateManagement: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json();
-        setUsers(data);
+        setUsers(Array.isArray(data.users) ? data.users : []);
+      }
+      else {
+        console.error('Failed to fetch users');
+        setUsers([]);
       }
     } catch (err) {
       console.error('Failed to fetch users:', err);
+      setUsers([]);
     }
   };
 
@@ -113,10 +118,15 @@ const CertificateManagement: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json();
-        setCourses(data);
+        // Ensure we're setting an array
+        setCourses(Array.isArray(data) ? data : []);
+      } else {
+        console.error('Failed to fetch courses');
+        setCourses([]);
       }
     } catch (err) {
       console.error('Failed to fetch courses:', err);
+      setCourses([]);
     }
   };
 
@@ -194,7 +204,7 @@ const CertificateManagement: React.FC = () => {
       }
 
       const baseURL = 'http://localhost:5000';
-      const url = selectedCertificate 
+      const url = selectedCertificate
         ? `${baseURL}/api/certificates/${selectedCertificate.id}`
         : `${baseURL}/api/certificates`;
 
@@ -280,14 +290,14 @@ const CertificateManagement: React.FC = () => {
         <DataTable<Certificate>
           data={filteredCertificates}
           columns={[
-            { 
-              header: 'Student', 
-              accessor: (cert) => `${cert.user.firstName} ${cert.user.lastName}` 
+            {
+              header: 'Student',
+              accessor: (cert) => `${cert.user.firstName} ${cert.user.lastName}`
             },
             { header: 'Course', accessor: 'course.title' },
-            { 
-              header: 'Issued Date', 
-              accessor: (cert) => new Date(cert.issuedDate).toLocaleDateString() 
+            {
+              header: 'Issued Date',
+              accessor: (cert) => new Date(cert.issuedDate).toLocaleDateString()
             },
             {
               header: 'Certificate',
@@ -389,7 +399,7 @@ const CertificateManagement: React.FC = () => {
               className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
             >
               <option value="">Select a student</option>
-              {users.map((user) => (
+              {Array.isArray(users) && users.map((user) => (
                 <option key={user.id} value={user.id}>
                   {user.firstName} {user.lastName} ({user.email})
                 </option>
@@ -407,7 +417,7 @@ const CertificateManagement: React.FC = () => {
               className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
             >
               <option value="">Select a course</option>
-              {courses.map((course) => (
+              {Array.isArray(courses) && courses.map((course) => (
                 <option key={course.id} value={course.id}>
                   {course.title}
                 </option>
