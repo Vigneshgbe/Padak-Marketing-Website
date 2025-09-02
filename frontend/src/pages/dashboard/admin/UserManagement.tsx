@@ -1,9 +1,9 @@
 // src/pages/dashboard/admin/UserManagement.tsx
 import React, { useState } from 'react';
 import { Edit, Trash2, Plus, Search, Filter } from 'lucide-react';
-import DataTable from '../../../components/admin/DataTable';
-import StatusBadge from '../../../components/admin/StatusBadge';
-import Modal from '../../../components/admin/Modal';
+import DataTable from '../../../../components/admin/DataTable';
+import StatusBadge from '../../../../components/admin/StatusBadge';
+import Modal from '../../../../components/admin/Modal';
 import { User } from '../../../../lib/admin-types';
 import { useAdminData } from '../../../../hooks/useAdminData';
 
@@ -98,6 +98,7 @@ const UserManagement: React.FC = () => {
           <button
             onClick={handleCreateUser}
             className="flex items-center justify-center gap-1 px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors"
+            data-testid="add-user-button"
           >
             <Plus size={16} />
             <span>Add New</span>
@@ -150,6 +151,7 @@ const UserManagement: React.FC = () => {
                   handleEditUser(user);
                 }}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                aria-label={`Edit user ${user.first_name} ${user.last_name}`}
               >
                 <Edit size={16} className="text-blue-500" />
               </button>
@@ -159,6 +161,7 @@ const UserManagement: React.FC = () => {
                   handleDeleteUser(user);
                 }}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                aria-label={`Delete user ${user.first_name} ${user.last_name}`}
               >
                 <Trash2 size={16} className="text-red-500" />
               </button>
