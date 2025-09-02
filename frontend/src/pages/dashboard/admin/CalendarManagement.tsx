@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Edit, Trash2, Plus, Search, Filter, Save, X } from 'lucide-react';
 import DataTable from '../../../components/admin/DataTable';
 import Modal from '../../../components/admin/Modal';
+import { useNavigate } from 'react-router-dom';
 
 interface CalendarEvent {
   id: number;
@@ -37,13 +38,37 @@ const CalendarManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [saving, setSaving] = useState(false);
+  const navigate = useNavigate();
 
   // Get API base URL - fixed to avoid process.env issues
   const getBaseURL = () => {
-    // Use environment variable if available, otherwise default to localhost
     return window.location.hostname === 'localhost' 
       ? 'http://localhost:5000' 
       : `${window.location.origin}`;
+  };
+
+  // Get auth token with proper error handling
+  const getAuthToken = () => {
+    try {
+      return localStorage.getItem('token') || localStorage.getItem('authToken');
+    } catch (error) {
+      console.error('Error accessing localStorage:', error);
+      return null;
+    }
+  };
+
+  // Handle authentication errors
+  const handleAuthError = () => {
+    // Clear invalid tokens
+    try {
+      localStorage.removeItem('token');
+      localStorage.removeItem('authToken');
+    } catch (error) {
+      console.error('Error clearing tokens:', error);
+    }
+    
+    // Redirect to login
+    navigate('/login');
   };
 
   useEffect(() => {
@@ -54,14 +79,17 @@ const CalendarManagement: React.FC = () => {
   const fetchEvents = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('token');
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      const token = getAuthToken();
+      
+      if (!token) {
+        handleAuthError();
+        return;
       }
+
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      };
 
       const baseURL = getBaseURL();
       const response = await fetch(`${baseURL}/api/admin/calendar-events`, {
@@ -70,14 +98,20 @@ const CalendarManagement: React.FC = () => {
         credentials: 'include'
       });
 
+      if (response.status === 401) {
+        handleAuthError();
+        return;
+      }
+
       if (response.ok) {
         const data = await response.json();
         setEvents(data);
+        setError(null);
       } else {
-        throw new Error('Failed to fetch calendar events');
+        throw new Error(`Failed to fetch calendar events: ${response.status} ${response.statusText}`);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      setError(err instanceof Error ? err.message : 'An error occurred while fetching events');
     } finally {
       setLoading(false);
     }
@@ -85,14 +119,16 @@ const CalendarManagement: React.FC = () => {
 
   const fetchUsers = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      const token = getAuthToken();
+      
+      if (!token) {
+        return;
       }
+
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      };
 
       const baseURL = getBaseURL();
       const response = await fetch(`${baseURL}/api/admin/users`, {
@@ -100,6 +136,11 @@ const CalendarManagement: React.FC = () => {
         headers,
         credentials: 'include'
       });
+
+      if (response.status === 401) {
+        handleAuthError();
+        return;
+      }
 
       if (response.ok) {
         const data = await response.json();
@@ -131,14 +172,17 @@ const CalendarManagement: React.FC = () => {
   const handleSaveEvent = async (formData: any) => {
     try {
       setSaving(true);
-      const token = localStorage.getItem('token');
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      const token = getAuthToken();
+      
+      if (!token) {
+        handleAuthError();
+        return;
       }
+
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      };
 
       const baseURL = getBaseURL();
       
@@ -158,6 +202,11 @@ const CalendarManagement: React.FC = () => {
         body: JSON.stringify(formData)
       });
 
+      if (response.status === 401) {
+        handleAuthError();
+        return;
+      }
+
       if (response.ok) {
         setIsModalOpen(false);
         fetchEvents(); // Refresh the data
@@ -176,14 +225,17 @@ const CalendarManagement: React.FC = () => {
     if (!selectedEvent) return;
 
     try {
-      const token = localStorage.getItem('token');
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      const token = getAuthToken();
+      
+      if (!token) {
+        handleAuthError();
+        return;
       }
+
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      };
 
       const baseURL = getBaseURL();
       const response = await fetch(`${baseURL}/api/admin/calendar-events/${selectedEvent.id}`, {
@@ -191,6 +243,11 @@ const CalendarManagement: React.FC = () => {
         headers,
         credentials: 'include'
       });
+
+      if (response.status === 401) {
+        handleAuthError();
+        return;
+      }
 
       if (response.ok) {
         setIsModalOpen(false);
