@@ -1,0 +1,323 @@
+// src/pages/dashboard/admin/ServiceManagement.tsx
+import React, { useState } from 'react';
+import { Edit, Trash2, Plus, Search, Filter } from 'lucide-react';
+import DataTable from '../../../components/admin/DataTable';
+import StatusBadge from '../../../components/admin/StatusBadge';
+import Modal from '../../../components/admin/Modal';
+import { useAdminData } from '../../../hooks/useAdminData';
+
+interface Service {
+  id: number;
+  name: string;
+  category: string;
+  price: number;
+  duration: string;
+  rating: number;
+  reviews: number;
+  popular: boolean;
+  is_active: boolean;
+  created_at: string;
+}
+
+const ServiceManagement: React.FC = () => {
+  const { data: services, loading, error, refetch } = useAdminData('/api/admin/services');
+  const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalType, setModalType] = useState<'create' | 'edit' | 'delete'>('create');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedFilter, setSelectedFilter] = useState('all');
+
+  const handleEditService = (service: Service) => {
+    setSelectedService(service);
+    setModalType('edit');
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteService = (service: Service) => {
+    setSelectedService(service);
+    setModalType('delete');
+    setIsModalOpen(true);
+  };
+
+  const handleCreateService = () => {
+    setSelectedService(null);
+    setModalType('create');
+    setIsModalOpen(true);
+  };
+
+  const filteredServices = services.filter((service: Service) => {
+    // Apply search filter
+    if (searchTerm && !`${service.name} ${service.category}`.toLowerCase().includes(searchTerm.toLowerCase())) {
+      return false;
+    }
+    
+    // Apply status filter
+    if (selectedFilter !== 'all') {
+      if (selectedFilter === 'active' && !service.is_active) return false;
+      if (selectedFilter === 'inactive' && service.is_active) return false;
+      if (selectedFilter === 'popular' && !service.popular) return false;
+    }
+    
+    return true;
+  });
+
+  const handleSaveService = async () => {
+    // Implementation for saving service
+    setIsModalOpen(false);
+    refetch();
+  };
+
+  const handleDeleteConfirm = async () => {
+    // Implementation for deleting service
+    setIsModalOpen(false);
+    refetch();
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <h2 className="text-2xl font-bold">Service Management</h2>
+
+        <div className="flex flex-col md:flex-row gap-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+            <input
+              type="text"
+              placeholder="Search services..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500"
+            />
+          </div>
+
+          <div className="relative">
+            <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+            <select
+              value={selectedFilter}
+              onChange={(e) => setSelectedFilter(e.target.value)}
+              className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none"
+            >
+              <option value="all">All Services</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="popular">Popular</option>
+            </select>
+          </div>
+
+          <button
+            onClick={handleCreateService}
+            className="flex items-center justify-center gap-1 px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors"
+          >
+            <Plus size={16} />
+            <span>Add New</span>
+          </button>
+        </div>
+      </div>
+
+      {loading && (
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6">
+          <div className="flex items-center mb-4">
+            <span className="text-red-500 mr-2">⚠️</span>
+            <h3 className="text-lg font-semibold text-red-700 dark:text-red-300">Error Loading Services</h3>
+          </div>
+          <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
+          <button
+            onClick={() => refetch()}
+            className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {!loading && !error && (
+        <DataTable<Service>
+          data={filteredServices}
+          columns={[
+            { header: 'Name', accessor: 'name' },
+            { header: 'Category', accessor: 'category' },
+            {
+              header: 'Price',
+              accessor: (service) => `₹${service.price.toLocaleString()}`
+            },
+            { header: 'Duration', accessor: 'duration' },
+            {
+              header: 'Rating',
+              accessor: (service) => `${service.rating} ⭐ (${service.reviews} reviews)`
+            },
+            {
+              header: 'Status',
+              accessor: (service) => (
+                <StatusBadge status={service.is_active ? 'Active' : 'Inactive'} />
+              )
+            },
+            {
+              header: 'Popular',
+              accessor: (service) => (
+                service.popular ? 'Yes' : 'No'
+              )
+            }
+          ]}
+          actions={(service) => (
+            <div className="flex space-x-2">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleEditService(service);
+                }}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+              >
+                <Edit size={16} className="text-blue-500" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteService(service);
+                }}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+              >
+                <Trash2 size={16} className="text-red-500" />
+              </button>
+            </div>
+          )}
+        />
+      )}
+
+      {/* Edit/Create Service Modal */}
+      <Modal
+        isOpen={isModalOpen && (modalType === 'create' || modalType === 'edit')}
+        title={modalType === 'create' ? 'Create New Service' : 'Edit Service'}
+        onClose={() => setIsModalOpen(false)}
+        size="lg"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Service Name
+            </label>
+            <input
+              type="text"
+              defaultValue={selectedService?.name || ''}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Category
+            </label>
+            <input
+              type="text"
+              defaultValue={selectedService?.category || ''}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Price (₹)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                defaultValue={selectedService?.price || ''}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Duration
+              </label>
+              <input
+                type="text"
+                defaultValue={selectedService?.duration || ''}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Status
+              </label>
+              <select
+                defaultValue={selectedService?.is_active ? "1" : "0"}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
+              >
+                <option value="1">Active</option>
+                <option value="0">Inactive</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Popular
+              </label>
+              <select
+                defaultValue={selectedService?.popular ? "1" : "0"}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md"
+              >
+                <option value="1">Yes</option>
+                <option value="0">No</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 mt-6">
+            <button
+              onClick={() => setIsModalOpen(false)}
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveService}
+              className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600"
+            >
+              {modalType === 'create' ? 'Create' : 'Update'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+       {/* Delete Confirmation Modal */}
+      <Modal
+        isOpen={isModalOpen && modalType === 'delete'}
+        title="Delete Service"
+        onClose={() => setIsModalOpen(false)}
+        size="md"
+      >
+        <div className="space-y-4">
+          <p>Are you sure you want to delete the service "{selectedService?.name}"? This action cannot be undone.</p>
+
+          <div className="flex justify-end gap-2 mt-6">
+            <button
+              onClick={() => setIsModalOpen(false)}
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleDeleteConfirm}
+              className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+export default ServiceManagement;
