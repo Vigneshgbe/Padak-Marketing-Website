@@ -1,6 +1,6 @@
 // src/pages/dashboard/admin/ServiceRequests.tsx
 import React, { useState, useEffect } from 'react';
-import { Edit, Mail, Phone, Search, Filter, Trash2, Eye } from 'lucide-react';
+import { Edit, Mail, Phone, Search, Filter, Trash2, Eye, Save, X } from 'lucide-react';
 import DataTable from '../../../components/admin/DataTable';
 import StatusBadge from '../../../components/admin/StatusBadge';
 import Modal from '../../../components/admin/Modal';
@@ -19,6 +19,9 @@ interface DetailedServiceRequest extends ServiceRequest {
   created_at?: string;
   subcategory_id?: number;
   user_id?: number;
+  user_first_name?: string;
+  user_last_name?: string;
+  user_account_type?: string;
 }
 
 const ServiceRequests: React.FC = () => {
@@ -30,7 +33,14 @@ const ServiceRequests: React.FC = () => {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
-  const [statusForm, setStatusForm] = useState({ status: 'pending' });
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    status: 'pending',
+    project_details: '',
+    budget_range: '',
+    timeline: '',
+    additional_requirements: ''
+  });
 
   // Fetch service requests from API
   const fetchServiceRequests = async () => {
@@ -45,7 +55,7 @@ const ServiceRequests: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      // Use hardcoded base URL like in AdminOverview
+      // Use hardcoded base URL
       const baseURL = 'http://localhost:5000';
       const response = await fetch(`${baseURL}/api/admin/service-requests`, {
         method: 'GET',
@@ -75,7 +85,12 @@ const ServiceRequests: React.FC = () => {
               company: 'ABC Corp',
               project_details: 'Need SEO for e-commerce website',
               budget_range: '₹50,000 - ₹1,00,000',
-              timeline: '1-2 months'
+              timeline: '1-2 months',
+              contact_method: 'email',
+              user_id: 101,
+              user_first_name: 'John',
+              user_last_name: 'Doe',
+              user_account_type: 'professional'
             },
             {
               id: 2,
@@ -88,7 +103,12 @@ const ServiceRequests: React.FC = () => {
               company: 'XYZ Ltd',
               project_details: 'Social media campaign for product launch',
               budget_range: '₹1,00,000 - ₹2,00,000',
-              timeline: '3 months'
+              timeline: '3 months',
+              contact_method: 'phone',
+              user_id: 102,
+              user_first_name: 'Jane',
+              user_last_name: 'Smith',
+              user_account_type: 'business'
             }
           ]);
         }
@@ -112,7 +132,12 @@ const ServiceRequests: React.FC = () => {
           company: 'ABC Corp',
           project_details: 'Need SEO for e-commerce website',
           budget_range: '₹50,000 - ₹1,00,000',
-          timeline: '1-2 months'
+          timeline: '1-2 months',
+          contact_method: 'email',
+          user_id: 101,
+          user_first_name: 'John',
+          user_last_name: 'Doe',
+          user_account_type: 'professional'
         },
         {
           id: 2,
@@ -125,7 +150,12 @@ const ServiceRequests: React.FC = () => {
           company: 'XYZ Ltd',
           project_details: 'Social media campaign for product launch',
           budget_range: '₹1,00,000 - ₹2,00,000',
-          timeline: '3 months'
+          timeline: '3 months',
+          contact_method: 'phone',
+          user_id: 102,
+          user_first_name: 'Jane',
+          user_last_name: 'Smith',
+          user_account_type: 'business'
         }
       ]);
     } finally {
@@ -139,12 +169,20 @@ const ServiceRequests: React.FC = () => {
 
   const handleEditRequest = (request: DetailedServiceRequest) => {
     setSelectedRequest(request);
-    setStatusForm({ status: request.status });
+    setEditForm({
+      status: request.status || 'pending',
+      project_details: request.project_details || '',
+      budget_range: request.budget_range || '',
+      timeline: request.timeline || '',
+      additional_requirements: request.additional_requirements || ''
+    });
+    setIsEditing(true);
     setIsModalOpen(true);
   };
 
   const handleViewRequest = (request: DetailedServiceRequest) => {
     setSelectedRequest(request);
+    setIsEditing(false);
     setIsModalOpen(true);
   };
 
@@ -203,17 +241,25 @@ const ServiceRequests: React.FC = () => {
       const response = await fetch(`${baseURL}/api/admin/service-requests/${selectedRequest.id}`, {
         method: 'PUT',
         headers,
-        body: JSON.stringify({ status: statusForm.status }),
+        body: JSON.stringify(editForm),
         credentials: 'include'
       });
 
       if (response.ok) {
         // Update the request in the local state
         setRequests(requests.map(req => 
-          req.id === selectedRequest.id ? { ...req, status: statusForm.status } : req
+          req.id === selectedRequest.id ? { 
+            ...req, 
+            status: editForm.status,
+            project_details: editForm.project_details,
+            budget_range: editForm.budget_range,
+            timeline: editForm.timeline,
+            additional_requirements: editForm.additional_requirements
+          } : req
         ));
         setIsModalOpen(false);
         setSelectedRequest(null);
+        setIsEditing(false);
       } else {
         throw new Error('Failed to update service request');
       }
@@ -223,9 +269,22 @@ const ServiceRequests: React.FC = () => {
     }
   };
 
+  const handleCancelEdit = () => {
+    if (selectedRequest) {
+      setEditForm({
+        status: selectedRequest.status || 'pending',
+        project_details: selectedRequest.project_details || '',
+        budget_range: selectedRequest.budget_range || '',
+        timeline: selectedRequest.timeline || '',
+        additional_requirements: selectedRequest.additional_requirements || ''
+      });
+    }
+    setIsEditing(false);
+  };
+
   const filteredRequests = requests.filter((request) => {
     // Apply search filter
-    if (searchTerm && !`${request.name} ${request.service}`.toLowerCase().includes(searchTerm.toLowerCase())) {
+    if (searchTerm && !`${request.name} ${request.service} ${request.email}`.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false;
     }
 
@@ -305,6 +364,14 @@ const ServiceRequests: React.FC = () => {
               accessor: (request) => (
                 <StatusBadge status={request.status} />
               )
+            },
+            {
+              header: 'User Account',
+              accessor: (request) => (
+                request.user_id ? 
+                  `${request.user_first_name || ''} ${request.user_last_name || ''} (${request.user_account_type || 'N/A'})` : 
+                  'Guest'
+              )
             }
           ]}
           actions={(request) => (
@@ -325,7 +392,7 @@ const ServiceRequests: React.FC = () => {
                   handleEditRequest(request);
                 }}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                title="Edit status"
+                title="Edit request"
               >
                 <Edit size={16} className="text-green-500" />
               </button>
@@ -347,15 +414,47 @@ const ServiceRequests: React.FC = () => {
       {/* View/Edit Request Modal */}
       <Modal
         isOpen={isModalOpen}
-        title={selectedRequest ? `Service Request Details` : 'Service Request'}
+        title={selectedRequest ? `${isEditing ? 'Edit' : 'View'} Service Request` : 'Service Request'}
         onClose={() => {
           setIsModalOpen(false);
           setSelectedRequest(null);
+          setIsEditing(false);
         }}
         size="xl"
       >
         {selectedRequest && (
           <div className="space-y-4">
+            {/* User Account Information */}
+            {selectedRequest.user_id && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                <h3 className="font-medium text-blue-800 dark:text-blue-300 mb-2">User Account Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-blue-700 dark:text-blue-300 mb-1">
+                      Account Name
+                    </label>
+                    <input
+                      type="text"
+                      value={`${selectedRequest.user_first_name || ''} ${selectedRequest.user_last_name || ''}`}
+                      className="w-full px-3 py-2 border border-blue-200 dark:border-blue-700 rounded-md bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200"
+                      disabled
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-blue-700 dark:text-blue-300 mb-1">
+                      Account Type
+                    </label>
+                    <input
+                      type="text"
+                      value={selectedRequest.user_account_type || 'N/A'}
+                      className="w-full px-3 py-2 border border-blue-200 dark:border-blue-700 rounded-md bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200"
+                      disabled
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -439,10 +538,11 @@ const ServiceRequests: React.FC = () => {
                 Project Details
               </label>
               <textarea
-                defaultValue={selectedRequest.project_details || ''}
+                value={isEditing ? editForm.project_details : selectedRequest.project_details || ''}
+                onChange={(e) => isEditing && setEditForm({...editForm, project_details: e.target.value})}
                 rows={4}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-700"
-                disabled
+                disabled={!isEditing}
               />
             </div>
 
@@ -453,9 +553,10 @@ const ServiceRequests: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  defaultValue={selectedRequest.budget_range || ''}
+                  value={isEditing ? editForm.budget_range : selectedRequest.budget_range || ''}
+                  onChange={(e) => isEditing && setEditForm({...editForm, budget_range: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-700"
-                  disabled
+                  disabled={!isEditing}
                 />
               </div>
 
@@ -465,9 +566,10 @@ const ServiceRequests: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  defaultValue={selectedRequest.timeline || ''}
+                  value={isEditing ? editForm.timeline : selectedRequest.timeline || ''}
+                  onChange={(e) => isEditing && setEditForm({...editForm, timeline: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-700"
-                  disabled
+                  disabled={!isEditing}
                 />
               </div>
 
@@ -490,10 +592,11 @@ const ServiceRequests: React.FC = () => {
                   Additional Requirements
                 </label>
                 <textarea
-                  defaultValue={selectedRequest.additional_requirements}
+                  value={isEditing ? editForm.additional_requirements : selectedRequest.additional_requirements}
+                  onChange={(e) => isEditing && setEditForm({...editForm, additional_requirements: e.target.value})}
                   rows={3}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-700"
-                  disabled
+                  disabled={!isEditing}
                 />
               </div>
             )}
@@ -503,9 +606,10 @@ const ServiceRequests: React.FC = () => {
                 Status
               </label>
               <select
-                value={statusForm.status}
-                onChange={(e) => setStatusForm({ status: e.target.value })}
+                value={isEditing ? editForm.status : selectedRequest.status || 'pending'}
+                onChange={(e) => isEditing && setEditForm({...editForm, status: e.target.value})}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                disabled={!isEditing}
               >
                 <option value="pending">Pending</option>
                 <option value="in-progress">In Progress</option>
@@ -515,21 +619,37 @@ const ServiceRequests: React.FC = () => {
             </div>
 
             <div className="flex justify-end gap-2 mt-6">
-              <button
-                onClick={() => {
-                  setIsModalOpen(false);
-                  setSelectedRequest(null);
-                }}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveRequest}
-                className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600"
-              >
-                Update Status
-              </button>
+              {isEditing ? (
+                <>
+                  <button
+                    onClick={handleCancelEdit}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center"
+                  >
+                    <X size={16} className="mr-1" /> Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveRequest}
+                    className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 flex items-center"
+                  >
+                    <Save size={16} className="mr-1" /> Save Changes
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setIsModalOpen(false)}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={() => handleEditRequest(selectedRequest)}
+                    className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 flex items-center"
+                  >
+                    <Edit size={16} className="mr-1" /> Edit
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}
