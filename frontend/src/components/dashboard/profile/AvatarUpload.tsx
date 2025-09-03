@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Camera, Upload, User, Shield } from 'lucide-react';
 import { useProfile } from '../../../hooks/use-profile';
 import { User as UserType } from '../../../lib/types';
@@ -6,6 +6,7 @@ import { useAuth } from '../../../hooks/use-auth';
 
 interface AvatarUploadProps {
   user: UserType;
+  onSuccess?: () => void;
 }
 
 const AvatarUpload: React.FC<AvatarUploadProps> = ({ user, onSuccess }) => {
@@ -14,6 +15,13 @@ const AvatarUpload: React.FC<AvatarUploadProps> = ({ user, onSuccess }) => {
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [imageKey, setImageKey] = useState(Date.now()); // Add key to force image reload
+
+  useEffect(() => {
+    // Reset preview when user changes
+    setPreview(null);
+    setImageKey(Date.now());
+  }, [user]);
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -40,11 +48,13 @@ const AvatarUpload: React.FC<AvatarUploadProps> = ({ user, onSuccess }) => {
       reader.readAsDataURL(file);
 
       // Upload file
-      const newProfileImage = await uploadAvatar(file);
-      setPreview(newProfileImage);
+      await uploadAvatar(file);
 
       // After successful upload, refresh user data
       await refreshUser();
+      
+      // Update image key to force reload
+      setImageKey(Date.now());
       
       // Call success callback if provided
       if (onSuccess) {
@@ -66,25 +76,27 @@ const AvatarUpload: React.FC<AvatarUploadProps> = ({ user, onSuccess }) => {
     fileInputRef.current?.click();
   };
 
-  const currentImage = preview || (user.profileImage 
-  ? `${user.profileImage}?t=${new Date().getTime()}` // Add timestamp to prevent caching
-  : null);
+  // Use preview if available, otherwise use user's profile image with cache busting
+  const imageSrc = preview || (user.profileImage 
+    ? `${user.profileImage}?t=${imageKey}` // Use key instead of timestamp
+    : null);
 
-return (
-  <div className="text-center">
-    <div className="mb-6">
-      <div className="relative inline-block">
-        {currentImage ? (
-          <img 
-            src={currentImage} 
-            alt="Profile" 
-            className="w-32 h-32 rounded-full object-cover border-4 border-gray-200 dark:border-gray-600"
-            onError={(e) => {
-              // Fallback to default avatar if image fails to load
-              e.currentTarget.onerror = null;
-              e.currentTarget.src = '/default-avatar.png';
-            }}
-          />
+  return (
+    <div className="text-center">
+      <div className="mb-6">
+        <div className="relative inline-block">
+          {imageSrc ? (
+            <img 
+              key={imageKey} // Force re-render with key
+              src={imageSrc} 
+              alt="Profile" 
+              className="w-32 h-32 rounded-full object-cover border-4 border-gray-200 dark:border-gray-600"
+              onError={(e) => {
+                // Fallback to default avatar if image fails to load
+                e.currentTarget.onerror = null;
+                e.currentTarget.src = '/default-avatar.png';
+              }}
+            />
           ) : (
             <div className="w-32 h-32 rounded-full bg-gray-200 dark:bg-gray-600 border-4 border-gray-300 dark:border-gray-500 flex items-center justify-center">
               {user.accountType === 'admin' ? (
