@@ -1,5 +1,6 @@
+// src/pages/dashboard/Settings.tsx
 import React, { useState, useEffect } from 'react';
-import { User, Bell, Shield, Palette, Globe, Save, Eye, EyeOff, CheckCircle } from 'lucide-react';
+import { User, Bell, Shield, Palette, Globe, Save, Eye, EyeOff, CheckCircle, Mail, Phone, Building, Globe as WebsiteIcon } from 'lucide-react';
 import { useAuth } from '../../hooks/use-auth';
 
 interface NotificationSettings {
@@ -31,8 +32,18 @@ interface LanguageSettings {
   timeFormat: '12h' | '24h';
 }
 
+interface ProfileSettings {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  company: string;
+  website: string;
+  bio: string;
+}
+
 const Settings: React.FC = () => {
-  const { user } = useAuth();
+  const { user, updateProfile } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -72,6 +83,16 @@ const Settings: React.FC = () => {
     timeFormat: '12h'
   });
 
+  const [profileSettings, setProfileSettings] = useState<ProfileSettings>({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    company: '',
+    website: '',
+    bio: ''
+  });
+
   // Load saved settings from localStorage on component mount
   useEffect(() => {
     const loadSettings = () => {
@@ -98,8 +119,21 @@ const Settings: React.FC = () => {
       }
     };
 
+    // Initialize profile settings with user data
+    if (user) {
+      setProfileSettings({
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
+        email: user.email || '',
+        phone: user.phone || '',
+        company: user.company || '',
+        website: user.website || '',
+        bio: user.bio || ''
+      });
+    }
+
     loadSettings();
-  }, []);
+  }, [user]);
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: <User size={18} /> },
@@ -109,11 +143,15 @@ const Settings: React.FC = () => {
     { id: 'language', label: 'Language', icon: <Globe size={18} /> },
   ];
 
-  const handleSaveSettings = () => {
+  const handleSaveSettings = async () => {
     setSaving(true);
     
-    // Simulate API call to save settings
-    setTimeout(() => {
+    try {
+      // Save profile if on profile tab and changes were made
+      if (activeTab === 'profile') {
+        await updateProfile(profileSettings);
+      }
+      
       // Save to localStorage (in a real app, this would be an API call)
       localStorage.setItem('notificationSettings', JSON.stringify(notificationSettings));
       localStorage.setItem('securitySettings', JSON.stringify(securitySettings));
@@ -125,7 +163,10 @@ const Settings: React.FC = () => {
       
       // Hide success message after 3 seconds
       setTimeout(() => setSaveSuccess(false), 3000);
-    }, 1000);
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      setSaving(false);
+    }
   };
 
   const handleNotificationChange = (key: keyof NotificationSettings) => {
@@ -147,10 +188,37 @@ const Settings: React.FC = () => {
       ...prev,
       [key]: value
     }));
+    
+    // Apply theme changes immediately
+    if (key === 'theme') {
+      if (value === 'dark') {
+        document.documentElement.classList.add('dark');
+        localStorage.setItem('theme', 'dark');
+      } else if (value === 'light') {
+        document.documentElement.classList.remove('dark');
+        localStorage.setItem('theme', 'light');
+      } else {
+        // System theme
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (prefersDark) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+        localStorage.removeItem('theme');
+      }
+    }
   };
 
   const handleLanguageChange = (key: keyof LanguageSettings, value: string) => {
     setLanguageSettings(prev => ({
+      ...prev,
+      [key]: value
+    }));
+  };
+
+  const handleProfileChange = (key: keyof ProfileSettings, value: string) => {
+    setProfileSettings(prev => ({
       ...prev,
       [key]: value
     }));
@@ -163,7 +231,7 @@ const Settings: React.FC = () => {
     }));
   };
 
-  const handlePasswordUpdate = (e: React.FormEvent) => {
+  const handlePasswordUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     
     // Validate passwords
@@ -177,16 +245,41 @@ const Settings: React.FC = () => {
       return;
     }
     
-    // In a real app, you would make an API call to update the password
-    alert("Password updated successfully!");
+    try {
+      // In a real app, you would make an API call to update the password
+      // For now, we'll simulate this with a timeout
+      setSaving(true);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      alert("Password updated successfully!");
+      
+      // Clear password fields
+      setSecuritySettings(prev => ({
+        ...prev,
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      }));
+    } catch (error) {
+      console.error('Error updating password:', error);
+      alert("Failed to update password. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const hasProfileChanges = () => {
+    if (!user) return false;
     
-    // Clear password fields
-    setSecuritySettings(prev => ({
-      ...prev,
-      currentPassword: '',
-      newPassword: '',
-      confirmPassword: ''
-    }));
+    return (
+      profileSettings.firstName !== user.firstName ||
+      profileSettings.lastName !== user.lastName ||
+      profileSettings.email !== user.email ||
+      profileSettings.phone !== user.phone ||
+      profileSettings.company !== user.company ||
+      profileSettings.website !== user.website ||
+      profileSettings.bio !== user.bio
+    );
   };
 
   return (
@@ -221,8 +314,8 @@ const Settings: React.FC = () => {
           <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
             <button
               onClick={handleSaveSettings}
-              disabled={saving}
-              className="w-full flex items-center justify-center px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-400 text-white rounded-lg transition-colors"
+              disabled={saving || (activeTab === 'profile' && !hasProfileChanges())}
+              className="w-full flex items-center justify-center px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
             >
               {saving ? (
                 <>
@@ -251,41 +344,99 @@ const Settings: React.FC = () => {
           {activeTab === 'profile' && (
             <div>
               <h2 className="text-xl font-bold mb-6">Profile Settings</h2>
-              <div className="space-y-4">
-                <div className="flex items-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                  <div className="flex-shrink-0 w-16 h-16 bg-orange-500 rounded-full flex items-center justify-center text-white text-2xl font-bold">
-                    {user?.firstName?.charAt(0)}{user?.lastName?.charAt(0)}
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">First Name</label>
+                    <input
+                      type="text"
+                      value={profileSettings.firstName}
+                      onChange={(e) => handleProfileChange('firstName', e.target.value)}
+                      className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-300"
+                    />
                   </div>
-                  <div className="ml-4">
-                    <h3 className="font-medium">{user?.firstName} {user?.lastName}</h3>
-                    <p className="text-gray-600 dark:text-gray-400">{user?.email}</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 capitalize">{user?.accountType} Account</p>
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Last Name</label>
+                    <input
+                      type="text"
+                      value={profileSettings.lastName}
+                      onChange={(e) => handleProfileChange('lastName', e.target.value)}
+                      className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-300"
+                    />
                   </div>
                 </div>
-                
-                <p className="text-gray-600 dark:text-gray-400 py-4">
-                  Use the profile button in the sidebar to edit your profile information and avatar.
-                </p>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                  <div>
-                    <h3 className="font-medium mb-2">Account Information</h3>
-                    <div className="space-y-2 text-sm">
-                      <p><span className="text-gray-500 dark:text-gray-400">Name:</span> {user?.firstName} {user?.lastName}</p>
-                      <p><span className="text-gray-500 dark:text-gray-400">Email:</span> {user?.email}</p>
-                      <p><span className="text-gray-500 dark:text-gray-400">Account Type:</span> {user?.accountType}</p>
-                      <p><span className="text-gray-500 dark:text-gray-400">Member since:</span> {new Date(user?.createdAt || '').toLocaleDateString()}</p>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Email Address</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-500">
+                      <Mail size={18} />
                     </div>
+                    <input
+                      type="email"
+                      value={profileSettings.email}
+                      onChange={(e) => handleProfileChange('email', e.target.value)}
+                      className="w-full p-3 pl-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-300"
+                    />
                   </div>
-                  
-                  <div>
-                    <h3 className="font-medium mb-2">Additional Information</h3>
-                    <div className="space-y-2 text-sm">
-                      <p><span className="text-gray-500 dark:text-gray-400">Phone:</span> {user?.phone || 'Not provided'}</p>
-                      <p><span className="text-gray-500 dark:text-gray-400">Company:</span> {user?.company || 'Not provided'}</p>
-                      <p><span className="text-gray-500 dark:text-gray-400">Website:</span> {user?.website || 'Not provided'}</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Phone Number</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-500">
+                      <Phone size={18} />
                     </div>
+                    <input
+                      type="tel"
+                      value={profileSettings.phone}
+                      onChange={(e) => handleProfileChange('phone', e.target.value)}
+                      className="w-full p-3 pl-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-300"
+                      placeholder="+1 (555) 123-4567"
+                    />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Company</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-500">
+                      <Building size={18} />
+                    </div>
+                    <input
+                      type="text"
+                      value={profileSettings.company}
+                      onChange={(e) => handleProfileChange('company', e.target.value)}
+                      className="w-full p-3 pl-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-300"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Website</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-500">
+                      <WebsiteIcon size={18} />
+                    </div>
+                    <input
+                      type="url"
+                      value={profileSettings.website}
+                      onChange={(e) => handleProfileChange('website', e.target.value)}
+                      className="w-full p-3 pl-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-300"
+                      placeholder="https://example.com"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">Bio</label>
+                  <textarea
+                    value={profileSettings.bio}
+                    onChange={(e) => handleProfileChange('bio', e.target.value)}
+                    rows={4}
+                    className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-300"
+                    placeholder="Tell us a little about yourself..."
+                  />
                 </div>
               </div>
             </div>
@@ -295,85 +446,29 @@ const Settings: React.FC = () => {
             <div>
               <h2 className="text-xl font-bold mb-6">Notification Preferences</h2>
               <div className="space-y-6">
-                <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                  <div>
-                    <h3 className="font-medium">Email Notifications</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Receive updates via email</p>
+                {Object.entries(notificationSettings).map(([key, value]) => (
+                  <div key={key} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div>
+                      <h3 className="font-medium capitalize">{key.replace(/([A-Z])/g, ' $1')}</h3>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        {key === 'emailNotifications' && 'Receive updates via email'}
+                        {key === 'assignmentReminders' && 'Get reminded about due assignments'}
+                        {key === 'courseUpdates' && 'Notifications about new course content'}
+                        {key === 'marketingEmails' && 'Receive promotional offers and updates'}
+                        {key === 'securityAlerts' && 'Get notified about important security events'}
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        className="sr-only peer" 
+                        checked={value}
+                        onChange={() => handleNotificationChange(key as keyof NotificationSettings)}
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-500 peer-checked:bg-orange-500"></div>
+                    </label>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      className="sr-only peer" 
-                      checked={notificationSettings.emailNotifications}
-                      onChange={() => handleNotificationChange('emailNotifications')}
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-500 peer-checked:bg-orange-500"></div>
-                  </label>
-                </div>
-                
-                <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                  <div>
-                    <h3 className="font-medium">Assignment Reminders</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Get reminded about due assignments</p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      className="sr-only peer" 
-                      checked={notificationSettings.assignmentReminders}
-                      onChange={() => handleNotificationChange('assignmentReminders')}
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-500 peer-checked:bg-orange-500"></div>
-                  </label>
-                </div>
-                
-                <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                  <div>
-                    <h3 className="font-medium">Course Updates</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Notifications about new course content</p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      className="sr-only peer" 
-                      checked={notificationSettings.courseUpdates}
-                      onChange={() => handleNotificationChange('courseUpdates')}
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-500 peer-checked:bg-orange-500"></div>
-                  </label>
-                </div>
-                
-                <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                  <div>
-                    <h3 className="font-medium">Marketing Emails</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Receive promotional offers and updates</p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      className="sr-only peer" 
-                      checked={notificationSettings.marketingEmails}
-                      onChange={() => handleNotificationChange('marketingEmails')}
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-500 peer-checked:bg-orange-500"></div>
-                  </label>
-                </div>
-                
-                <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                  <div>
-                    <h3 className="font-medium">Security Alerts</h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">Get notified about important security events</p>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      className="sr-only peer" 
-                      checked={notificationSettings.securityAlerts}
-                      onChange={() => handleNotificationChange('securityAlerts')}
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-500 peer-checked:bg-orange-500"></div>
-                  </label>
-                </div>
+                ))}
               </div>
             </div>
           )}
@@ -450,9 +545,10 @@ const Settings: React.FC = () => {
                     
                     <button
                       type="submit"
-                      className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors"
+                      disabled={saving}
+                      className="px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-400 text-white rounded-lg transition-colors"
                     >
-                      Update Password
+                      {saving ? 'Updating...' : 'Update Password'}
                     </button>
                   </div>
                 </form>
@@ -490,16 +586,6 @@ const Settings: React.FC = () => {
                     </button>
                   )}
                 </div>
-                
-                <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <h3 className="font-medium mb-2">Active Sessions</h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                    Manage your active login sessions
-                  </p>
-                  <button className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                    View Active Sessions
-                  </button>
-                </div>
               </div>
             </div>
           )}
@@ -511,77 +597,43 @@ const Settings: React.FC = () => {
                 <div className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg">
                   <h3 className="font-medium mb-4">Theme</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <button 
-                      onClick={() => handleAppearanceChange('theme', 'light')}
-                      className={`p-4 border-2 rounded-lg text-center transition-colors ${
-                        appearanceSettings.theme === 'light' 
-                          ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20' 
-                          : 'border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
-                      }`}
-                    >
-                      <div className="w-full h-20 bg-white rounded mb-2 border border-gray-200"></div>
-                      <span>Light</span>
-                    </button>
-                    
-                    <button 
-                      onClick={() => handleAppearanceChange('theme', 'dark')}
-                      className={`p-4 border-2 rounded-lg text-center transition-colors ${
-                        appearanceSettings.theme === 'dark' 
-                          ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20' 
-                          : 'border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
-                      }`}
-                    >
-                      <div className="w-full h-20 bg-gray-800 rounded mb-2 border border-gray-700"></div>
-                      <span>Dark</span>
-                    </button>
-                    
-                    <button 
-                      onClick={() => handleAppearanceChange('theme', 'system')}
-                      className={`p-4 border-2 rounded-lg text-center transition-colors ${
-                        appearanceSettings.theme === 'system' 
-                          ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20' 
-                          : 'border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
-                      }`}
-                    >
-                      <div className="w-full h-20 bg-gradient-to-r from-white to-gray-800 rounded mb-2 border border-gray-300 dark:border-gray-700"></div>
-                      <span>System</span>
-                    </button>
+                    {(['light', 'dark', 'system'] as const).map(theme => (
+                      <button 
+                        key={theme}
+                        onClick={() => handleAppearanceChange('theme', theme)}
+                        className={`p-4 border-2 rounded-lg text-center transition-colors ${
+                          appearanceSettings.theme === theme 
+                            ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20' 
+                            : 'border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        <div className={`w-full h-20 rounded mb-2 border ${
+                          theme === 'light' ? 'bg-white border-gray-200' :
+                          theme === 'dark' ? 'bg-gray-800 border-gray-700' :
+                          'bg-gradient-to-r from-white to-gray-800 border-gray-300 dark:border-gray-700'
+                        }`}></div>
+                        <span className="capitalize">{theme}</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
                 
                 <div className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg">
                   <h3 className="font-medium mb-4">Font Size</h3>
-                  <div className="flex space-x-4">
-                    <button 
-                      onClick={() => handleAppearanceChange('fontSize', 'small')}
-                      className={`px-4 py-2 border rounded-lg transition-colors ${
-                        appearanceSettings.fontSize === 'small' 
-                          ? 'border-orange-500 bg-orange-500 text-white' 
-                          : 'border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
-                      }`}
-                    >
-                      Small
-                    </button>
-                    <button 
-                      onClick={() => handleAppearanceChange('fontSize', 'medium')}
-                      className={`px-4 py-2 border rounded-lg transition-colors ${
-                        appearanceSettings.fontSize === 'medium' 
-                          ? 'border-orange-500 bg-orange-500 text-white' 
-                          : 'border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
-                      }`}
-                    >
-                      Medium
-                    </button>
-                    <button 
-                      onClick={() => handleAppearanceChange('fontSize', 'large')}
-                      className={`px-4 py-2 border rounded-lg transition-colors ${
-                        appearanceSettings.fontSize === 'large' 
-                          ? 'border-orange-500 bg-orange-500 text-white' 
-                          : 'border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
-                      }`}
-                    >
-                      Large
-                    </button>
+                  <div className="flex flex-wrap gap-4">
+                    {(['small', 'medium', 'large'] as const).map(size => (
+                      <button 
+                        key={size}
+                        onClick={() => handleAppearanceChange('fontSize', size)}
+                        className={`px-4 py-2 border rounded-lg transition-colors ${
+                          appearanceSettings.fontSize === size 
+                            ? 'border-orange-500 bg-orange-500 text-white' 
+                            : 'border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        {size.charAt(0).toUpperCase() + size.slice(1)}
+                      </button>
+                    ))}
                   </div>
                 </div>
                 
@@ -694,20 +746,6 @@ const Settings: React.FC = () => {
                         <option value="DD MMM YYYY">DD MMM YYYY</option>
                       </select>
                     </div>
-                  </div>
-                </div>
-                
-                <div className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg">
-                  <h3 className="font-medium mb-4">Preview</h3>
-                  <div className="p-4 bg-white dark:bg-gray-600 rounded-lg border border-gray-200 dark:border-gray-500">
-                    <p className="mb-2">
-                      <span className="text-gray-500 dark:text-gray-400">Current time: </span>
-                      {new Date().toLocaleTimeString()}
-                    </p>
-                    <p>
-                      <span className="text-gray-500 dark:text-gray-400">Today's date: </span>
-                      {new Date().toLocaleDateString()}
-                    </p>
                   </div>
                 </div>
               </div>
