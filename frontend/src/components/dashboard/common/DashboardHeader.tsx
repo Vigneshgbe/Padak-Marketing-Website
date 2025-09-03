@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Menu, Bell, ChevronDown, User, Shield, Sparkles, RotateCcw } from 'lucide-react';
 import { useAuth } from '../../../hooks/use-auth';
+import { getImageUrl } from '../../../utils/image-utils'; 
 
 interface DashboardHeaderProps {
   onMenuClick: () => void;
@@ -131,7 +132,7 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
             <div className="relative">
               {user.profileImage ? (
                 <img 
-                  src={user.profileImage} 
+                  src={getImageUrl(user.profileImage)} // Use getImageUrl here
                   alt="Profile" 
                   className="w-10 h-10 rounded-xl object-cover border-2 border-orange-200 dark:border-orange-500/20"
                 />
