@@ -2,12 +2,14 @@ import React, { useState, useRef } from 'react';
 import { Camera, Upload, User, Shield } from 'lucide-react';
 import { useProfile } from '../../../hooks/use-profile';
 import { User as UserType } from '../../../lib/types';
+import { useAuth } from '../../../hooks/use-auth';
 
 interface AvatarUploadProps {
   user: UserType;
 }
 
 const AvatarUpload: React.FC<AvatarUploadProps> = ({ user, onSuccess }) => {
+  const { refreshUser } = useAuth();
   const { uploadAvatar, loading } = useProfile();
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +42,9 @@ const AvatarUpload: React.FC<AvatarUploadProps> = ({ user, onSuccess }) => {
       // Upload file
       const newProfileImage = await uploadAvatar(file);
       setPreview(newProfileImage);
+
+      // After successful upload, refresh user data
+      await refreshUser();
       
       // Call success callback if provided
       if (onSuccess) {

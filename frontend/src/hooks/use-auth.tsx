@@ -142,6 +142,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const isAuthenticated = !!user && !!token; // <--- RECOMMENDED: Authenticated implies both user data AND token
 
+  // In your useAuth hook
+const refreshUser = async () => {
+  try {
+    const response = await fetch('http://localhost:5000/api/auth/me', {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    if (response.ok) {
+      const userData = await response.json();
+      setUser(userData);
+    }
+  } catch (error) {
+    console.error('Failed to refresh user data:', error);
+  }
+};
+
+
   return (
     <AuthContext.Provider 
       value={{
