@@ -34,7 +34,7 @@ import CalendarManagement from './dashboard/admin/CalendarManagement';
 import ServiceRequests from './dashboard/admin/ServiceRequests';
 
 const Dashboard: React.FC = () => {
-  const { user, loading } = useAuth();
+  const { user, token, loading } = useAuth();
   const [activeView, setActiveView] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
@@ -46,6 +46,11 @@ const Dashboard: React.FC = () => {
     learningStreak: 0,
     lastActivity: new Date().toISOString(),
   });
+  const [enrolledCourses, setEnrolledCourses] = useState([]);
+  const [internshipApplications, setInternshipApplications] = useState([]);
+  const [serviceRequests, setServiceRequests] = useState([]);
+  const [calendarEvents, setCalendarEvents] = useState([]);
+  const [isLoadingData, setIsLoadingData] = useState(true);
 
   // Set dark mode class on body
   useEffect(() => {
@@ -56,21 +61,90 @@ const Dashboard: React.FC = () => {
     }
   }, [darkMode]);
 
-  // Load user stats
+  // Load user data
   useEffect(() => {
-    if (user) {
-      // TODO: Fetch user stats from API
-      setUserStats({
-        coursesEnrolled: 5,
-        coursesCompleted: 2,
-        certificatesEarned: 2,
-        learningStreak: 12,
-        lastActivity: new Date().toISOString(),
-      });
-    }
-  }, [user]);
+    const fetchUserData = async () => {
+      if (!user || !token) return;
+      
+      setIsLoadingData(true);
+      try {
+        // Fetch user stats
+        const statsResponse = await fetch('http://localhost:5000/api/dashboard/stats', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (statsResponse.ok) {
+          const statsData = await statsResponse.json();
+          setUserStats({
+            coursesEnrolled: statsData.coursesEnrolled || 0,
+            coursesCompleted: statsData.coursesCompleted || 0,
+            certificatesEarned: statsData.certificatesEarned || 0,
+            learningStreak: statsData.learningStreak || 0,
+            lastActivity: statsData.lastActivity || new Date().toISOString(),
+          });
+        }
 
-  if (loading) {
+        // Fetch enrolled courses if user is not admin
+        if (user.accountType !== 'admin') {
+          const coursesResponse = await fetch('http://localhost:5000/api/courses/enrolled', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          if (coursesResponse.ok) {
+            const coursesData = await coursesResponse.json();
+            setEnrolledCourses(coursesData);
+          }
+
+          // Fetch internship applications
+          const internshipsResponse = await fetch(`http://localhost:5000/api/user/internship-applications`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          if (internshipsResponse.ok) {
+            const internshipsData = await internshipsResponse.json();
+            setInternshipApplications(internshipsData);
+          }
+
+          // Fetch service requests for professional/business/agency users
+          if (['professional', 'business', 'agency'].includes(user.accountType)) {
+            const servicesResponse = await fetch(`http://localhost:5000/api/user/service-requests`, {
+              headers: {
+                'Authorization': `Bearer ${token}`
+              }
+            });
+            if (servicesResponse.ok) {
+              const servicesData = await servicesResponse.json();
+              setServiceRequests(servicesData);
+            }
+          }
+
+          // Fetch calendar events
+          const calendarResponse = await fetch('http://localhost:5000/api/calendar/events', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          if (calendarResponse.ok) {
+            const calendarData = await calendarResponse.json();
+            setCalendarEvents(calendarData);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+      } finally {
+        setIsLoadingData(false);
+      }
+    };
+
+    if (user) {
+      fetchUserData();
+    }
+  }, [user, token]);
+
+  if (loading || isLoadingData) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-orange-500"></div>
@@ -86,13 +160,45 @@ const Dashboard: React.FC = () => {
     if (activeView === 'dashboard') {
       switch (user.accountType) {
         case 'student':
-          return <StudentDashboard user={user} stats={userStats} />;
+          return (
+            <StudentDashboard 
+              user={user} 
+              stats={userStats} 
+              enrolledCourses={enrolledCourses}
+              internshipApplications={internshipApplications}
+              calendarEvents={calendarEvents}
+            />
+          );
         case 'professional':
-          return <ProfessionalDashboard user={user} stats={userStats} />;
+          return (
+            <ProfessionalDashboard 
+              user={user} 
+              stats={userStats} 
+              enrolledCourses={enrolledCourses}
+              serviceRequests={serviceRequests}
+              calendarEvents={calendarEvents}
+            />
+          );
         case 'business':
-          return <BusinessDashboard user={user} stats={userStats} />;
+          return (
+            <BusinessDashboard 
+              user={user} 
+              stats={userStats} 
+              enrolledCourses={enrolledCourses}
+              serviceRequests={serviceRequests}
+              calendarEvents={calendarEvents}
+            />
+          );
         case 'agency':
-          return <AgencyDashboard user={user} stats={userStats} />;
+          return (
+            <AgencyDashboard 
+              user={user} 
+              stats={userStats} 
+              enrolledCourses={enrolledCourses}
+              serviceRequests={serviceRequests}
+              calendarEvents={calendarEvents}
+            />
+          );
         case 'admin':
           return <AdminOverview />;
         default:
@@ -131,19 +237,19 @@ const Dashboard: React.FC = () => {
       case 'social':
         return <SocialFeed />;
       case 'courses':
-        return <MyCourses />;
+        return <MyCourses enrolledCourses={enrolledCourses} />;
       case 'internships':
-        return <Interns />;
+        return <Interns internshipApplications={internshipApplications} />;
       case 'assignments':
         return <Assignments />;
       case 'certificates':
         return <Certificates />;
       case 'calendar':
-        return <Calendar />;
+        return <Calendar events={calendarEvents} />;
       case 'resources':
         return <Resources />;
       case 'services':
-        return <Services />;
+        return <Services serviceRequests={serviceRequests} />;
       case 'settings':
         return <Settings />;
       default:
