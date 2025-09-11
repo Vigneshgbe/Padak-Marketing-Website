@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
   FileText, Download, ExternalLink, BookOpen, Search,
   MessageSquare, Calendar, Star, Award, Info, Users,
-  X, Check, Crown, Zap, CreditCard, Lock, Unlock
+  X, Check, Crown, Zap, CreditCard, Lock, Unlock,
+  Upload, Receipt, Shield
 } from 'lucide-react';
 
 interface User {
@@ -27,12 +28,25 @@ interface Resource {
   is_premium: boolean;
   created_at: string;
   updated_at: string;
-  price?: number; // Individual resource price
+  price?: number;
+}
+
+interface PaymentMethod {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+}
+
+interface PaymentProof {
+  file: File | null;
+  transactionId: string;
+  paymentMethod: string;
 }
 
 const iconMap: { [key: string]: React.ElementType } = {
   FileText, Download, ExternalLink, BookOpen, Users, Search,
-  MessageSquare, Calendar, Star, Award, Info
+  MessageSquare, Calendar, Star, Award, Info, Shield, Receipt
 };
 
 const buttonColorClasses: { [key: string]: string } = {
@@ -52,7 +66,23 @@ const Resources: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
   const [showPlanModal, setShowPlanModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<'free' | 'individual' | 'premium'>('free');
   const [purchasedResources, setPurchasedResources] = useState<number[]>([]);
+  const [paymentProof, setPaymentProof] = useState<PaymentProof>({
+    file: null,
+    transactionId: '',
+    paymentMethod: ''
+  });
+  const [uploading, setUploading] = useState(false);
+
+  // Available payment methods
+  const paymentMethods: PaymentMethod[] = [
+    { id: 'paypal', name: 'PayPal', icon: '💰', description: 'Pay with your PayPal account' },
+    { id: 'credit_card', name: 'Credit Card', icon: '💳', description: 'Pay with credit/debit card' },
+    { id: 'bank_transfer', name: 'Bank Transfer', icon: '🏦', description: 'Direct bank transfer' },
+    { id: 'crypto', name: 'Cryptocurrency', icon: '₿', description: 'Pay with cryptocurrency' },
+  ];
 
   useEffect(() => {
     fetchUserData();
@@ -139,67 +169,105 @@ const Resources: React.FC = () => {
         window.URL.revokeObjectURL(url);
       } else {
         console.error('Failed to download resource:', response.statusText);
-        // Show toast notification here instead of alert
       }
     } catch (error) {
       console.error('Error downloading resource:', error);
-      // Show toast notification here instead of alert
     }
   };
 
   const handlePlanSelection = (plan: 'free' | 'individual' | 'premium') => {
-    if (!selectedResource) return;
+    setSelectedPlan(plan);
+    setShowPlanModal(false);
     
-    switch (plan) {
-      case 'free':
-        // User continues with free plan - only free resources
-        setShowPlanModal(false);
-        break;
-        
-      case 'individual':
-        // Process individual purchase
-        handleIndividualPurchase();
-        break;
-        
-      case 'premium':
-        // Process premium subscription
-        handlePremiumSubscription();
-        break;
+    if (plan === 'free') {
+      // User continues with free plan - only free resources
+      return;
+    }
+    
+    // Show payment modal for individual or premium plans
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentProofChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.name === 'proofFile' && e.target.files && e.target.files.length > 0) {
+      setPaymentProof({
+        ...paymentProof,
+        file: e.target.files[0]
+      });
+    } else {
+      setPaymentProof({
+        ...paymentProof,
+        [e.target.name]: e.target.value
+      });
     }
   };
 
-  const handleIndividualPurchase = () => {
-    if (!selectedResource) return;
-    
-    // Mock payment processing
-    // In a real app, this would integrate with a payment gateway
-    const newPurchasedResources = [...purchasedResources, selectedResource.id];
-    setPurchasedResources(newPurchasedResources);
-    localStorage.setItem('purchasedResources', JSON.stringify(newPurchasedResources));
-    
-    // Download the resource after purchase
-    handleAction(selectedResource);
-    setShowPlanModal(false);
-    
-    // Show success message (would be a toast in real app)
-    console.log(`Purchased "${selectedResource.title}" for $${selectedResource.price || 9.99}`);
-  };
+  const submitPayment = async () => {
+    if (!paymentProof.file || !paymentProof.transactionId || !paymentProof.paymentMethod) {
+      alert('Please fill all payment details and upload proof');
+      return;
+    }
 
-  const handlePremiumSubscription = () => {
-    // Mock subscription processing
-    // In a real app, this would integrate with a payment gateway
-    if (user) {
-      setUser({ ...user, subscription_plan: 'premium' });
-    }
+    setUploading(true);
     
-    // Download the resource after subscription
-    if (selectedResource) {
-      handleAction(selectedResource);
+    try {
+      // Create form data for file upload
+      const formData = new FormData();
+      formData.append('file', paymentProof.file);
+      formData.append('transactionId', paymentProof.transactionId);
+      formData.append('paymentMethod', paymentProof.paymentMethod);
+      formData.append('resourceId', selectedResource?.id?.toString() || '');
+      formData.append('plan', selectedPlan);
+      formData.append('amount', selectedPlan === 'individual' 
+        ? (selectedResource?.price || 9.99).toString() 
+        : '49.99');
+      
+      const response = await fetch('http://localhost:5000/api/payments/upload-proof', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || localStorage.getItem('authToken')}`
+        },
+        body: formData
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        if (selectedPlan === 'individual' && selectedResource) {
+          // Add to purchased resources
+          const newPurchasedResources = [...purchasedResources, selectedResource.id];
+          setPurchasedResources(newPurchasedResources);
+          localStorage.setItem('purchasedResources', JSON.stringify(newPurchasedResources));
+          
+          // Download the resource after purchase
+          handleAction(selectedResource);
+        } else if (selectedPlan === 'premium') {
+          // Update user subscription
+          if (user) {
+            setUser({ ...user, subscription_plan: 'premium' });
+          }
+          
+          // Download the resource if one was selected
+          if (selectedResource) {
+            handleAction(selectedResource);
+          }
+        }
+        
+        // Reset payment proof and close modals
+        setPaymentProof({ file: null, transactionId: '', paymentMethod: '' });
+        setShowPaymentModal(false);
+        
+        // Show success message
+        alert('Payment proof uploaded successfully! Your access will be granted after verification.');
+      } else {
+        throw new Error('Failed to upload payment proof');
+      }
+    } catch (error) {
+      console.error('Error uploading payment proof:', error);
+      alert('Error uploading payment proof. Please try again.');
+    } finally {
+      setUploading(false);
     }
-    setShowPlanModal(false);
-    
-    // Show success message (would be a toast in real app)
-    console.log("Subscribed to Premium Plan for $49.99/month");
   };
 
   const filteredResources = resources
@@ -467,6 +535,125 @@ const Resources: React.FC = () => {
                   <span className="text-sm text-gray-500 ml-1">/ month</span>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Modal */}
+      {showPaymentModal && selectedResource && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold">Complete Payment</h3>
+              <button onClick={() => setShowPaymentModal(false)} className="text-gray-500 hover:text-gray-700">
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="mb-6">
+              <h4 className="text-lg font-semibold mb-2">
+                {selectedPlan === 'individual' ? selectedResource.title : 'Premium Subscription'}
+              </h4>
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                {selectedPlan === 'individual' 
+                  ? selectedResource.description 
+                  : 'Unlimited access to all premium resources'}
+              </p>
+              
+              <div className="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-4">
+                <div className="flex justify-between items-center">
+                  <span className="font-medium">Total Amount:</span>
+                  <span className="text-xl font-bold">
+                    ${selectedPlan === 'individual' ? (selectedResource.price || 9.99) : '49.99'}
+                  </span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Payment Method</label>
+                <select
+                  name="paymentMethod"
+                  value={paymentProof.paymentMethod}
+                  onChange={handlePaymentProofChange}
+                  className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                  required
+                >
+                  <option value="">Select a payment method</option>
+                  {paymentMethods.map(method => (
+                    <option key={method.id} value={method.id}>
+                      {method.icon} {method.name} - {method.description}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-2">Transaction ID</label>
+                <input
+                  type="text"
+                  name="transactionId"
+                  value={paymentProof.transactionId}
+                  onChange={handlePaymentProofChange}
+                  placeholder="Enter your transaction ID"
+                  className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-2">Payment Proof (Screenshot/Receipt)</label>
+                <div className="flex items-center justify-center w-full">
+                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600">
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                      <Upload className="w-8 h-8 mb-3 text-gray-400" />
+                      <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
+                        <span className="font-semibold">Click to upload</span> or drag and drop
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        PNG, JPG, PDF (MAX. 5MB)
+                      </p>
+                    </div>
+                    <input
+                      type="file"
+                      name="proofFile"
+                      onChange={handlePaymentProofChange}
+                      className="hidden"
+                      accept=".png,.jpg,.jpeg,.pdf"
+                    />
+                  </label>
+                </div>
+                {paymentProof.file && (
+                  <p className="mt-2 text-sm text-green-600">
+                    <Check size={16} className="inline mr-1" />
+                    {paymentProof.file.name} selected
+                  </p>
+                )}
+              </div>
+              
+              <button
+                onClick={submitPayment}
+                disabled={uploading}
+                className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 px-4 rounded-lg flex items-center justify-center disabled:opacity-50"
+              >
+                {uploading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <CreditCard size={20} className="mr-2" />
+                    Submit Payment Proof
+                  </>
+                )}
+              </button>
+              
+              <p className="text-sm text-gray-500 text-center">
+                Your access will be granted after admin verification of your payment proof.
+              </p>
             </div>
           </div>
         </div>
