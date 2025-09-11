@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Trash2, Download, Search, PlusCircle, Edit3, FileText, BookOpen, Users, Building,
   GraduationCap, Shield, Briefcase, Globe, TrendingUp, Target, BarChart3, PenTool,
-  MessageSquare, Calendar, Star, Award, BookmarkPlus, Info
+  MessageSquare, Calendar, Star, Award, BookmarkPlus, Info, ExternalLink 
 } from 'lucide-react';
 import DataTable from '../../../components/admin/DataTable';
 import Modal from '../../../components/admin/Modal';
@@ -334,18 +334,18 @@ const ResourceManagement: React.FC = () => {
           ]}
           actions={(resource) => (
             <div className="flex space-x-2">
-              {resource.url && (resource.type === 'tool' || resource.type === 'pdf') && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    window.open(resource.url, '_blank');
-                  }}
-                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                  title={resource.type === 'tool' ? 'Visit Tool' : 'View/Download Resource'}
-                >
-                  {resource.type === 'tool' ? <ExternalLink size={16} className="text-purple-500" /> : <Download size={16} className="text-green-500" />}
-                </button>
-              )}
+{resource.url && (resource.type === 'tool' || resource.type === 'pdf') && (
+  <button
+    onClick={(e) => {
+      e.stopPropagation();
+      window.open(resource.url, '_blank');
+    }}
+    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+    title={resource.type === 'tool' ? 'Visit Tool' : 'View/Download Resource'}
+  >
+    {resource.type === 'tool' ? <ExternalLink size={16} className="text-purple-500" /> : <Download size={16} className="text-green-500" />}
+  </button>
+)}
               <button
                 onClick={(e) => {
                   e.stopPropagation();

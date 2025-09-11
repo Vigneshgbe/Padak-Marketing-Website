@@ -32,6 +32,7 @@ import ServiceManagement from './dashboard/admin/ServiceManagement';
 import ContactManagement from './dashboard/admin/ContactManagement';
 import CalendarManagement from './dashboard/admin/CalendarManagement';
 import ServiceRequests from './dashboard/admin/ServiceRequests';
+import ResourceManagement from './dashboard/admin/ResourceManagement';
 
 const Dashboard: React.FC = () => {
   const { user, token, loading } = useAuth();
@@ -40,10 +41,10 @@ const Dashboard: React.FC = () => {
   const [darkMode, setDarkMode] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [userStats, setUserStats] = useState<UserStats>({
-    coursesEnrolled: 0,
-    coursesCompleted: 0,
+    coursesEnrolled: 1,
+    coursesCompleted: 1,
     certificatesEarned: 0,
-    learningStreak: 0,
+    learningStreak: 1,
     lastActivity: new Date().toISOString(),
   });
   const [enrolledCourses, setEnrolledCourses] = useState([]);
@@ -227,6 +228,8 @@ const Dashboard: React.FC = () => {
           return <CalendarManagement />;
         case 'admin-service-requests':
           return <ServiceRequests />;
+        case 'admin-resources':
+          return <ResourceManagement />;
         default:
           return <AdminOverview />;
       }
