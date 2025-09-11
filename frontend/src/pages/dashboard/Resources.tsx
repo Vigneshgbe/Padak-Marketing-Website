@@ -1,30 +1,10 @@
-// src/pages/dashboard/Resources.tsx
 import React, { useState, useEffect } from 'react';
-import { 
-  FileText, 
-  Download, 
-  ExternalLink, 
-  BookOpen, 
-  Users, 
-  Building, 
-  GraduationCap,
-  Shield,
-  Briefcase,
-  Globe,
-  TrendingUp,
-  Target,
-  BarChart3,
-  PenTool,
-  Search,
-  MessageSquare,
-  Calendar,
-  Star,
-  Award,
-  BookmarkPlus
+import {
+  FileText, Download, ExternalLink, BookOpen, Users, Building, GraduationCap,
+  Shield, Briefcase, Globe, TrendingUp, Target, BarChart3, PenTool, Search,
+  MessageSquare, Calendar, Star, Award, BookmarkPlus, Info
 } from 'lucide-react';
-
-const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
-const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+import PremiumAccessModal from '../../components/PremiumAccessModal'; // Import the new modal
 
 interface User {
   id: number;
@@ -45,6 +25,7 @@ interface Resource {
   url?: string;
   category: string;
   icon: React.ReactNode;
+  iconName: string; // Added for better mapping in admin later
   buttonColor: string;
   allowedAccountTypes: string[];
   isPremium?: boolean;
@@ -66,6 +47,22 @@ interface UserStats {
   learning_streak: number;
 }
 
+// Map for dynamic Tailwind classes (Crucial for buttonColor)
+const buttonColorClasses: { [key: string]: string } = {
+  blue: 'bg-blue-500 hover:bg-blue-600',
+  green: 'bg-green-500 hover:bg-green-600',
+  purple: 'bg-purple-500 hover:bg-purple-600',
+  orange: 'bg-orange-500 hover:bg-orange-600',
+  red: 'bg-red-500 hover:bg-red-600',
+  gray: 'bg-gray-500 hover:bg-gray-600',
+};
+
+const iconMap: { [key: string]: React.ElementType } = {
+  FileText, Download, ExternalLink, BookOpen, Users, Building, GraduationCap,
+  Shield, Briefcase, Globe, TrendingUp, Target, BarChart3, PenTool, Search,
+  MessageSquare, Calendar, Star, Award, BookmarkPlus, Info
+};
+
 const Resources: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [resources, setResources] = useState<Resource[]>([]);
@@ -73,6 +70,10 @@ const Resources: React.FC = () => {
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('materials');
+
+  // State for premium access modal
+  const [showPremiumModal, setShowPremiumModal] = useState(false);
+  const [selectedPremiumResource, setSelectedPremiumResource] = useState<Resource | null>(null);
 
   useEffect(() => {
     fetchUserData();
@@ -88,10 +89,12 @@ const Resources: React.FC = () => {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
+      if (!response.ok) throw new Error('Failed to fetch user data');
       const userData = await response.json();
       setUser(userData);
     } catch (error) {
       console.error('Error fetching user data:', error);
+      // Fallback or error state
     }
   };
 
@@ -102,8 +105,13 @@ const Resources: React.FC = () => {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
+      if (!response.ok) throw new Error('Failed to fetch resources');
       const resourcesData = await response.json();
-      setResources(resourcesData);
+      setResources(resourcesData.map((res: any) => ({
+        ...res,
+        // Ensure icon is correctly mapped from a string name from the backend
+        icon: iconMap[res.iconName || 'FileText'] ? React.createElement(iconMap[res.iconName || 'FileText']) : <FileText size={18} />
+      })));
     } catch (error) {
       console.error('Error fetching resources:', error);
       // Fallback to default resources if API fails
@@ -118,6 +126,7 @@ const Resources: React.FC = () => {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
+      if (!response.ok) throw new Error('Failed to fetch courses');
       const coursesData = await response.json();
       setCourses(coursesData);
     } catch (error) {
@@ -132,6 +141,7 @@ const Resources: React.FC = () => {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
+      if (!response.ok) throw new Error('Failed to fetch user stats');
       const statsData = await response.json();
       setUserStats(statsData);
     } catch (error) {
@@ -141,149 +151,60 @@ const Resources: React.FC = () => {
     }
   };
 
+  // Default resources for fallback or initial setup.
+  // Note: iconName added to facilitate admin management later.
   const getDefaultResources = (): Resource[] => {
     const allResources: Resource[] = [
       // Student Resources
       {
-        id: 1,
-        title: "Digital Marketing Fundamentals",
-        description: "Complete beginner's guide to digital marketing",
-        type: "pdf",
-        size: "3.2 MB",
-        category: "Course Materials",
-        icon: <BookOpen size={18} />,
-        buttonColor: "blue",
-        allowedAccountTypes: ['student', 'professional', 'business', 'agency', 'admin']
+        id: 1, title: "Digital Marketing Fundamentals", description: "Complete beginner's guide to digital marketing", type: "pdf", size: "3.2 MB", category: "Course Materials", icon: <BookOpen size={18} />, iconName: "BookOpen", buttonColor: "blue", allowedAccountTypes: ['student', 'professional', 'business', 'agency', 'admin']
       },
       {
-        id: 2,
-        title: "SEO Checklist Template",
-        description: "Step-by-step SEO optimization checklist",
-        type: "excel",
-        size: "1.5 MB",
-        category: "Templates",
-        icon: <Search size={18} />,
-        buttonColor: "green",
-        allowedAccountTypes: ['student', 'professional', 'business', 'agency', 'admin']
+        id: 2, title: "SEO Checklist Template", description: "Step-by-step SEO optimization checklist", type: "excel", size: "1.5 MB", category: "Templates", icon: <Search size={18} />, iconName: "Search", buttonColor: "green", allowedAccountTypes: ['student', 'professional', 'business', 'agency', 'admin']
       },
       {
-        id: 3,
-        title: "Content Calendar Template",
-        description: "Monthly content planning spreadsheet",
-        type: "template",
-        size: "2.1 MB",
-        category: "Templates",
-        icon: <Calendar size={18} />,
-        buttonColor: "green",
-        allowedAccountTypes: ['student', 'professional', 'business', 'agency', 'admin']
+        id: 3, title: "Content Calendar Template", description: "Monthly content planning spreadsheet", type: "template", size: "2.1 MB", category: "Templates", icon: <Calendar size={18} />, iconName: "Calendar", buttonColor: "green", allowedAccountTypes: ['student', 'professional', 'business', 'agency', 'admin']
       },
-      
+
       // Professional Resources
       {
-        id: 4,
-        title: "Advanced Analytics Guide",
-        description: "Deep dive into Google Analytics 4",
-        type: "pdf",
-        size: "4.8 MB",
-        category: "Professional Tools",
-        icon: <BarChart3 size={18} />,
-        buttonColor: "purple",
-        allowedAccountTypes: ['professional', 'business', 'agency', 'admin'],
-        isPremium: true
+        id: 4, title: "Advanced Analytics Guide", description: "Deep dive into Google Analytics 4", type: "pdf", size: "4.8 MB", category: "Professional Tools", icon: <BarChart3 size={18} />, iconName: "BarChart3", buttonColor: "purple", allowedAccountTypes: ['professional', 'business', 'agency', 'admin'], isPremium: true
       },
       {
-        id: 5,
-        title: "Client Reporting Template",
-        description: "Professional client performance reports",
-        type: "excel",
-        size: "2.3 MB",
-        category: "Templates",
-        icon: <FileText size={18} />,
-        buttonColor: "green",
-        allowedAccountTypes: ['professional', 'business', 'agency', 'admin'],
-        isPremium: true
+        id: 5, title: "Client Reporting Template", description: "Professional client performance reports", type: "excel", size: "2.3 MB", category: "Templates", icon: <FileText size={18} />, iconName: "FileText", buttonColor: "green", allowedAccountTypes: ['professional', 'business', 'agency', 'admin'], isPremium: true
       },
-      
+
       // Business Resources
       {
-        id: 6,
-        title: "Marketing Strategy Framework",
-        description: "Complete business marketing strategy guide",
-        type: "pdf",
-        size: "6.1 MB",
-        category: "Business Tools",
-        icon: <Target size={18} />,
-        buttonColor: "orange",
-        allowedAccountTypes: ['business', 'agency', 'admin'],
-        isPremium: true
+        id: 6, title: "Marketing Strategy Framework", description: "Complete business marketing strategy guide", type: "pdf", size: "6.1 MB", category: "Business Tools", icon: <Target size={18} />, iconName: "Target", buttonColor: "orange", allowedAccountTypes: ['business', 'agency', 'admin'], isPremium: true
       },
       {
-        id: 7,
-        title: "ROI Calculator Template",
-        description: "Marketing ROI calculation spreadsheet",
-        type: "excel",
-        size: "1.8 MB",
-        category: "Templates",
-        icon: <TrendingUp size={18} />,
-        buttonColor: "green",
-        allowedAccountTypes: ['business', 'agency', 'admin'],
-        isPremium: true
+        id: 7, title: "ROI Calculator Template", description: "Marketing ROI calculation spreadsheet", type: "excel", size: "1.8 MB", category: "Templates", icon: <TrendingUp size={18} />, iconName: "TrendingUp", buttonColor: "green", allowedAccountTypes: ['business', 'agency', 'admin'], isPremium: true
       },
-      
+
       // Agency Resources
       {
-        id: 8,
-        title: "Multi-Client Dashboard",
-        description: "Agency client management system",
-        type: "template",
-        size: "5.2 MB",
-        category: "Agency Tools",
-        icon: <Users size={18} />,
-        buttonColor: "red",
-        allowedAccountTypes: ['agency', 'admin'],
-        isPremium: true
+        id: 8, title: "Multi-Client Dashboard", description: "Agency client management system", type: "template", size: "5.2 MB", category: "Agency Tools", icon: <Users size={18} />, iconName: "Users", buttonColor: "red", allowedAccountTypes: ['agency', 'admin'], isPremium: true
       },
       {
-        id: 9,
-        title: "White Label Reports",
-        description: "Customizable client report templates",
-        type: "template",
-        size: "3.7 MB",
-        category: "Agency Tools",
-        icon: <Award size={18} />,
-        buttonColor: "red",
-        allowedAccountTypes: ['agency', 'admin'],
-        isPremium: true
+        id: 9, title: "White Label Reports", description: "Customizable client report templates", type: "template", size: "3.7 MB", category: "Agency Tools", icon: <Award size={18} />, iconName: "Award", buttonColor: "red", allowedAccountTypes: ['agency', 'admin'], isPremium: true
       },
-      
+
       // Tools (All Users)
       {
-        id: 10,
-        title: "Google Analytics",
-        description: "Web analytics platform",
-        type: "tool",
-        url: "https://analytics.google.com",
-        category: "External Tools",
-        icon: <ExternalLink size={18} />,
-        buttonColor: "purple",
-        allowedAccountTypes: ['student', 'professional', 'business', 'agency', 'admin']
+        id: 10, title: "Google Analytics", description: "Web analytics platform", type: "tool", url: "https://analytics.google.com", category: "External Tools", icon: <ExternalLink size={18} />, iconName: "ExternalLink", buttonColor: "purple", allowedAccountTypes: ['student', 'professional', 'business', 'agency', 'admin']
       },
       {
-        id: 11,
-        title: "SEMrush",
-        description: "SEO & marketing toolkit",
-        type: "tool",
-        url: "https://semrush.com",
-        category: "External Tools",
-        icon: <ExternalLink size={18} />,
-        buttonColor: "purple",
-        allowedAccountTypes: ['professional', 'business', 'agency', 'admin']
+        id: 11, title: "SEMrush", description: "SEO & marketing toolkit", type: "tool", url: "https://semrush.com", category: "External Tools", icon: <ExternalLink size={18} />, iconName: "ExternalLink", buttonColor: "purple", allowedAccountTypes: ['professional', 'business', 'agency', 'admin']
       }
     ];
 
-    return allResources.filter(resource => 
-      user ? resource.allowedAccountTypes.includes(user.account_type) : true
-    );
+    return allResources.filter(resource =>
+      user ? resource.allowedAccountTypes.includes(user.account_type) : true // Default to showing all if user not loaded
+    ).map(res => ({
+      ...res,
+      icon: iconMap[res.iconName] ? React.createElement(iconMap[res.iconName]) : <FileText size={18} />
+    }));
   };
 
   const getAccountTypeIcon = (accountType: string) => {
@@ -308,70 +229,76 @@ const Resources: React.FC = () => {
     }
   };
 
-  const handleDownloadOrShowPlans = (resource: Resource) => {
-  if (!resource.isPremium) {
-    handleDownload(resource.id, resource.title);
-  } else {
-    setSelectedResource(resource);
-    setIsPlanModalOpen(true);
-  }
-};
+  const handleAction = async (resource: Resource) => {
+    // Determine if the user has "premium access" based on account type
+    // This is a simplified check: only 'student' users are considered non-premium by default.
+    const userHasPremiumAccess = user && ['professional', 'business', 'agency', 'admin'].includes(user.account_type);
 
-const handlePurchasePlan = async (planType: 'free' | 'pay-per-resource' | 'premium') => {
-  if (planType === 'free') {
-    alert('You can only download free resources with Free plan.');
-    setIsPlanModalOpen(false);
-  } else if (planType === 'pay-per-resource' && selectedResource) {
-    // Mock payment process
-    const confirmed = window.confirm(`Pay $9.99 to download "${selectedResource.title}"?`);
-    if (confirmed) {
-      alert(`Payment successful! Downloading ${selectedResource.title}...`);
-      handleDownload(selectedResource.id, selectedResource.title);
-      setIsPlanModalOpen(false);
+    if (resource.isPremium && !userHasPremiumAccess) {
+      setSelectedPremiumResource(resource);
+      setShowPremiumModal(true);
+      return;
     }
-  } else if (planType === 'premium') {
-    const confirmed = window.confirm('Subscribe to Premium Plan for $19.99/month?');
-    if (confirmed) {
-      alert('Premium subscription activated! Enjoy all premium resources.');
-      // In real app: update user.subscription in DB + localStorage
-      localStorage.setItem('userPlan', 'premium');
-      setIsPlanModalOpen(false);
-    }
-  }
-};
 
+    // Proceed with download/external link if not premium, or if user has premium access
+    if (resource.type === 'tool' && resource.url) {
+      window.open(resource.url, '_blank');
+    } else {
+      try {
+        const response = await fetch(`/api/resources/${resource.id}/download`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
 
-
-  const handleDownload = async (resourceId: number, title: string) => {
-    try {
-      const response = await fetch(`/api/resources/${resourceId}/download`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        if (response.ok) {
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = resource.title;
+          document.body.appendChild(a); // Append to body to make it clickable in all browsers
+          a.click();
+          document.body.removeChild(a); // Clean up
+          window.URL.revokeObjectURL(url);
+        } else {
+          console.error('Failed to download resource:', response.statusText);
+          alert('Failed to download resource. Please try again.');
         }
-      });
-      
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = title;
-        a.click();
-        window.URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error('Error downloading resource:', error);
+        alert('Error downloading resource. Please try again.');
       }
-    } catch (error) {
-      console.error('Error downloading resource:', error);
     }
   };
 
-  const handleExternalLink = (url: string) => {
-    window.open(url, '_blank');
+  // Premium Modal Handlers
+  const handlePurchaseSingleResource = (resourceTitle: string) => {
+    alert(`Mock: Initiating payment for "${resourceTitle}" ($9.99). After successful payment, download would proceed.`);
+    // In a real app: call payment gateway, then on success, trigger download for this specific resource.
+    setShowPremiumModal(false);
+    setSelectedPremiumResource(null);
   };
+
+  const handleUpgradeToPremiumPlan = () => {
+    alert('Mock: Initiating payment for Premium Plan ($49.99/month). After successful payment, all premium resources would be unlocked.');
+    // In a real app: call payment gateway, then on success, update user's subscription status in backend.
+    // Maybe update user state here: setUser(prev => prev ? {...prev, account_type: 'professional'} : null);
+    setShowPremiumModal(false);
+    setSelectedPremiumResource(null);
+  };
+
+  const handleFreePlanSelected = () => {
+    setShowPremiumModal(false);
+    setSelectedPremiumResource(null);
+  };
+
 
   const filteredResources = resources.filter(resource => {
     if (activeTab === 'materials') return resource.category === 'Course Materials';
     if (activeTab === 'templates') return resource.category === 'Templates';
-    if (activeTab === 'tools') return resource.category.includes('Tools');
+    if (activeTab === 'tools') return resource.category.includes('Tools'); // 'Professional Tools', 'Business Tools', 'Agency Tools', 'External Tools'
+    if (activeTab === 'all') return true;
     return true;
   });
 
@@ -387,7 +314,7 @@ const handlePurchasePlan = async (planType: 'free' | 'pay-per-resource' | 'premi
     <div>
       {/* Header */}
       <div className="mb-8">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold">Resources</h1>
             <p className="text-gray-600 dark:text-gray-400">
@@ -465,8 +392,8 @@ const handlePurchasePlan = async (planType: 'free' | 'pay-per-resource' | 'premi
                 onClick={() => setActiveTab(tab.key)}
                 className={`flex items-center space-x-2 py-2 px-1 border-b-2 font-medium text-sm ${
                   activeTab === tab.key
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-300 dark:hover:border-gray-500'
                 }`}
               >
                 {tab.icon}
@@ -478,54 +405,62 @@ const handlePurchasePlan = async (planType: 'free' | 'pay-per-resource' | 'premi
       </div>
 
       {/* Resources Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredResources.map(resource => (
-          <div key={resource.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 hover:shadow-lg transition-shadow">
-            <div className="flex items-center mb-4">
-              <div className={`text-${resource.buttonColor}-500 mr-3`}>
-                {resource.icon}
+      {filteredResources.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredResources.map(resource => (
+            <div key={resource.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border-l-4 border-blue-500 hover:shadow-lg transition-shadow">
+              <div className="flex items-center mb-4">
+                <div className={`text-${resource.buttonColor}-500 mr-3`}>
+                  {resource.icon}
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-lg">{resource.title}</h3>
+                  <div className="flex items-center space-x-2 mt-1">
+                    <span className="inline-block px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs font-medium rounded-full">
+                      {resource.category}
+                    </span>
+                    <span className="inline-block px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs font-medium rounded-full capitalize">
+                      {resource.type}
+                    </span>
+                    {resource.isPremium && (
+                      <span className="inline-block px-2 py-1 bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400 text-xs font-medium rounded-full">
+                        Premium
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
-              <div className="flex-1">
-                <h3 className="font-bold text-lg">{resource.title}</h3>
-                {resource.isPremium && (
-                  <span className="inline-block px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-medium rounded-full mt-1">
-                    Premium
-                  </span>
+
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                  {resource.description}
+                </p>
+                {resource.size && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">File Size: {resource.size}</p>
                 )}
               </div>
-            </div>
-            
-            <div className="mb-4">
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                {resource.description}
-              </p>
-              {resource.size && (
-                <p className="text-xs text-gray-500">{resource.type.toUpperCase()} • {resource.size}</p>
-              )}
-            </div>
 
-            <div className="flex justify-end">
-              {resource.type === 'tool' && resource.url ? (
-  <button
-    onClick={() => handleExternalLink(resource.url!)}
-    className={`flex items-center space-x-2 px-4 py-2 bg-${resource.buttonColor}-500 text-white rounded-lg hover:bg-${resource.buttonColor}-600 transition-colors`}
-  >
-    <ExternalLink size={16} />
-    <span>Visit Tool</span>
-  </button>
-) : (
-  <button
-    onClick={() => handleDownloadOrShowPlans(resource)}
-    className={`flex items-center space-x-2 px-4 py-2 bg-${resource.buttonColor}-500 text-white rounded-lg hover:bg-${resource.buttonColor}-600 transition-colors`}
-  >
-    {resource.isPremium ? <BookmarkPlus size={16} /> : <Download size={16} />}
-    <span>{resource.isPremium ? 'Get Access' : 'Download'}</span>
-  </button>
-)}
+              <div className="flex justify-end">
+                <button
+                  onClick={() => handleAction(resource)}
+                  className={`flex items-center space-x-2 px-4 py-2 text-white rounded-lg transition-colors ${buttonColorClasses[resource.buttonColor] || buttonColorClasses.gray}`}
+                >
+                  {resource.type === 'tool' && resource.url ? <ExternalLink size={16} /> : <Download size={16} />}
+                  <span>{resource.type === 'tool' && resource.url ? 'Visit Tool' : 'Download'}</span>
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-12">
+          <Info size={64} className="mx-auto text-gray-400 mb-4" />
+          <h3 className="text-xl font-semibold mb-2">No resources available</h3>
+          <p className="text-gray-600 dark:text-gray-400">
+            Check back later or try a different tab.
+          </p>
+        </div>
+      )}
 
       {/* My Courses Section */}
       {courses.length > 0 && (
@@ -535,28 +470,43 @@ const handlePurchasePlan = async (planType: 'free' | 'pay-per-resource' | 'premi
             {courses.map(course => (
               <div key={course.id} className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-medium">{course.title}</h3>
-                  <span className={`px-2 py-1 text-xs rounded-full ${
-                    course.difficulty_level === 'beginner' ? 'bg-green-100 text-green-800' :
-                    course.difficulty_level === 'intermediate' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-red-100 text-red-800'
+                  <h3 className="font-medium text-lg">{course.title}</h3>
+                  <span className={`px-2 py-1 text-xs rounded-full capitalize ${
+                    course.difficulty_level === 'beginner' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' :
+                    course.difficulty_level === 'intermediate' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400' :
+                    'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
                   }`}>
                     {course.difficulty_level}
                   </span>
                 </div>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{course.category}</p>
                 {course.progress !== undefined && (
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div 
-                      className="bg-blue-600 h-2 rounded-full" 
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                    <div
+                      className="bg-blue-600 h-2 rounded-full"
                       style={{ width: `${course.progress}%` }}
                     ></div>
                   </div>
                 )}
+                <span className="block text-right text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {course.progress !== undefined ? `${course.progress}% Completed` : 'Not started'}
+                </span>
               </div>
             ))}
           </div>
         </div>
+      )}
+
+      {/* Premium Access Modal */}
+      {selectedPremiumResource && (
+        <PremiumAccessModal
+          isOpen={showPremiumModal}
+          onClose={() => setShowPremiumModal(false)}
+          resourceTitle={selectedPremiumResource.title}
+          onPurchaseSingle={handlePurchaseSingleResource}
+          onUpgradeToPremium={handleUpgradeToPremiumPlan}
+          onFreePlanSelected={handleFreePlanSelected}
+        />
       )}
     </div>
   );

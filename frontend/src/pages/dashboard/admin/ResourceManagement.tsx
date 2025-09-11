@@ -1,44 +1,71 @@
 // src/pages/dashboard/admin/ResourceManagement.tsx
 import React, { useState, useEffect } from 'react';
-import { Trash2, PlusCircle, Edit3, Search, Download } from 'lucide-react';
+import {
+  Trash2, Download, Search, PlusCircle, Edit3, FileText, BookOpen, Users, Building,
+  GraduationCap, Shield, Briefcase, Globe, TrendingUp, Target, BarChart3, PenTool,
+  MessageSquare, Calendar, Star, Award, BookmarkPlus, Info
+} from 'lucide-react';
 import DataTable from '../../../components/admin/DataTable';
 import Modal from '../../../components/admin/Modal';
 
-// Types
-interface ResourceFormData {
+// This map allows converting an icon name string to its Lucide React component
+const LucideIconsMap: { [key: string]: React.ElementType } = {
+  FileText, Download, ExternalLink: ExternalLink, BookOpen, Users, Building, GraduationCap,
+  Shield, Briefcase, Globe, TrendingUp, Target, BarChart3, PenTool, Search: Search,
+  MessageSquare, Calendar, Star, Award, BookmarkPlus, Info
+};
+
+// Available resource types for dropdown
+const resourceTypes = ['pdf', 'excel', 'template', 'tool', 'video', 'guide'];
+// Available categories for dropdown
+const resourceCategories = [
+  'Course Materials', 'Templates', 'Professional Tools', 'Business Tools',
+  'Agency Tools', 'External Tools', 'General Guides'
+];
+// Available button colors for dropdown (matching Tailwind convention)
+const buttonColors = ['blue', 'green', 'purple', 'orange', 'red', 'gray'];
+// Available account types for multi-select
+const accountTypes = ['student', 'professional', 'business', 'agency', 'admin'];
+// Available Lucide icon names for dropdown (keys from LucideIconsMap)
+const lucideIconNames = Object.keys(LucideIconsMap).sort();
+
+
+interface AdminResource {
+  id: number;
   title: string;
   description: string;
-  type: string;
+  type: 'pdf' | 'excel' | 'template' | 'tool' | 'video' | 'guide';
   size?: string;
   url?: string;
   category: string;
-  icon: string;
+  icon_name: string; // Store icon name as string
   button_color: string;
   allowed_account_types: string[];
   is_premium: boolean;
-  price?: number;
+  created_at: string; // Add these for potential display/sorting
+  updated_at: string;
 }
 
-const ICON_OPTIONS = [
-  'BookOpen', 'Search', 'Calendar', 'BarChart3', 'FileText', 'Target', 
-  'TrendingUp', 'Users', 'Award', 'ExternalLink', 'Globe', 'PenTool'
-];
-
-const ACCOUNT_TYPES = [
-  { value: 'student', label: 'Student' },
-  { value: 'professional', label: 'Professional' },
-  { value: 'business', label: 'Business' },
-  { value: 'agency', label: 'Agency' },
-  { value: 'admin', label: 'Admin' }
-];
+interface ResourceFormData {
+  title: string;
+  description: string;
+  type: 'pdf' | 'excel' | 'template' | 'tool' | 'video' | 'guide';
+  size: string;
+  url: string;
+  category: string;
+  icon_name: string;
+  button_color: string;
+  allowed_account_types: string[];
+  is_premium: boolean;
+}
 
 const ResourceManagement: React.FC = () => {
-  const [resources, setResources] = useState<any[]>([]);
+  const [resources, setResources] = useState<AdminResource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedResource, setSelectedResource] = useState<any | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [selectedResource, setSelectedResource] = useState<AdminResource | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isCreateEditModalOpen, setIsCreateEditModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState<ResourceFormData>({
     title: '',
@@ -47,11 +74,10 @@ const ResourceManagement: React.FC = () => {
     size: '',
     url: '',
     category: 'Course Materials',
-    icon: 'BookOpen',
-    button_color: 'blue',
+    icon_name: 'FileText', // Default icon
+    button_color: 'blue', // Default color
     allowed_account_types: [],
     is_premium: false,
-    price: undefined
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -59,39 +85,51 @@ const ResourceManagement: React.FC = () => {
     fetchResources();
   }, []);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+  };
+
+  const baseURL = 'http://localhost:5000'; // Consistent with CertificateManagement
+
   const fetchResources = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const baseURL = 'http://localhost:5000';
+      setError(null);
       const response = await fetch(`${baseURL}/api/admin/resources`, {
         method: 'GET',
-        headers,
+        headers: getAuthHeaders(),
         credentials: 'include'
       });
 
       if (response.ok) {
         const data = await response.json();
-        setResources(data);
+        setResources(Array.isArray(data) ? data : []);
       } else {
-        throw new Error('Failed to fetch resources');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch resources');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      console.error('Failed to fetch resources:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred while fetching resources.');
+      setResources([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDeleteResource = (resource: any) => {
+  const handleDeleteResource = (resource: AdminResource) => {
     setSelectedResource(resource);
-    setIsModalOpen(true);
+    setIsDeleteModalOpen(true);
   };
 
-  const handleEditResource = (resource: any) => {
+  const handleEditResource = (resource: AdminResource) => {
     setSelectedResource(resource);
     setFormData({
       title: resource.title,
@@ -100,13 +138,12 @@ const ResourceManagement: React.FC = () => {
       size: resource.size || '',
       url: resource.url || '',
       category: resource.category,
-      icon: resource.icon || 'BookOpen',
-      button_color: resource.button_color || 'blue',
-      allowed_account_types: resource.allowed_account_types || [],
-      is_premium: resource.is_premium || false,
-      price: resource.price || undefined
+      icon_name: resource.icon_name,
+      button_color: resource.button_color,
+      allowed_account_types: resource.allowed_account_types,
+      is_premium: resource.is_premium,
     });
-    setIsCreateModalOpen(true);
+    setIsCreateEditModalOpen(true);
   };
 
   const handleCreateResource = () => {
@@ -118,55 +155,43 @@ const ResourceManagement: React.FC = () => {
       size: '',
       url: '',
       category: 'Course Materials',
-      icon: 'BookOpen',
+      icon_name: 'FileText',
       button_color: 'blue',
       allowed_account_types: [],
       is_premium: false,
-      price: undefined
     });
-    setIsCreateModalOpen(true);
+    setIsCreateEditModalOpen(true);
   };
 
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value, type } = e.target;
-    const checked = (e.target as HTMLInputElement).checked;
+    const { name, value, type, checked, options } = e.target as HTMLInputElement & HTMLSelectElement;
 
-    if (type === 'checkbox') {
-      if (checked) {
-        setFormData(prev => ({
-          ...prev,
-          allowed_account_types: [...prev.allowed_account_types, value]
-        }));
-      } else {
-        setFormData(prev => ({
-          ...prev,
-          allowed_account_types: prev.allowed_account_types.filter(v => v !== value)
-        }));
-      }
+    if (name === 'allowed_account_types') {
+      const selectedOptions = Array.from(options)
+        .filter(option => option.selected)
+        .map(option => option.value);
+      setFormData(prev => ({ ...prev, [name]: selectedOptions }));
     } else {
       setFormData(prev => ({
         ...prev,
-        [name]: name === 'is_premium' ? checked : value
+        [name]: type === 'checkbox' ? checked : value
       }));
     }
   };
 
   const handleDeleteConfirm = async () => {
-    try {
-      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (!selectedResource) return;
 
-      const baseURL = 'http://localhost:5000';
-      const response = await fetch(`${baseURL}/api/admin/resources/${selectedResource?.id}`, {
+    try {
+      const response = await fetch(`${baseURL}/api/admin/resources/${selectedResource.id}`, {
         method: 'DELETE',
-        headers,
+        headers: getAuthHeaders(),
         credentials: 'include'
       });
 
       if (response.ok) {
-        setIsModalOpen(false);
-        fetchResources();
+        setIsDeleteModalOpen(false);
+        fetchResources(); // Refresh the data
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to delete resource');
@@ -181,32 +206,22 @@ const ResourceManagement: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-      const headers: HeadersInit = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const baseURL = 'http://localhost:5000';
       const url = selectedResource
         ? `${baseURL}/api/admin/resources/${selectedResource.id}`
         : `${baseURL}/api/admin/resources`;
 
       const method = selectedResource ? 'PUT' : 'POST';
 
-      const bodyData = {
-        ...formData,
-        price: formData.is_premium && formData.price ? Number(formData.price) : undefined
-      };
-
       const response = await fetch(url, {
         method,
-        headers,
+        headers: getAuthHeaders(),
         credentials: 'include',
-        body: JSON.stringify(bodyData)
+        body: JSON.stringify(formData)
       });
 
       if (response.ok) {
-        setIsCreateModalOpen(false);
-        fetchResources();
+        setIsCreateEditModalOpen(false);
+        fetchResources(); // Refresh the data
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to save resource');
@@ -218,30 +233,17 @@ const ResourceManagement: React.FC = () => {
     }
   };
 
-  const filteredResources = resources.filter((resource: any) => {
-    if (searchTerm && !`${resource.title} ${resource.category}`.toLowerCase().includes(searchTerm.toLowerCase())) {
-      return false;
+  const filteredResources = resources.filter((resource: AdminResource) => {
+    if (searchTerm) {
+      const lowerSearchTerm = searchTerm.toLowerCase();
+      return (
+        resource.title.toLowerCase().includes(lowerSearchTerm) ||
+        resource.category.toLowerCase().includes(lowerSearchTerm) ||
+        resource.type.toLowerCase().includes(lowerSearchTerm)
+      );
     }
     return true;
   });
-
-  const getIconComponent = (iconName: string) => {
-    switch (iconName) {
-      case 'BookOpen': return <BookOpen size={16} />;
-      case 'Search': return <Search size={16} />;
-      case 'Calendar': return <Calendar size={16} />;
-      case 'BarChart3': return <BarChart3 size={16} />;
-      case 'FileText': return <FileText size={16} />;
-      case 'Target': return <Target size={16} />;
-      case 'TrendingUp': return <TrendingUp size={16} />;
-      case 'Users': return <Users size={16} />;
-      case 'Award': return <Award size={16} />;
-      case 'ExternalLink': return <ExternalLink size={16} />;
-      case 'Globe': return <Globe size={16} />;
-      case 'PenTool': return <PenTool size={16} />;
-      default: return <FileText size={16} />;
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -264,7 +266,7 @@ const ResourceManagement: React.FC = () => {
             className="flex items-center gap-2 bg-orange-500 text-white px-4 py-2 rounded-md hover:bg-orange-600 transition-colors"
           >
             <PlusCircle size={16} />
-            Add Resource
+            Add New Resource
           </button>
         </div>
       </div>
@@ -292,43 +294,62 @@ const ResourceManagement: React.FC = () => {
       )}
 
       {!loading && !error && (
-        <DataTable<any>
+        <DataTable<AdminResource>
           data={filteredResources}
           columns={[
+            {
+              header: 'Icon',
+              accessor: (resource) => {
+                const IconComponent = LucideIconsMap[resource.icon_name];
+                return IconComponent ? <IconComponent size={20} className={`text-${resource.button_color}-500`} /> : <FileText size={20} />;
+              }
+            },
             { header: 'Title', accessor: 'title' },
             { header: 'Category', accessor: 'category' },
             { header: 'Type', accessor: 'type' },
             {
-              header: 'Account Types',
-              accessor: (res) => res.allowed_account_types.join(', ')
-            },
-            {
               header: 'Premium',
-              accessor: (res) => res.is_premium ? '✅ Yes' : '❌ No'
+              accessor: (resource) => (
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                  resource.is_premium
+                    ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400'
+                    : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                }`}>
+                  {resource.is_premium ? 'Yes' : 'No'}
+                </span>
+              )
             },
             {
-              header: 'Price',
-              accessor: (res) => res.price ? `$${res.price}` : '-'
+              header: 'Allowed Account Types',
+              accessor: (resource) => (
+                <div className="flex flex-wrap gap-1">
+                  {resource.allowed_account_types.map(type => (
+                    <span key={type} className="px-2 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400 rounded-full text-xs capitalize">
+                      {type}
+                    </span>
+                  ))}
+                </div>
+              )
             }
           ]}
-          actions={(res) => (
+          actions={(resource) => (
             <div className="flex space-x-2">
-              {res.url && (
+              {resource.url && (resource.type === 'tool' || resource.type === 'pdf') && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    window.open(res.url, '_blank');
+                    window.open(resource.url, '_blank');
                   }}
                   className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                  title="Visit Link"
+                  title={resource.type === 'tool' ? 'Visit Tool' : 'View/Download Resource'}
                 >
-                  <ExternalLink size={16} className="text-blue-500" />
+                  {resource.type === 'tool' ? <ExternalLink size={16} className="text-purple-500" /> : <Download size={16} className="text-green-500" />}
                 </button>
               )}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleEditResource(res);
+                  handleEditResource(resource);
                 }}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
                 title="Edit resource"
@@ -338,7 +359,7 @@ const ResourceManagement: React.FC = () => {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleDeleteResource(res);
+                  handleDeleteResource(resource);
                 }}
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
                 title="Delete resource"
@@ -352,22 +373,24 @@ const ResourceManagement: React.FC = () => {
 
       {/* Delete Confirmation Modal */}
       <Modal
-        isOpen={isModalOpen}
+        isOpen={isDeleteModalOpen}
         title="Delete Resource"
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => setIsDeleteModalOpen(false)}
         size="md"
       >
         <div className="space-y-4">
-          <p>Are you sure you want to delete <strong>{selectedResource?.title}</strong>? This action cannot be undone.</p>
+          <p>Are you sure you want to delete the resource: <strong>{selectedResource?.title}</strong>? This action cannot be undone.</p>
 
           <div className="flex justify-end gap-2 mt-6">
             <button
-              onClick={() => setIsModalOpen(false)}
+              type="button"
+              onClick={() => setIsDeleteModalOpen(false)}
               className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
             >
               Cancel
             </button>
             <button
+              type="button"
               onClick={handleDeleteConfirm}
               className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
             >
@@ -379,9 +402,9 @@ const ResourceManagement: React.FC = () => {
 
       {/* Create/Edit Resource Modal */}
       <Modal
-        isOpen={isCreateModalOpen}
+        isOpen={isCreateEditModalOpen}
         title={selectedResource ? "Edit Resource" : "Add New Resource"}
-        onClose={() => setIsCreateModalOpen(false)}
+        onClose={() => setIsCreateEditModalOpen(false)}
         size="lg"
       >
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -396,7 +419,6 @@ const ResourceManagement: React.FC = () => {
               className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
             />
           </div>
-
           <div>
             <label className="block text-sm font-medium mb-1">Description</label>
             <textarea
@@ -406,9 +428,8 @@ const ResourceManagement: React.FC = () => {
               required
               rows={3}
               className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
-            />
+            ></textarea>
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Type</label>
@@ -419,137 +440,125 @@ const ResourceManagement: React.FC = () => {
                 required
                 className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
               >
-                <option value="pdf">PDF</option>
-                <option value="excel">Excel</option>
-                <option value="template">Template</option>
-                <option value="tool">Tool (External Link)</option>
-                <option value="video">Video</option>
-                <option value="guide">Guide</option>
+                {resourceTypes.map(type => (
+                  <option key={type} value={type}>
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                  </option>
+                ))}
               </select>
             </div>
-
             <div>
               <label className="block text-sm font-medium mb-1">Category</label>
-              <input
-                type="text"
+              <select
                 name="category"
                 value={formData.category}
                 onChange={handleFormChange}
                 required
                 className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
-              />
+              >
+                {resourceCategories.map(category => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Size (e.g., "3.2 MB")</label>
+              <label className="block text-sm font-medium mb-1">Size (e.g., 3.2 MB)</label>
               <input
                 type="text"
                 name="size"
                 value={formData.size}
                 onChange={handleFormChange}
                 className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
+                placeholder="Optional"
               />
             </div>
-
             <div>
-              <label className="block text-sm font-medium mb-1">Button Color</label>
-              <select
-                name="button_color"
-                value={formData.button_color}
-                onChange={handleFormChange}
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
-              >
-                <option value="blue">Blue</option>
-                <option value="green">Green</option>
-                <option value="purple">Purple</option>
-                <option value="orange">Orange</option>
-                <option value="red">Red</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Icon</label>
-            <select
-              name="icon"
-              value={formData.icon}
-              onChange={handleFormChange}
-              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
-            >
-              {ICON_OPTIONS.map(icon => (
-                <option key={icon} value={icon}>{icon}</option>
-              ))}
-            </select>
-          </div>
-
-          {formData.type === 'tool' && (
-            <div>
-              <label className="block text-sm font-medium mb-1">External URL</label>
+              <label className="block text-sm font-medium mb-1">URL (for tools/external files)</label>
               <input
                 type="url"
                 name="url"
                 value={formData.url}
                 onChange={handleFormChange}
-                placeholder="https://example.com"
                 className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
+                placeholder="https://example.com/resource.pdf (Optional)"
               />
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium mb-2">Allowed Account Types</label>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-              {ACCOUNT_TYPES.map(type => (
-                <label key={type.value} className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    name="allowed_account_types"
-                    value={type.value}
-                    checked={formData.allowed_account_types.includes(type.value)}
-                    onChange={handleFormChange}
-                    className="rounded"
-                  />
-                  <span className="text-sm">{type.label}</span>
-                </label>
-              ))}
             </div>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Icon Name (Lucide)</label>
+              <select
+                name="icon_name"
+                value={formData.icon_name}
+                onChange={handleFormChange}
+                required
+                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
+              >
+                {lucideIconNames.map(iconName => (
+                  <option key={iconName} value={iconName}>
+                    {iconName}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Button Color (Tailwind)</label>
+              <select
+                name="button_color"
+                value={formData.button_color}
+                onChange={handleFormChange}
+                required
+                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
+              >
+                {buttonColors.map(color => (
+                  <option key={color} value={color}>
+                    {color.charAt(0).toUpperCase() + color.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Allowed Account Types</label>
+            <select
+              name="allowed_account_types"
+              value={formData.allowed_account_types}
+              onChange={handleFormChange}
+              multiple
+              required
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 h-28"
+            >
+              {accountTypes.map(type => (
+                <option key={type} value={type}>
+                  {type.charAt(0).toUpperCase() + type.slice(1)}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple</p>
+          </div>
+
+          <div className="flex items-center">
             <input
               type="checkbox"
               name="is_premium"
               checked={formData.is_premium}
               onChange={handleFormChange}
-              id="is_premium"
-              className="rounded"
+              className="h-4 w-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
             />
-            <label htmlFor="is_premium" className="text-sm font-medium">This is a Premium Resource</label>
+            <label htmlFor="is_premium" className="ml-2 block text-sm font-medium">Is Premium Resource?</label>
           </div>
-
-          {formData.is_premium && (
-            <div>
-              <label className="block text-sm font-medium mb-1">Price (for Pay-Per-Resource)</label>
-              <input
-                type="number"
-                name="price"
-                value={formData.price || ''}
-                onChange={handleFormChange}
-                placeholder="9.99"
-                step="0.01"
-                min="0"
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
-              />
-              <p className="text-xs text-gray-500 mt-1">Leave blank if included in Premium Plan only.</p>
-            </div>
-          )}
 
           <div className="flex justify-end gap-2 mt-6">
             <button
               type="button"
-              onClick={() => setIsCreateModalOpen(false)}
+              onClick={() => setIsCreateEditModalOpen(false)}
               className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
             >
               Cancel
@@ -559,7 +568,7 @@ const ResourceManagement: React.FC = () => {
               disabled={isSubmitting}
               className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 disabled:opacity-50"
             >
-              {isSubmitting ? 'Saving...' : (selectedResource ? 'Update' : 'Create')}
+              {isSubmitting ? 'Saving...' : (selectedResource ? 'Update Resource' : 'Add Resource')}
             </button>
           </div>
         </form>
