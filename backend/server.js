@@ -3818,6 +3818,102 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
   }
 });
 
+// ===================== ADMIN PAYMENTS MANAGEMENT ENDPOINT ======================
+// Payment proof upload endpoint
+app.post('/api/payments/upload-proof', authenticateToken, upload.single('file'), async (req, res) => {
+  try {
+    const { transactionId, paymentMethod, resourceId, plan, amount } = req.body;
+    const userId = req.user.id;
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'Payment proof file is required' });
+    }
+
+    // Save payment record to database
+    const [result] = await pool.execute(
+      `INSERT INTO payments 
+        (user_id, resource_id, plan, amount, payment_method, transaction_id, proof_file, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [userId, resourceId || null, plan, amount, paymentMethod, transactionId, req.file.filename, 'pending']
+    );
+
+    res.json({ 
+      message: 'Payment proof uploaded successfully', 
+      paymentId: result.insertId 
+    });
+  } catch (error) {
+    console.error('Error uploading payment proof:', error);
+    res.status(500).json({ error: 'Failed to upload payment proof' });
+  }
+});
+
+// Admin payment management endpoint
+app.get('/api/admin/payments', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [payments] = await pool.execute(`
+      SELECT 
+        p.*,
+        u.first_name,
+        u.last_name,
+        u.email,
+        r.title as resource_title
+      FROM payments p
+      LEFT JOIN users u ON p.user_id = u.id
+      LEFT JOIN resources r ON p.resource_id = r.id
+      ORDER BY p.created_at DESC
+    `);
+
+    res.json(payments);
+  } catch (error) {
+    console.error('Error fetching payments:', error);
+    res.status(500).json({ error: 'Failed to fetch payments' });
+  }
+});
+
+// Admin payment verification endpoint
+app.put('/api/admin/payments/:id/verify', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    await pool.execute(
+      'UPDATE payments SET status = ?, verified_at = NOW() WHERE id = ?',
+      [status, id]
+    );
+
+    // If payment is approved, grant access to the resource
+    if (status === 'approved') {
+      const [payment] = await pool.execute(
+        'SELECT user_id, resource_id, plan FROM payments WHERE id = ?',
+        [id]
+      );
+
+      if (payment.length > 0) {
+        const { user_id, resource_id, plan } = payment[0];
+        
+        if (plan === 'individual' && resource_id) {
+          // Grant access to specific resource
+          await pool.execute(
+            'INSERT INTO user_resources (user_id, resource_id) VALUES (?, ?)',
+            [user_id, resource_id]
+          );
+        } else if (plan === 'premium') {
+          // Upgrade user to premium
+          await pool.execute(
+            'UPDATE users SET subscription_plan = "premium" WHERE id = ?',
+            [user_id]
+          );
+        }
+      }
+    }
+
+    res.json({ message: 'Payment status updated successfully' });
+  } catch (error) {
+    console.error('Error verifying payment:', error);
+    res.status(500).json({ error: 'Failed to verify payment' });
+  }
+});
+
 // ==================== ADMIN ENROLLMENT MANAGEMENT ENDPOINTS ====================
 
 // GET all enrollments (admin only)
