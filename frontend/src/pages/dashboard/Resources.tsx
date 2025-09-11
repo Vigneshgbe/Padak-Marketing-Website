@@ -4,7 +4,7 @@ import {
   Shield, Briefcase, Globe, TrendingUp, Target, BarChart3, PenTool, Search,
   MessageSquare, Calendar, Star, Award, BookmarkPlus, Info
 } from 'lucide-react';
-import PremiumAccessModal from '../../components/PremiumAccessModal'; // Import the new modal
+import PremiumAccessModal from '../../components/PremiumAccessModal';
 
 interface User {
   id: number;
@@ -24,11 +24,12 @@ interface Resource {
   size?: string;
   url?: string;
   category: string;
-  icon: React.ReactNode;
-  iconName: string; // Added for better mapping in admin later
-  buttonColor: string;
-  allowedAccountTypes: string[];
-  isPremium?: boolean;
+  icon_name: string;
+  button_color: string;
+  allowed_account_types: string[];
+  is_premium: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 interface Course {
@@ -47,7 +48,7 @@ interface UserStats {
   learning_streak: number;
 }
 
-// Map for dynamic Tailwind classes (Crucial for buttonColor)
+// Map for dynamic Tailwind classes
 const buttonColorClasses: { [key: string]: string } = {
   blue: 'bg-blue-500 hover:bg-blue-600',
   green: 'bg-green-500 hover:bg-green-600',
@@ -82,49 +83,56 @@ const Resources: React.FC = () => {
     fetchUserStats();
   }, []);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+  };
+
   const fetchUserData = async () => {
     try {
-      const response = await fetch('/api/user/profile', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+      const response = await fetch('http://localhost:5000/api/user/profile', {
+        headers: getAuthHeaders()
       });
       if (!response.ok) throw new Error('Failed to fetch user data');
       const userData = await response.json();
       setUser(userData);
     } catch (error) {
       console.error('Error fetching user data:', error);
-      // Fallback or error state
     }
   };
 
   const fetchResources = async () => {
     try {
-      const response = await fetch('/api/resources', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+      const response = await fetch('http://localhost:5000/api/resources', {
+        headers: getAuthHeaders()
       });
       if (!response.ok) throw new Error('Failed to fetch resources');
       const resourcesData = await response.json();
-      setResources(resourcesData.map((res: any) => ({
-        ...res,
-        // Ensure icon is correctly mapped from a string name from the backend
-        icon: iconMap[res.iconName || 'FileText'] ? React.createElement(iconMap[res.iconName || 'FileText']) : <FileText size={18} />
-      })));
+      
+      // Filter resources based on user account type
+      if (user) {
+        const filteredResources = resourcesData.filter((resource: Resource) => 
+          resource.allowed_account_types.includes(user.account_type)
+        );
+        setResources(filteredResources);
+      } else {
+        setResources(resourcesData);
+      }
     } catch (error) {
       console.error('Error fetching resources:', error);
-      // Fallback to default resources if API fails
-      setResources(getDefaultResources());
     }
   };
 
   const fetchCourses = async () => {
     try {
-      const response = await fetch('/api/courses/enrolled', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+      const response = await fetch('http://localhost:5000/api/courses/enrolled', {
+        headers: getAuthHeaders()
       });
       if (!response.ok) throw new Error('Failed to fetch courses');
       const coursesData = await response.json();
@@ -136,10 +144,8 @@ const Resources: React.FC = () => {
 
   const fetchUserStats = async () => {
     try {
-      const response = await fetch('/api/user/stats', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+      const response = await fetch('http://localhost:5000/api/user/stats', {
+        headers: getAuthHeaders()
       });
       if (!response.ok) throw new Error('Failed to fetch user stats');
       const statsData = await response.json();
@@ -149,62 +155,6 @@ const Resources: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  // Default resources for fallback or initial setup.
-  // Note: iconName added to facilitate admin management later.
-  const getDefaultResources = (): Resource[] => {
-    const allResources: Resource[] = [
-      // Student Resources
-      {
-        id: 1, title: "Digital Marketing Fundamentals", description: "Complete beginner's guide to digital marketing", type: "pdf", size: "3.2 MB", category: "Course Materials", icon: <BookOpen size={18} />, iconName: "BookOpen", buttonColor: "blue", allowedAccountTypes: ['student', 'professional', 'business', 'agency', 'admin']
-      },
-      {
-        id: 2, title: "SEO Checklist Template", description: "Step-by-step SEO optimization checklist", type: "excel", size: "1.5 MB", category: "Templates", icon: <Search size={18} />, iconName: "Search", buttonColor: "green", allowedAccountTypes: ['student', 'professional', 'business', 'agency', 'admin']
-      },
-      {
-        id: 3, title: "Content Calendar Template", description: "Monthly content planning spreadsheet", type: "template", size: "2.1 MB", category: "Templates", icon: <Calendar size={18} />, iconName: "Calendar", buttonColor: "green", allowedAccountTypes: ['student', 'professional', 'business', 'agency', 'admin']
-      },
-
-      // Professional Resources
-      {
-        id: 4, title: "Advanced Analytics Guide", description: "Deep dive into Google Analytics 4", type: "pdf", size: "4.8 MB", category: "Professional Tools", icon: <BarChart3 size={18} />, iconName: "BarChart3", buttonColor: "purple", allowedAccountTypes: ['professional', 'business', 'agency', 'admin'], isPremium: true
-      },
-      {
-        id: 5, title: "Client Reporting Template", description: "Professional client performance reports", type: "excel", size: "2.3 MB", category: "Templates", icon: <FileText size={18} />, iconName: "FileText", buttonColor: "green", allowedAccountTypes: ['professional', 'business', 'agency', 'admin'], isPremium: true
-      },
-
-      // Business Resources
-      {
-        id: 6, title: "Marketing Strategy Framework", description: "Complete business marketing strategy guide", type: "pdf", size: "6.1 MB", category: "Business Tools", icon: <Target size={18} />, iconName: "Target", buttonColor: "orange", allowedAccountTypes: ['business', 'agency', 'admin'], isPremium: true
-      },
-      {
-        id: 7, title: "ROI Calculator Template", description: "Marketing ROI calculation spreadsheet", type: "excel", size: "1.8 MB", category: "Templates", icon: <TrendingUp size={18} />, iconName: "TrendingUp", buttonColor: "green", allowedAccountTypes: ['business', 'agency', 'admin'], isPremium: true
-      },
-
-      // Agency Resources
-      {
-        id: 8, title: "Multi-Client Dashboard", description: "Agency client management system", type: "template", size: "5.2 MB", category: "Agency Tools", icon: <Users size={18} />, iconName: "Users", buttonColor: "red", allowedAccountTypes: ['agency', 'admin'], isPremium: true
-      },
-      {
-        id: 9, title: "White Label Reports", description: "Customizable client report templates", type: "template", size: "3.7 MB", category: "Agency Tools", icon: <Award size={18} />, iconName: "Award", buttonColor: "red", allowedAccountTypes: ['agency', 'admin'], isPremium: true
-      },
-
-      // Tools (All Users)
-      {
-        id: 10, title: "Google Analytics", description: "Web analytics platform", type: "tool", url: "https://analytics.google.com", category: "External Tools", icon: <ExternalLink size={18} />, iconName: "ExternalLink", buttonColor: "purple", allowedAccountTypes: ['student', 'professional', 'business', 'agency', 'admin']
-      },
-      {
-        id: 11, title: "SEMrush", description: "SEO & marketing toolkit", type: "tool", url: "https://semrush.com", category: "External Tools", icon: <ExternalLink size={18} />, iconName: "ExternalLink", buttonColor: "purple", allowedAccountTypes: ['professional', 'business', 'agency', 'admin']
-      }
-    ];
-
-    return allResources.filter(resource =>
-      user ? resource.allowedAccountTypes.includes(user.account_type) : true // Default to showing all if user not loaded
-    ).map(res => ({
-      ...res,
-      icon: iconMap[res.iconName] ? React.createElement(iconMap[res.iconName]) : <FileText size={18} />
-    }));
   };
 
   const getAccountTypeIcon = (accountType: string) => {
@@ -231,10 +181,9 @@ const Resources: React.FC = () => {
 
   const handleAction = async (resource: Resource) => {
     // Determine if the user has "premium access" based on account type
-    // This is a simplified check: only 'student' users are considered non-premium by default.
     const userHasPremiumAccess = user && ['professional', 'business', 'agency', 'admin'].includes(user.account_type);
 
-    if (resource.isPremium && !userHasPremiumAccess) {
+    if (resource.is_premium && !userHasPremiumAccess) {
       setSelectedPremiumResource(resource);
       setShowPremiumModal(true);
       return;
@@ -245,10 +194,8 @@ const Resources: React.FC = () => {
       window.open(resource.url, '_blank');
     } else {
       try {
-        const response = await fetch(`/api/resources/${resource.id}/download`, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
+        const response = await fetch(`http://localhost:5000/api/resources/${resource.id}/download`, {
+          headers: getAuthHeaders()
         });
 
         if (response.ok) {
@@ -257,9 +204,9 @@ const Resources: React.FC = () => {
           const a = document.createElement('a');
           a.href = url;
           a.download = resource.title;
-          document.body.appendChild(a); // Append to body to make it clickable in all browsers
+          document.body.appendChild(a);
           a.click();
-          document.body.removeChild(a); // Clean up
+          document.body.removeChild(a);
           window.URL.revokeObjectURL(url);
         } else {
           console.error('Failed to download resource:', response.statusText);
@@ -275,15 +222,12 @@ const Resources: React.FC = () => {
   // Premium Modal Handlers
   const handlePurchaseSingleResource = (resourceTitle: string) => {
     alert(`Mock: Initiating payment for "${resourceTitle}" ($9.99). After successful payment, download would proceed.`);
-    // In a real app: call payment gateway, then on success, trigger download for this specific resource.
     setShowPremiumModal(false);
     setSelectedPremiumResource(null);
   };
 
   const handleUpgradeToPremiumPlan = () => {
     alert('Mock: Initiating payment for Premium Plan ($49.99/month). After successful payment, all premium resources would be unlocked.');
-    // In a real app: call payment gateway, then on success, update user's subscription status in backend.
-    // Maybe update user state here: setUser(prev => prev ? {...prev, account_type: 'professional'} : null);
     setShowPremiumModal(false);
     setSelectedPremiumResource(null);
   };
@@ -293,11 +237,10 @@ const Resources: React.FC = () => {
     setSelectedPremiumResource(null);
   };
 
-
   const filteredResources = resources.filter(resource => {
     if (activeTab === 'materials') return resource.category === 'Course Materials';
     if (activeTab === 'templates') return resource.category === 'Templates';
-    if (activeTab === 'tools') return resource.category.includes('Tools'); // 'Professional Tools', 'Business Tools', 'Agency Tools', 'External Tools'
+    if (activeTab === 'tools') return resource.category.includes('Tools');
     if (activeTab === 'all') return true;
     return true;
   });
@@ -407,50 +350,54 @@ const Resources: React.FC = () => {
       {/* Resources Grid */}
       {filteredResources.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredResources.map(resource => (
-            <div key={resource.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border-l-4 border-blue-500 hover:shadow-lg transition-shadow">
-              <div className="flex items-center mb-4">
-                <div className={`text-${resource.buttonColor}-500 mr-3`}>
-                  {resource.icon}
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-bold text-lg">{resource.title}</h3>
-                  <div className="flex items-center space-x-2 mt-1">
-                    <span className="inline-block px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs font-medium rounded-full">
-                      {resource.category}
-                    </span>
-                    <span className="inline-block px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs font-medium rounded-full capitalize">
-                      {resource.type}
-                    </span>
-                    {resource.isPremium && (
-                      <span className="inline-block px-2 py-1 bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400 text-xs font-medium rounded-full">
-                        Premium
+          {filteredResources.map(resource => {
+            const IconComponent = iconMap[resource.icon_name] || FileText;
+            
+            return (
+              <div key={resource.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border-l-4 border-blue-500 hover:shadow-lg transition-shadow">
+                <div className="flex items-center mb-4">
+                  <div className={`text-${resource.button_color}-500 mr-3`}>
+                    <IconComponent size={18} />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-bold text-lg">{resource.title}</h3>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <span className="inline-block px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs font-medium rounded-full">
+                        {resource.category}
                       </span>
-                    )}
+                      <span className="inline-block px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs font-medium rounded-full capitalize">
+                        {resource.type}
+                      </span>
+                      {resource.is_premium && (
+                        <span className="inline-block px-2 py-1 bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400 text-xs font-medium rounded-full">
+                          Premium
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="mb-4">
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                  {resource.description}
-                </p>
-                {resource.size && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">File Size: {resource.size}</p>
-                )}
-              </div>
+                <div className="mb-4">
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                    {resource.description}
+                  </p>
+                  {resource.size && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">File Size: {resource.size}</p>
+                  )}
+                </div>
 
-              <div className="flex justify-end">
-                <button
-                  onClick={() => handleAction(resource)}
-                  className={`flex items-center space-x-2 px-4 py-2 text-white rounded-lg transition-colors ${buttonColorClasses[resource.buttonColor] || buttonColorClasses.gray}`}
-                >
-                  {resource.type === 'tool' && resource.url ? <ExternalLink size={16} /> : <Download size={16} />}
-                  <span>{resource.type === 'tool' && resource.url ? 'Visit Tool' : 'Download'}</span>
-                </button>
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => handleAction(resource)}
+                    className={`flex items-center space-x-2 px-4 py-2 text-white rounded-lg transition-colors ${buttonColorClasses[resource.button_color] || buttonColorClasses.gray}`}
+                  >
+                    {resource.type === 'tool' && resource.url ? <ExternalLink size={16} /> : <Download size={16} />}
+                    <span>{resource.type === 'tool' && resource.url ? 'Visit Tool' : 'Download'}</span>
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="text-center py-12">

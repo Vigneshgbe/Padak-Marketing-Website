@@ -2417,9 +2417,100 @@ app.use((error, req, res, next) => {
   next(error);
 });
 
+// ==================== RESOURCES ROUTES ======================
+// GET resources for current user
+app.get('/api/resources', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // First get user's account type
+    const [users] = await pool.execute(
+      'SELECT account_type FROM users WHERE id = ?',
+      [userId]
+    );
+    
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const accountType = users[0].account_type;
+    
+    // Get all resources that are allowed for this account type
+    const [resources] = await pool.execute(`
+      SELECT 
+        id,
+        title,
+        description,
+        type,
+        size,
+        url,
+        category,
+        icon_name,
+        button_color,
+        allowed_account_types,
+        is_premium,
+        created_at,
+        updated_at
+      FROM resources 
+      WHERE JSON_CONTAINS(allowed_account_types, JSON_QUOTE(?))
+      ORDER BY created_at DESC
+    `, [accountType]);
+    
+    res.json(resources);
+  } catch (error) {
+    console.error('Error fetching resources:', error);
+    res.status(500).json({ error: 'Failed to fetch resources' });
+  }
+});
+
+// GET resource download
+app.get('/api/resources/:id/download', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    
+    // First check if user has access to this resource
+    const [resources] = await pool.execute(`
+      SELECT r.*, u.account_type 
+      FROM resources r, users u 
+      WHERE r.id = ? AND u.id = ? AND JSON_CONTAINS(r.allowed_account_types, JSON_QUOTE(u.account_type))
+    `, [id, userId]);
+    
+    if (resources.length === 0) {
+      return res.status(404).json({ error: 'Resource not found or access denied' });
+    }
+    
+    const resource = resources[0];
+    
+    // Check if resource is premium and user doesn't have access
+    if (resource.is_premium && !['professional', 'business', 'agency', 'admin'].includes(resource.account_type)) {
+      return res.status(403).json({ error: 'Premium resource requires upgraded account' });
+    }
+    
+    // For demo purposes, we'll return a simple text file
+    // In a real application, you would serve the actual file
+    res.setHeader('Content-Disposition', `attachment; filename="${resource.title}.txt"`);
+    res.setHeader('Content-Type', 'text/plain');
+    
+    // Create a simple text file with resource details
+    const fileContent = `
+      Resource: ${resource.title}
+      Description: ${resource.description}
+      Type: ${resource.type}
+      Category: ${resource.category}
+      Access Level: ${resource.is_premium ? 'Premium' : 'Free'}
+      
+      This is a demo download. In a real application, this would be the actual resource file.
+    `;
+    
+    res.send(fileContent);
+  } catch (error) {
+    console.error('Error downloading resource:', error);
+    res.status(500).json({ error: 'Failed to download resource' });
+  }
+});
 
 // ==================== CERTIFICATES ROUTES ====================
-
 
 // Certificate Routes
 app.get('/api/certificates/my-certificates', authenticateToken, async (req, res) => {
