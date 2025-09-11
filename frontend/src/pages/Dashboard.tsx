@@ -33,6 +33,7 @@ import ContactManagement from './dashboard/admin/ContactManagement';
 import CalendarManagement from './dashboard/admin/CalendarManagement';
 import ServiceRequests from './dashboard/admin/ServiceRequests';
 import ResourceManagement from './dashboard/admin/ResourceManagement';
+import PaymentManagement from './dashboard/admin/PaymentManagement';
 
 const Dashboard: React.FC = () => {
   const { user, token, loading } = useAuth();
@@ -230,6 +231,8 @@ const Dashboard: React.FC = () => {
           return <ServiceRequests />;
         case 'admin-resources':
           return <ResourceManagement />;
+        case 'admin-payments':
+          return <PaymentManagement />;
         default:
           return <AdminOverview />;
       }

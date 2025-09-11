@@ -58,6 +58,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         { id: 'admin-calendar', label: 'Calendar Events', icon: <Calendar size={20} /> },
         { id: 'admin-service-requests', label: 'Service Requests', icon: <MessageSquare size={20} /> },
         { id: 'admin-resources', label: 'Resource Manage', icon: <FileText size={20} /> },
+        { id: 'admin-payments', label: 'Reports', icon: <BarChart size={20} /> },
       ];
     }
 
