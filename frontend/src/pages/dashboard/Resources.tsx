@@ -23,6 +23,9 @@ import {
   BookmarkPlus
 } from 'lucide-react';
 
+const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
+const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+
 interface User {
   id: number;
   first_name: string;
@@ -305,6 +308,40 @@ const Resources: React.FC = () => {
     }
   };
 
+  const handleDownloadOrShowPlans = (resource: Resource) => {
+  if (!resource.isPremium) {
+    handleDownload(resource.id, resource.title);
+  } else {
+    setSelectedResource(resource);
+    setIsPlanModalOpen(true);
+  }
+};
+
+const handlePurchasePlan = async (planType: 'free' | 'pay-per-resource' | 'premium') => {
+  if (planType === 'free') {
+    alert('You can only download free resources with Free plan.');
+    setIsPlanModalOpen(false);
+  } else if (planType === 'pay-per-resource' && selectedResource) {
+    // Mock payment process
+    const confirmed = window.confirm(`Pay $9.99 to download "${selectedResource.title}"?`);
+    if (confirmed) {
+      alert(`Payment successful! Downloading ${selectedResource.title}...`);
+      handleDownload(selectedResource.id, selectedResource.title);
+      setIsPlanModalOpen(false);
+    }
+  } else if (planType === 'premium') {
+    const confirmed = window.confirm('Subscribe to Premium Plan for $19.99/month?');
+    if (confirmed) {
+      alert('Premium subscription activated! Enjoy all premium resources.');
+      // In real app: update user.subscription in DB + localStorage
+      localStorage.setItem('userPlan', 'premium');
+      setIsPlanModalOpen(false);
+    }
+  }
+};
+
+
+
   const handleDownload = async (resourceId: number, title: string) => {
     try {
       const response = await fetch(`/api/resources/${resourceId}/download`, {
@@ -469,22 +506,22 @@ const Resources: React.FC = () => {
 
             <div className="flex justify-end">
               {resource.type === 'tool' && resource.url ? (
-                <button
-                  onClick={() => handleExternalLink(resource.url!)}
-                  className={`flex items-center space-x-2 px-4 py-2 bg-${resource.buttonColor}-500 text-white rounded-lg hover:bg-${resource.buttonColor}-600 transition-colors`}
-                >
-                  <ExternalLink size={16} />
-                  <span>Visit Tool</span>
-                </button>
-              ) : (
-                <button
-                  onClick={() => handleDownload(resource.id, resource.title)}
-                  className={`flex items-center space-x-2 px-4 py-2 bg-${resource.buttonColor}-500 text-white rounded-lg hover:bg-${resource.buttonColor}-600 transition-colors`}
-                >
-                  <Download size={16} />
-                  <span>Download</span>
-                </button>
-              )}
+  <button
+    onClick={() => handleExternalLink(resource.url!)}
+    className={`flex items-center space-x-2 px-4 py-2 bg-${resource.buttonColor}-500 text-white rounded-lg hover:bg-${resource.buttonColor}-600 transition-colors`}
+  >
+    <ExternalLink size={16} />
+    <span>Visit Tool</span>
+  </button>
+) : (
+  <button
+    onClick={() => handleDownloadOrShowPlans(resource)}
+    className={`flex items-center space-x-2 px-4 py-2 bg-${resource.buttonColor}-500 text-white rounded-lg hover:bg-${resource.buttonColor}-600 transition-colors`}
+  >
+    {resource.isPremium ? <BookmarkPlus size={16} /> : <Download size={16} />}
+    <span>{resource.isPremium ? 'Get Access' : 'Download'}</span>
+  </button>
+)}
             </div>
           </div>
         ))}
