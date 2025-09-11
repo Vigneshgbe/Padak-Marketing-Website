@@ -159,6 +159,32 @@ const paymentScreenshotUpload = multer({
   }
 });
 
+// RESOURCES's PAYMENT PROOF UPLOAD MUTLER
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/payments/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only images and PDF files are allowed'));
+    }
+  }
+});
+
+
 // CORS configuration
 const allowedOrigins = [
   'http://localhost:3000',
@@ -3820,13 +3846,16 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
 
 // ===================== ADMIN PAYMENTS MANAGEMENT ENDPOINT ======================
 // Payment proof upload endpoint
-app.post('/api/payments/upload-proof', authenticateToken, upload.single('file'), async (req, res) => {
+app.post('/api/payments/upload-proof', authenticateToken, upload.single('proof'), async (req, res) => {
   try {
-    const { transactionId, paymentMethod, resourceId, plan, amount } = req.body;
-    const userId = req.user.id;
+    const { transaction_id, payment_method, resource_id, plan, amount, user_id } = req.body;
 
     if (!req.file) {
       return res.status(400).json({ error: 'Payment proof file is required' });
+    }
+
+    if (!transaction_id) {
+      return res.status(400).json({ error: 'Transaction ID is required' });
     }
 
     // Save payment record to database
@@ -3834,7 +3863,7 @@ app.post('/api/payments/upload-proof', authenticateToken, upload.single('file'),
       `INSERT INTO payments 
         (user_id, resource_id, plan, amount, payment_method, transaction_id, proof_file, status)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [userId, resourceId || null, plan, amount, paymentMethod, transactionId, req.file.filename, 'pending']
+      [user_id, resource_id || null, plan, amount, payment_method, transaction_id, req.file.filename, 'pending']
     );
 
     res.json({ 
