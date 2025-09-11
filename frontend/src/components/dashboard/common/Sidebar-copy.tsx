@@ -7,6 +7,7 @@ import {
   Sun, Moon, User,
   Award, HardHat, Mail, GraduationCap
 } from 'lucide-react';
+import { getImageUrl } from '../../../utils/image-utils';
 import { useAuth } from '../../../hooks/use-auth';
 
 interface NavItem {
@@ -56,7 +57,6 @@ const Sidebar: React.FC<SidebarProps> = ({
         { id: 'admin-contacts', label: 'Contact Messages', icon: <Mail size={20} /> },
         { id: 'admin-calendar', label: 'Calendar Events', icon: <Calendar size={20} /> },
         { id: 'admin-service-requests', label: 'Service Requests', icon: <MessageSquare size={20} /> },
-        { id: 'settings', label: 'Settings', icon: <Settings size={20} /> },
       ];
     }
 
@@ -113,11 +113,11 @@ const Sidebar: React.FC<SidebarProps> = ({
           onClick={onProfileClick}
         >
           <div className="relative flex-shrink-0">
-            {user.profileImage ? (
-              <img
-                src={user.profileImage}
-                alt="Profile"
-                className="w-12 h-12 rounded-xl object-cover"
+             {user.profileImage ? (
+              <img 
+                src={getImageUrl(user.profileImage)} // Use getImageUrl here
+                alt="Profile" 
+                className="w-10 h-10 rounded-xl object-cover border-2 border-orange-200 dark:border-orange-500/20"
               />
             ) : (
               <div className="bg-gray-200 dark:bg-gray-600 border-2 border-dashed border-gray-300 dark:border-gray-500 rounded-xl w-12 h-12 flex items-center justify-center">

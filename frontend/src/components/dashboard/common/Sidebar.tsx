@@ -57,6 +57,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         { id: 'admin-contacts', label: 'Contact Messages', icon: <Mail size={20} /> },
         { id: 'admin-calendar', label: 'Calendar Events', icon: <Calendar size={20} /> },
         { id: 'admin-service-requests', label: 'Service Requests', icon: <MessageSquare size={20} /> },
+        { id: 'admin-resources', label: 'Resource Manage', icon: <FileText size={20} /> },
       ];
     }
 
