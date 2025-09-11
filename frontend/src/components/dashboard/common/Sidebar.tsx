@@ -5,7 +5,7 @@ import {
   Users, Briefcase, BarChart, Settings, LogOut,
   Shield, UserCheck, MessageSquare, FileText,
   Sun, Moon, User,
-  Award, HardHat, Mail, GraduationCap
+  Award, HardHat, Mail, GraduationCap, DollarSign 
 } from 'lucide-react';
 import { getImageUrl } from '../../../utils/image-utils';
 import { useAuth } from '../../../hooks/use-auth';
@@ -58,7 +58,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         { id: 'admin-calendar', label: 'Calendar Events', icon: <Calendar size={20} /> },
         { id: 'admin-service-requests', label: 'Service Requests', icon: <MessageSquare size={20} /> },
         { id: 'admin-resources', label: 'Resource Manage', icon: <FileText size={20} /> },
-        { id: 'admin-payments', label: 'Reports', icon: <BarChart size={20} /> },
+        { id: 'admin-payments', label: 'Payments Data', icon: <DollarSign  size={20} /> },
       ];
     }
 

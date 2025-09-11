@@ -3,7 +3,7 @@ import {
   FileText, Download, ExternalLink, BookOpen, Search,
   MessageSquare, Calendar, Star, Award, Info, Users,
   X, Check, Crown, Zap, CreditCard, Lock, Unlock,
-  Upload, Receipt, Shield, Copy, Building
+  Upload, Receipt, Shield, Copy, Building, AlertCircle
 } from 'lucide-react';
 
 interface User {
@@ -67,6 +67,7 @@ const Resources: React.FC = () => {
   });
   const [uploading, setUploading] = useState(false);
   const [copied, setCopied] = useState({ account: false, ifsc: false });
+  const [error, setError] = useState<string | null>(null);
 
   // Bank account details
   const bankDetails = {
@@ -203,23 +204,25 @@ const Resources: React.FC = () => {
 
   const submitPayment = async () => {
     if (!paymentProof.file || !paymentProof.transactionId) {
-      alert('Please fill all payment details and upload proof');
+      setError('Please fill all payment details and upload proof');
       return;
     }
 
     setUploading(true);
+    setError(null);
     
     try {
       // Create form data for file upload
       const formData = new FormData();
-      formData.append('file', paymentProof.file);
-      formData.append('transactionId', paymentProof.transactionId);
-      formData.append('paymentMethod', 'bank_transfer');
-      formData.append('resourceId', selectedResource?.id?.toString() || '');
+      formData.append('proof', paymentProof.file);
+      formData.append('transaction_id', paymentProof.transactionId);
+      formData.append('payment_method', 'bank_transfer');
+      formData.append('resource_id', selectedResource?.id?.toString() || '');
       formData.append('plan', selectedPlan);
       formData.append('amount', selectedPlan === 'individual' 
         ? (selectedResource?.price || 9.99).toString() 
         : '49.99');
+      formData.append('user_id', user?.id?.toString() || '');
       
       const response = await fetch('http://localhost:5000/api/payments/upload-proof', {
         method: 'POST',
@@ -259,11 +262,12 @@ const Resources: React.FC = () => {
         // Show success message
         alert('Payment proof uploaded successfully! Your access will be granted after verification.');
       } else {
-        throw new Error('Failed to upload payment proof');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to upload payment proof');
       }
     } catch (error) {
       console.error('Error uploading payment proof:', error);
-      alert('Error uploading payment proof. Please try again.');
+      setError(error instanceof Error ? error.message : 'Error uploading payment proof. Please try again.');
     } finally {
       setUploading(false);
     }
@@ -542,170 +546,183 @@ const Resources: React.FC = () => {
       {/* Payment Modal */}
       {showPaymentModal && selectedResource && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold">Complete Payment</h3>
-              <button onClick={() => setShowPaymentModal(false)} className="text-gray-500 hover:text-gray-700">
-                <X size={24} />
-              </button>
-            </div>
-            
-            <div className="mb-6">
-              <h4 className="text-lg font-semibold mb-2">
-                {selectedPlan === 'individual' ? selectedResource.title : 'Premium Subscription'}
-              </h4>
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
-                {selectedPlan === 'individual' 
-                  ? selectedResource.description 
-                  : 'Unlimited access to all premium resources'}
-              </p>
-              
-              <div className="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-4">
-                <div className="flex justify-between items-center">
-                  <span className="font-medium">Total Amount:</span>
-                  <span className="text-xl font-bold">
-                    ${selectedPlan === 'individual' ? (selectedResource.price || 9.99) : '49.99'}
-                  </span>
-                </div>
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white dark:bg-gray-800 p-6 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex justify-between items-center">
+                <h3 className="text-xl font-bold">Complete Payment</h3>
+                <button onClick={() => setShowPaymentModal(false)} className="text-gray-500 hover:text-gray-700">
+                  <X size={24} />
+                </button>
               </div>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Bank Transfer Details */}
-              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-                <h5 className="font-semibold mb-3 flex items-center">
-                  <Building size={18} className="mr-2" />
-                  Bank Transfer Details
-                </h5>
+            <div className="p-6">
+              <div className="mb-6">
+                <h4 className="text-lg font-semibold mb-2">
+                  {selectedPlan === 'individual' ? selectedResource.title : 'Premium Subscription'}
+                </h4>
+                <p className="text-gray-600 dark:text-gray-400 mb-4">
+                  {selectedPlan === 'individual' 
+                    ? selectedResource.description 
+                    : 'Unlimited access to all premium resources'}
+                </p>
                 
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      Bank Name
-                    </label>
-                    <p className="font-medium">{bankDetails.bankName}</p>
+                <div className="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg mb-4">
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium">Total Amount:</span>
+                    <span className="text-xl font-bold">
+                      ${selectedPlan === 'individual' ? (selectedResource.price || 9.99) : '49.99'}
+                    </span>
                   </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      Account Name
-                    </label>
-                    <p className="font-medium">{bankDetails.accountName}</p>
+                </div>
+              </div>
+              
+              {error && (
+                <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                  <div className="flex items-center">
+                    <AlertCircle className="text-red-500 mr-2" size={20} />
+                    <span className="text-red-700 dark:text-red-300">{error}</span>
                   </div>
+                </div>
+              )}
+              
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Bank Transfer Details */}
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                  <h5 className="font-semibold mb-3 flex items-center">
+                    <Building size={18} className="mr-2" />
+                    Bank Transfer Details
+                  </h5>
                   
-                  <div>
-                    <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      Account Number
-                    </label>
-                    <div className="flex items-center justify-between bg-white dark:bg-gray-700 p-2 rounded border">
-                      <span className="font-mono">{bankDetails.accountNumber}</span>
-                      <button 
-                        onClick={() => copyToClipboard(bankDetails.accountNumber, 'account')}
-                        className="text-blue-600 hover:text-blue-800"
-                        title="Copy account number"
-                      >
-                        {copied.account ? <Check size={16} /> : <Copy size={16} />}
-                      </button>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        Bank Name
+                      </label>
+                      <p className="font-medium">{bankDetails.bankName}</p>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        Account Name
+                      </label>
+                      <p className="font-medium">{bankDetails.accountName}</p>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        Account Number
+                      </label>
+                      <div className="flex items-center justify-between bg-white dark:bg-gray-700 p-2 rounded border">
+                        <span className="font-mono">{bankDetails.accountNumber}</span>
+                        <button 
+                          onClick={() => copyToClipboard(bankDetails.accountNumber, 'account')}
+                          className="text-blue-600 hover:text-blue-800"
+                          title="Copy account number"
+                        >
+                          {copied.account ? <Check size={16} /> : <Copy size={16} />}
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        IFSC Code
+                      </label>
+                      <div className="flex items-center justify-between bg-white dark:bg-gray-700 p-2 rounded border">
+                        <span className="font-mono">{bankDetails.ifscCode}</span>
+                        <button 
+                          onClick={() => copyToClipboard(bankDetails.ifscCode, 'ifsc')}
+                          className="text-blue-600 hover:text-blue-800"
+                          title="Copy IFSC code"
+                        >
+                          {copied.ifsc ? <Check size={16} /> : <Copy size={16} />}
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        Branch
+                      </label>
+                      <p className="font-medium">{bankDetails.branch}</p>
                     </div>
                   </div>
                   
-                  <div>
-                    <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      IFSC Code
-                    </label>
-                    <div className="flex items-center justify-between bg-white dark:bg-gray-700 p-2 rounded border">
-                      <span className="font-mono">{bankDetails.ifscCode}</span>
-                      <button 
-                        onClick={() => copyToClipboard(bankDetails.ifscCode, 'ifsc')}
-                        className="text-blue-600 hover:text-blue-800"
-                        title="Copy IFSC code"
-                      >
-                        {copied.ifsc ? <Check size={16} /> : <Copy size={16} />}
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                      Branch
-                    </label>
-                    <p className="font-medium">{bankDetails.branch}</p>
+                  <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                    <p className="text-sm text-yellow-800 dark:text-yellow-400">
+                      <strong>Note:</strong> Please include your name or email in the transaction reference so we can identify your payment.
+                    </p>
                   </div>
                 </div>
                 
-                <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
-                  <p className="text-sm text-yellow-800 dark:text-yellow-400">
-                    <strong>Note:</strong> Please include your name or email in the transaction reference so we can identify your payment.
+                {/* Payment Proof Upload */}
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Bank Transaction ID</label>
+                    <input
+                      type="text"
+                      name="transactionId"
+                      value={paymentProof.transactionId}
+                      onChange={handlePaymentProofChange}
+                      placeholder="Enter your bank transaction ID"
+                      className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                      required
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Payment Proof (Screenshot/Receipt)</label>
+                    <div className="flex items-center justify-center w-full">
+                      <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600">
+                        <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                          <Upload className="w-8 h-8 mb-3 text-gray-400" />
+                          <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
+                            <span className="font-semibold">Click to upload</span> or drag and drop
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            PNG, JPG, PDF (MAX. 5MB)
+                          </p>
+                        </div>
+                        <input
+                          type="file"
+                          name="proofFile"
+                          onChange={handlePaymentProofChange}
+                          className="hidden"
+                          accept=".png,.jpg,.jpeg,.pdf"
+                        />
+                      </label>
+                    </div>
+                    {paymentProof.file && (
+                      <p className="mt-2 text-sm text-green-600">
+                        <Check size={16} className="inline mr-1" />
+                        {paymentProof.file.name} selected
+                      </p>
+                    )}
+                  </div>
+                  
+                  <button
+                    onClick={submitPayment}
+                    disabled={uploading}
+                    className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 px-4 rounded-lg flex items-center justify-center disabled:opacity-50"
+                  >
+                    {uploading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <CreditCard size={20} className="mr-2" />
+                        Submit Payment Proof
+                      </>
+                    )}
+                  </button>
+                  
+                  <p className="text-sm text-gray-500">
+                    Your access will be granted after admin verification of your payment proof.
                   </p>
                 </div>
-              </div>
-              
-              {/* Payment Proof Upload */}
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Bank Transaction ID</label>
-                  <input
-                    type="text"
-                    name="transactionId"
-                    value={paymentProof.transactionId}
-                    onChange={handlePaymentProofChange}
-                    placeholder="Enter your bank transaction ID"
-                    className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
-                    required
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium mb-2">Payment Proof (Screenshot/Receipt)</label>
-                  <div className="flex items-center justify-center w-full">
-                    <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600">
-                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                        <Upload className="w-8 h-8 mb-3 text-gray-400" />
-                        <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-                          <span className="font-semibold">Click to upload</span> or drag and drop
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          PNG, JPG, PDF (MAX. 5MB)
-                        </p>
-                      </div>
-                      <input
-                        type="file"
-                        name="proofFile"
-                        onChange={handlePaymentProofChange}
-                        className="hidden"
-                        accept=".png,.jpg,.jpeg,.pdf"
-                      />
-                    </label>
-                  </div>
-                  {paymentProof.file && (
-                    <p className="mt-2 text-sm text-green-600">
-                      <Check size={16} className="inline mr-1" />
-                      {paymentProof.file.name} selected
-                    </p>
-                  )}
-                </div>
-                
-                <button
-                  onClick={submitPayment}
-                  disabled={uploading}
-                  className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 px-4 rounded-lg flex items-center justify-center disabled:opacity-50"
-                >
-                  {uploading ? (
-                    <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <CreditCard size={20} className="mr-2" />
-                      Submit Payment Proof
-                    </>
-                  )}
-                </button>
-                
-                <p className="text-sm text-gray-500">
-                  Your access will be granted after admin verification of your payment proof.
-                </p>
               </div>
             </div>
           </div>
