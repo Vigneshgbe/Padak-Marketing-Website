@@ -3232,10 +3232,8 @@ app.get('/api/services/my-requests', authenticateToken, async (req, res) => {
 
 // ==================== ADMIN DASHBOARD ROUTES ====================
 
-// ==================== ADMIN DASHBOARD ROUTES ====================
-
 // Admin Dashboard Stats
-app.get('/api/admin/dashboard-stats', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/dashboard-stats', authenticateToken, async (req, res) => {
   try {
     const [
       totalUsersResult,
@@ -3248,11 +3246,8 @@ app.get('/api/admin/dashboard-stats', authenticateToken, requireAdmin, async (re
       pool.execute('SELECT COUNT(*) as count FROM users WHERE is_active = 1'),
       pool.execute('SELECT COUNT(*) as count FROM courses WHERE is_active = 1'),
       pool.execute('SELECT COUNT(*) as count FROM enrollments'),
-      // Revenue based on completed or active enrollments
-      pool.execute('SELECT COALESCE(SUM(c.price), 0) as total FROM enrollments e JOIN courses c ON e.course_id = c.id WHERE e.status IN ("active", "completed")'),
-      // Fix: contact_messages table has no 'status' column. Using date for 'pending'.
+      pool.execute('SELECT COALESCE(SUM(c.price), 0) as total FROM enrollments e JOIN courses c ON e.course_id = c.id WHERE e.status = "completed"'),
       pool.execute('SELECT COUNT(*) as count FROM contact_messages WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)'),
-      // Fix: Using singular 'service_request' table name
       pool.execute('SELECT COUNT(*) as count FROM service_requests WHERE status = "pending"')
     ]);
 
@@ -3271,7 +3266,7 @@ app.get('/api/admin/dashboard-stats', authenticateToken, requireAdmin, async (re
 });
 
 // Recent Users
-app.get('/api/admin/recent-users', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/recent-users', authenticateToken, async (req, res) => {
   try {
     const [users] = await pool.execute(`
       SELECT id, first_name, last_name, email, account_type, 
@@ -3281,6 +3276,7 @@ app.get('/api/admin/recent-users', authenticateToken, requireAdmin, async (req, 
       ORDER BY created_at DESC 
       LIMIT 5
     `);
+
     res.json(users);
   } catch (error) {
     console.error('Error fetching recent users:', error);
@@ -3289,7 +3285,7 @@ app.get('/api/admin/recent-users', authenticateToken, requireAdmin, async (req, 
 });
 
 // Recent Enrollments
-app.get('/api/admin/recent-enrollments', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/recent-enrollments', authenticateToken, async (req, res) => {
   try {
     const [enrollments] = await pool.execute(`
       SELECT e.id, 
@@ -3303,1400 +3299,13 @@ app.get('/api/admin/recent-enrollments', authenticateToken, requireAdmin, async 
       ORDER BY e.enrollment_date DESC
       LIMIT 5
     `);
+
     res.json(enrollments);
   } catch (error) {
     console.error('Error fetching recent enrollments:', error);
     res.status(500).json({ error: 'Failed to fetch recent enrollments', details: error.message });
   }
 });
-
-// Recent Service Requests
-app.get('/api/admin/recent-service-requests', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    // Fix: Using singular 'service_request' and 'service_sub_category' table names
-    const [requests] = await pool.execute(`
-      SELECT sr.id, sr.full_name as name, 
-             ssc.name as service, -- Alias ssc.name as 'service' for frontend display
-             DATE_FORMAT(sr.created_at, '%d %b %Y') as date,
-             sr.status
-      FROM service_requests sr
-      JOIN service_sub_category ssc ON sr.subcategory_id = ssc.id
-      ORDER BY sr.created_at DESC
-      LIMIT 5
-    `);
-    res.json(requests);
-  } catch (error) {
-    console.error('Error fetching recent service requests:', error);
-    res.status(500).json({ error: 'Failed to fetch recent service requests', details: error.message });
-  }
-});
-
-
-// ==================== ANALYTICS ROUTES ====================
-
-// Get analytics data (admin only)
-app.get('/api/admin/analytics', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    // User growth data (last 6 months)
-    const [userGrowth] = await pool.execute(
-      `SELECT
-           DATE_FORMAT(created_at, '%Y-%m') as month,
-           COUNT(*) as count
-         FROM users
-         WHERE created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
-         GROUP BY DATE_FORMAT(created_at, '%Y-%m')
-         ORDER BY month`
-    );
-
-    // Course enrollment data
-    const [courseEnrollments] = await pool.execute(
-      `SELECT
-           c.title,
-           COUNT(e.id) as enrollments
-         FROM courses c
-         LEFT JOIN enrollments e ON c.id = e.course_id
-         WHERE c.is_active = 1 -- Assuming 1 for active courses
-         GROUP BY c.id, c.title
-         ORDER BY enrollments DESC
-         LIMIT 10`
-    );
-
-    // Revenue by month (consistent with dashboard, only 'active' or 'completed' enrollments count)
-    const [revenueData] = await pool.execute(
-      `SELECT
-           DATE_FORMAT(e.enrollment_date, '%Y-%m') as month,
-           SUM(c.price) as revenue
-         FROM enrollments e
-         JOIN courses c ON e.course_id = c.id
-         WHERE e.enrollment_date >= DATE_SUB(NOW(), INTERVAL 6 MONTH) AND e.status IN ("active", "completed")
-         GROUP BY DATE_FORMAT(e.enrollment_date, '%Y-%m')
-         ORDER BY month`
-    );
-
-    res.json({
-      userGrowth: userGrowth,
-      courseEnrollments: courseEnrollments,
-      revenueData: revenueData
-    });
-
-  } catch (error) {
-    console.error('Get analytics error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// ==================== GENERIC CRUD ENDPOINTS FOR MANAGEMENT ====================
-// These endpoints include basic pagination (limit, offset)
-// and lookup data endpoints for foreign key dropdowns.
-
-// --- Users Management ---
-app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
-  const { limit = 10, offset = 0, search = '', filter = 'all' } = req.query;
-  let query = `SELECT id, first_name, last_name, email, phone, account_type, company, website, bio, is_active, email_verified, DATE_FORMAT(created_at, '%d %b %Y') as created_at FROM users`;
-  let countQuery = `SELECT COUNT(*) as total FROM users`;
-  const queryParams = [];
-  const countParams = [];
-  const conditions = [];
-
-  if (search) {
-    conditions.push(`(first_name LIKE ? OR last_name LIKE ? OR email LIKE ?)`);
-    queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
-    countParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
-  }
-  if (filter !== 'all') {
-    if (filter === 'active') {
-      conditions.push('is_active = 1');
-    } else if (filter === 'inactive') {
-      conditions.push('is_active = 0');
-    } else if (['student', 'professional', 'business', 'agency', 'admin'].includes(filter)) { // 'admin' as a potential filter
-      conditions.push('account_type = ?');
-      queryParams.push(filter);
-      countParams.push(filter);
-    }
-  }
-
-  if (conditions.length > 0) {
-    query += ` WHERE ` + conditions.join(' AND ');
-    countQuery += ` WHERE ` + conditions.join(' AND ');
-  }
-
-  query += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
-  queryParams.push(parseInt(limit), parseInt(offset));
-
-  try {
-    const [users] = await pool.execute(query, queryParams);
-    const [totalResult] = await pool.execute(countQuery, countParams);
-    res.json({ users, total: totalResult[0].total });
-  } catch (error) {
-    console.error('Error fetching users:', error);
-    res.status(500).json({ message: 'Failed to fetch users', details: error.message });
-  }
-});
-
-app.get('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [rows] = await pool.execute('SELECT id, first_name, last_name, email, phone, account_type, company, website, bio, is_active, email_verified, DATE_FORMAT(created_at, \'%d %b %Y\') as created_at, DATE_FORMAT(updated_at, \'%d %b %Y\') as updated_at FROM users WHERE id = ?', [req.params.id]);
-    if (rows.length === 0) return res.status(404).json({ message: 'User not found' });
-    res.json(rows[0]);
-  } catch (error) {
-    console.error('Error fetching user:', error);
-    res.status(500).json({ message: 'Failed to fetch user', details: error.message });
-  }
-});
-
-app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
-  const { first_name, last_name, email, phone, password, account_type, company, website, bio, is_active, email_verified } = req.body;
-  if (!first_name || !last_name || !email || !password || !account_type) {
-    return res.status(400).json({ message: 'Required fields missing' });
-  }
-  // IMPORTANT: 'admin' is not in your original ENUM. If you need to add an admin type,
-  // you must alter your DB schema `users.account_type` to include 'admin'.
-  const allowedAccountTypes = ['student', 'professional', 'business', 'agency', 'admin'];
-  if (!allowedAccountTypes.includes(account_type)) {
-    return res.status(400).json({ message: `Invalid account type. Allowed are: ${allowedAccountTypes.join(', ')}` });
-  }
-
-  try {
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const [result] = await pool.execute(
-      'INSERT INTO users (first_name, last_name, email, phone, password_hash, account_type, profile_image, company, website, bio, is_active, email_verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [first_name, last_name, email, phone, hashedPassword, account_type, null, company, website, bio, is_active, email_verified]
-    );
-    res.status(201).json({ id: result.insertId, message: 'User created successfully' });
-  } catch (error) {
-    console.error('Error creating user:', error);
-    if (error.code === 'ER_DUP_ENTRY') { // Assuming email is unique
-      return res.status(409).json({ message: 'User with this email already exists' });
-    }
-    res.status(500).json({ message: 'Failed to create user', details: error.message });
-  }
-});
-
-app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
-  const { first_name, last_name, email, phone, password, account_type, company, website, bio, is_active, email_verified, profile_image } = req.body;
-  const userId = req.params.id;
-
-  const allowedAccountTypes = ['student', 'professional', 'business', 'agency', 'admin'];
-  if (account_type && !allowedAccountTypes.includes(account_type)) {
-    return res.status(400).json({ message: `Invalid account type. Allowed are: ${allowedAccountTypes.join(', ')}` });
-  }
-
-  try {
-    let updateFields = [];
-    const updateValues = [];
-
-    if (first_name !== undefined) { updateFields.push('first_name=?'); updateValues.push(first_name); }
-    if (last_name !== undefined) { updateFields.push('last_name=?'); updateValues.push(last_name); }
-    if (email !== undefined) { updateFields.push('email=?'); updateValues.push(email); }
-    if (phone !== undefined) { updateFields.push('phone=?'); updateValues.push(phone); }
-    if (account_type !== undefined) { updateFields.push('account_type=?'); updateValues.push(account_type); }
-    if (company !== undefined) { updateFields.push('company=?'); updateValues.push(company); }
-    if (website !== undefined) { updateFields.push('website=?'); updateValues.push(website); }
-    if (bio !== undefined) { updateFields.push('bio=?'); updateValues.push(bio); }
-    if (is_active !== undefined) { updateFields.push('is_active=?'); updateValues.push(is_active); }
-    if (email_verified !== undefined) { updateFields.push('email_verified=?'); updateValues.push(email_verified); }
-    if (profile_image !== undefined) { updateFields.push('profile_image=?'); updateValues.push(profile_image); }
-
-    if (password) { // Only update password if provided
-      const hashedPassword = await bcrypt.hash(password, 10);
-      updateFields.push('password_hash=?');
-      updateValues.push(hashedPassword);
-    }
-
-    if (updateFields.length === 0) {
-      return res.status(400).json({ message: 'No fields to update' });
-    }
-
-    const updateQuery = `UPDATE users SET ${updateFields.join(', ')} WHERE id = ?`;
-    updateValues.push(userId);
-
-    const [result] = await pool.execute(updateQuery, updateValues);
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'User not found' });
-    res.json({ message: 'User updated successfully' });
-  } catch (error) {
-    console.error('Error updating user:', error);
-    if (error.code === 'ER_DUP_ENTRY') { // Assuming email is unique
-      return res.status(409).json({ message: 'User with this email already exists' });
-    }
-    res.status(500).json({ message: 'Failed to update user', details: error.message });
-  }
-});
-
-app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [result] = await pool.execute('DELETE FROM users WHERE id = ?', [req.params.id]);
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'User not found' });
-    res.json({ message: 'User deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting user:', error);
-    res.status(500).json({ message: 'Failed to delete user', details: error.message });
-  }
-});
-
-// User Lookup for forms (simple list of users)
-app.get('/api/admin/users/lookup', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [users] = await pool.execute('SELECT id, first_name, last_name FROM users ORDER BY first_name');
-    res.json(users);
-  } catch (error) {
-    console.error('Error fetching user lookup:', error);
-    res.status(500).json({ message: 'Failed to fetch user lookup', details: error.message });
-  }
-});
-
-
-// --- Courses Management ---
-app.get('/api/admin/courses', authenticateToken, requireAdmin, async (req, res) => {
-  const { limit = 10, offset = 0, search = '', filter = 'all' } = req.query;
-  let query = `SELECT id, title, description, image_url, duration, level, category, price, thumbnail_url, is_active, DATE_FORMAT(created_at, '%d %b %Y') as created_at FROM courses`;
-  let countQuery = `SELECT COUNT(*) as total FROM courses`;
-  const queryParams = [];
-  const countParams = [];
-  const conditions = [];
-
-  if (search) {
-    conditions.push(`(title LIKE ? OR description LIKE ? OR category LIKE ?)`);
-    queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
-    countParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
-  }
-  if (filter !== 'all') {
-    if (filter === 'active') {
-      conditions.push('is_active = 1');
-    } else if (filter === 'inactive') {
-      conditions.push('is_active = 0');
-    } else if (['beginner', 'intermediate', 'advanced'].includes(filter)) {
-      conditions.push('level = ?');
-      queryParams.push(filter);
-      countParams.push(filter);
-    }
-  }
-
-  if (conditions.length > 0) {
-    query += ` WHERE ` + conditions.join(' AND ');
-    countQuery += ` WHERE ` + conditions.join(' AND ');
-  }
-
-  query += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
-  queryParams.push(parseInt(limit), parseInt(offset));
-
-  try {
-    const [courses] = await pool.execute(query, queryParams);
-    const [totalResult] = await pool.execute(countQuery, countParams);
-    res.json({ courses, total: totalResult[0].total });
-  } catch (error) {
-    console.error('Error fetching courses:', error);
-    res.status(500).json({ message: 'Failed to fetch courses', details: error.message });
-  }
-});
-
-app.get('/api/admin/courses/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [rows] = await pool.execute('SELECT id, title, description, image_url, duration, level, category, price, thumbnail_url, is_active, DATE_FORMAT(created_at, \'%d %b %Y\') as created_at, DATE_FORMAT(updated_at, \'%d %b %Y\') as updated_at FROM courses WHERE id = ?', [req.params.id]);
-    if (rows.length === 0) return res.status(404).json({ message: 'Course not found' });
-    res.json(rows[0]);
-  } catch (error) {
-    console.error('Error fetching course:', error);
-    res.status(500).json({ message: 'Failed to fetch course', details: error.message });
-  }
-});
-
-app.post('/api/admin/courses', authenticateToken, requireAdmin, async (req, res) => {
-  // Fix: Removed instructor_name as it's not in schema. Used 'duration' instead of 'duration_weeks'
-  const { title, description, image_url, duration, level, category, price, thumbnail_url, is_active } = req.body;
-  if (!title || !level || !category || !price) {
-    return res.status(400).json({ message: 'Required fields missing' });
-  }
-  try {
-    const [result] = await pool.execute(
-      'INSERT INTO courses (title, description, image_url, duration, level, category, price, thumbnail_url, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [title, description, image_url, duration, level, category, price, thumbnail_url, is_active]
-    );
-    res.status(201).json({ id: result.insertId, message: 'Course created successfully' });
-  } catch (error) {
-    console.error('Error creating course:', error);
-    res.status(500).json({ message: 'Failed to create course', details: error.message });
-  }
-});
-
-app.put('/api/admin/courses/:id', authenticateToken, requireAdmin, async (req, res) => {
-  // Fix: Removed instructor_name. Used 'duration' instead of 'duration_weeks'
-  const { title, description, image_url, duration, level, category, price, thumbnail_url, is_active } = req.body;
-  const courseId = req.params.id;
-  try {
-    const [result] = await pool.execute(
-      'UPDATE courses SET title=?, description=?, image_url=?, duration=?, level=?, category=?, price=?, thumbnail_url=?, is_active=? WHERE id = ?',
-      [title, description, image_url, duration, level, category, price, thumbnail_url, is_active, courseId]
-    );
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Course not found' });
-    res.json({ message: 'Course updated successfully' });
-  } catch (error) {
-    console.error('Error updating course:', error);
-    res.status(500).json({ message: 'Failed to update course', details: error.message });
-  }
-});
-
-app.delete('/api/admin/courses/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [result] = await pool.execute('DELETE FROM courses WHERE id = ?', [req.params.id]);
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Course not found' });
-    res.json({ message: 'Course deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting course:', error);
-    res.status(500).json({ message: 'Failed to delete course', details: error.message });
-  }
-});
-
-// Course Lookup for forms
-app.get('/api/admin/courses/lookup', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [courses] = await pool.execute('SELECT id, title FROM courses ORDER BY title');
-    res.json(courses);
-  } catch (error) {
-    console.error('Error fetching course lookup:', error);
-    res.status(500).json({ message: 'Failed to fetch course lookup', details: error.message });
-  }
-});
-
-
-// --- Assignments Management ---
-app.get('/api/admin/assignments', authenticateToken, requireAdmin, async (req, res) => {
-  const { limit = 10, offset = 0, search = '', course_id } = req.query;
-  let query = `
-    SELECT a.id, a.title, a.description, a.due_date, a.max_points, DATE_FORMAT(a.created_at, '%d %b %Y') as created_at,
-           c.id as course_id, c.title as course_title
-    FROM assignments a
-    JOIN courses c ON a.course_id = c.id
-  `;
-  let countQuery = `SELECT COUNT(*) as total FROM assignments a JOIN courses c ON a.course_id = c.id`;
-  const queryParams = [];
-  const countParams = [];
-  const conditions = [];
-
-  if (search) {
-    conditions.push(`(a.title LIKE ? OR a.description LIKE ? OR c.title LIKE ?)`);
-    queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
-    countParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
-  }
-  if (course_id) {
-    conditions.push('a.course_id = ?');
-    queryParams.push(course_id);
-    countParams.push(course_id);
-  }
-
-  if (conditions.length > 0) {
-    query += ` WHERE ` + conditions.join(' AND ');
-    countQuery += ` WHERE ` + conditions.join(' AND ');
-  }
-
-  query += ` ORDER BY a.created_at DESC LIMIT ? OFFSET ?`;
-  queryParams.push(parseInt(limit), parseInt(offset));
-
-  try {
-    const [assignments] = await pool.execute(query, queryParams);
-    const [totalResult] = await pool.execute(countQuery, countParams);
-    res.json({ assignments, total: totalResult[0].total });
-  } catch (error) {
-    console.error('Error fetching assignments:', error);
-    res.status(500).json({ message: 'Failed to fetch assignments', details: error.message });
-  }
-});
-
-app.get('/api/admin/assignments/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [rows] = await pool.execute(`
-      SELECT a.id, a.course_id, a.title, a.description, DATE_FORMAT(a.due_date, '%Y-%m-%d') as due_date, a.max_points, DATE_FORMAT(a.created_at, '%d %b %Y') as created_at,
-             c.title as course_title
-      FROM assignments a
-      JOIN courses c ON a.course_id = c.id
-      WHERE a.id = ?
-    `, [req.params.id]);
-    if (rows.length === 0) return res.status(404).json({ message: 'Assignment not found' });
-    res.json(rows[0]);
-  } catch (error) {
-    console.error('Error fetching assignment:', error);
-    res.status(500).json({ message: 'Failed to fetch assignment', details: error.message });
-  }
-});
-
-app.post('/api/admin/assignments', authenticateToken, requireAdmin, async (req, res) => {
-  const { course_id, title, description, due_date, max_points } = req.body;
-  if (!course_id || !title || !due_date || !max_points) {
-    return res.status(400).json({ message: 'Required fields missing' });
-  }
-  try {
-    const [result] = await pool.execute(
-      'INSERT INTO assignments (course_id, title, description, due_date, max_points) VALUES (?, ?, ?, ?, ?)',
-      [course_id, title, description, due_date, max_points]
-    );
-    res.status(201).json({ id: result.insertId, message: 'Assignment created successfully' });
-  } catch (error) {
-    console.error('Error creating assignment:', error);
-    res.status(500).json({ message: 'Failed to create assignment', details: error.message });
-  }
-});
-
-app.put('/api/admin/assignments/:id', authenticateToken, requireAdmin, async (req, res) => {
-  const { course_id, title, description, due_date, max_points } = req.body;
-  const assignmentId = req.params.id;
-  try {
-    const [result] = await pool.execute(
-      'UPDATE assignments SET course_id=?, title=?, description=?, due_date=?, max_points=? WHERE id = ?',
-      [course_id, title, description, due_date, max_points, assignmentId]
-    );
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Assignment not found' });
-    res.json({ message: 'Assignment updated successfully' });
-  } catch (error) {
-    console.error('Error updating assignment:', error);
-    res.status(500).json({ message: 'Failed to update assignment', details: error.message });
-  }
-});
-
-app.delete('/api/admin/assignments/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [result] = await pool.execute('DELETE FROM assignments WHERE id = ?', [req.params.id]);
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Assignment not found' });
-    res.json({ message: 'Assignment deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting assignment:', error);
-    res.status(500).json({ message: 'Failed to delete assignment', details: error.message });
-  }
-});
-
-
-// --- Enrollments Management ---
-app.get('/api/admin/enrollments', authenticateToken, requireAdmin, async (req, res) => {
-  const { limit = 10, offset = 0, search = '', status = 'all' } = req.query;
-  let query = `
-    SELECT e.id, e.user_id, e.course_id, e.progress, DATE_FORMAT(e.enrollment_date, '%d %b %Y') as date, DATE_FORMAT(e.completion_date, '%d %b %Y') as completion_date, e.status,
-           CONCAT(u.first_name, ' ', u.last_name) as user_name,
-           c.title as course_name
-    FROM enrollments e
-    JOIN users u ON e.user_id = u.id
-    JOIN courses c ON e.course_id = c.id
-  `;
-  let countQuery = `SELECT COUNT(*) as total FROM enrollments e JOIN users u ON e.user_id = u.id JOIN courses c ON e.course_id = c.id`;
-  const queryParams = [];
-  const countParams = [];
-  const conditions = [];
-
-  if (search) {
-    conditions.push(`(u.first_name LIKE ? OR u.last_name LIKE ? OR c.title LIKE ?)`);
-    queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
-    countParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
-  }
-  if (status !== 'all') {
-    conditions.push('e.status = ?');
-    queryParams.push(status);
-    countParams.push(status);
-  }
-
-  if (conditions.length > 0) {
-    query += ` WHERE ` + conditions.join(' AND ');
-    countQuery += ` WHERE ` + conditions.join(' AND ');
-  }
-
-  query += ` ORDER BY e.enrollment_date DESC LIMIT ? OFFSET ?`;
-  queryParams.push(parseInt(limit), parseInt(offset));
-
-  try {
-    const [enrollments] = await pool.execute(query, queryParams);
-    const [totalResult] = await pool.execute(countQuery, countParams);
-    res.json({ enrollments, total: totalResult[0].total });
-  } catch (error) {
-    console.error('Error fetching enrollments:', error);
-    res.status(500).json({ message: 'Failed to fetch enrollments', details: error.message });
-  }
-});
-
-app.get('/api/admin/enrollments/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [rows] = await pool.execute(`
-      SELECT e.id, e.user_id, e.course_id, e.progress, DATE_FORMAT(e.enrollment_date, '%d %b %Y') as date, DATE_FORMAT(e.completion_date, '%Y-%m-%d') as completion_date, e.status,
-             CONCAT(u.first_name, ' ', u.last_name) as user_name,
-             c.title as course_name
-      FROM enrollments e
-      JOIN users u ON e.user_id = u.id
-      JOIN courses c ON e.course_id = c.id
-      WHERE e.id = ?
-    `, [req.params.id]);
-    if (rows.length === 0) return res.status(404).json({ message: 'Enrollment not found' });
-    res.json(rows[0]);
-  } catch (error) {
-    console.error('Error fetching enrollment:', error);
-    res.status(500).json({ message: 'Failed to fetch enrollment', details: error.message });
-  }
-});
-
-app.post('/api/admin/enrollments', authenticateToken, requireAdmin, async (req, res) => {
-  const { user_id, course_id, progress, completion_date, status } = req.body;
-  if (!user_id || !course_id) {
-    return res.status(400).json({ message: 'Required fields missing' });
-  }
-  try {
-    const [result] = await pool.execute(
-      'INSERT INTO enrollments (user_id, course_id, progress, completion_date, status) VALUES (?, ?, ?, ?, ?)',
-      [user_id, course_id, progress, completion_date, status]
-    );
-    res.status(201).json({ id: result.insertId, message: 'Enrollment created successfully' });
-  } catch (error) {
-    console.error('Error creating enrollment:', error);
-    res.status(500).json({ message: 'Failed to create enrollment', details: error.message });
-  }
-});
-
-app.put('/api/admin/enrollments/:id', authenticateToken, requireAdmin, async (req, res) => {
-  const { user_id, course_id, progress, completion_date, status } = req.body;
-  const enrollmentId = req.params.id;
-  try {
-    const [result] = await pool.execute(
-      'UPDATE enrollments SET user_id=?, course_id=?, progress=?, completion_date=?, status=? WHERE id = ?',
-      [user_id, course_id, progress, completion_date, status, enrollmentId]
-    );
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Enrollment not found' });
-    res.json({ message: 'Enrollment updated successfully' });
-  } catch (error) {
-    console.error('Error updating enrollment:', error);
-    res.status(500).json({ message: 'Failed to update enrollment', details: error.message });
-  }
-});
-
-app.delete('/api/admin/enrollments/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [result] = await pool.execute('DELETE FROM enrollments WHERE id = ?', [req.params.id]);
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Enrollment not found' });
-    res.json({ message: 'Enrollment deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting enrollment:', error);
-    res.status(500).json({ message: 'Failed to delete enrollment', details: error.message });
-  }
-});
-
-
-// --- Certificates Management ---
-app.get('/api/admin/certificates', authenticateToken, requireAdmin, async (req, res) => {
-  const { limit = 10, offset = 0, search = '' } = req.query;
-  let query = `
-    SELECT ce.id, ce.user_id, ce.course_id, ce.certificate_url, DATE_FORMAT(ce.issued_date, '%d %b %Y') as issued_date,
-           CONCAT(u.first_name, ' ', u.last_name) as user_name,
-           c.title as course_title
-    FROM certificates ce
-    JOIN users u ON ce.user_id = u.id
-    JOIN courses c ON ce.course_id = c.id
-  `;
-  let countQuery = `SELECT COUNT(*) as total FROM certificates ce JOIN users u ON ce.user_id = u.id JOIN courses c ON ce.course_id = c.id`;
-  const queryParams = [];
-  const countParams = [];
-  const conditions = [];
-
-  if (search) {
-    conditions.push(`(u.first_name LIKE ? OR u.last_name LIKE ? OR c.title LIKE ?)`);
-    queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
-    countParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
-  }
-
-  if (conditions.length > 0) {
-    query += ` WHERE ` + conditions.join(' AND ');
-    countQuery += ` WHERE ` + conditions.join(' AND ');
-  }
-
-  query += ` ORDER BY ce.issued_date DESC LIMIT ? OFFSET ?`;
-  queryParams.push(parseInt(limit), parseInt(offset));
-
-  try {
-    const [certificates] = await pool.execute(query, queryParams);
-    const [totalResult] = await pool.execute(countQuery, countParams);
-    res.json({ certificates, total: totalResult[0].total });
-  } catch (error) {
-    console.error('Error fetching certificates:', error);
-    res.status(500).json({ message: 'Failed to fetch certificates', details: error.message });
-  }
-});
-
-app.get('/api/admin/certificates/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [rows] = await pool.execute(`
-      SELECT ce.id, ce.user_id, ce.course_id, ce.certificate_url, DATE_FORMAT(ce.issued_date, '%Y-%m-%d') as issued_date,
-             CONCAT(u.first_name, ' ', u.last_name) as user_name,
-             c.title as course_title
-      FROM certificates ce
-      JOIN users u ON ce.user_id = u.id
-      JOIN courses c ON ce.course_id = c.id
-      WHERE ce.id = ?
-    `, [req.params.id]);
-    if (rows.length === 0) return res.status(404).json({ message: 'Certificate not found' });
-    res.json(rows[0]);
-  } catch (error) {
-    console.error('Error fetching certificate:', error);
-    res.status(500).json({ message: 'Failed to fetch certificate', details: error.message });
-  }
-});
-
-app.post('/api/admin/certificates', authenticateToken, requireAdmin, async (req, res) => {
-  const { user_id, course_id, certificate_url, issued_date } = req.body;
-  if (!user_id || !course_id || !certificate_url || !issued_date) {
-    return res.status(400).json({ message: 'Required fields missing' });
-  }
-  try {
-    const [result] = await pool.execute(
-      'INSERT INTO certificates (user_id, course_id, certificate_url, issued_date) VALUES (?, ?, ?, ?)',
-      [user_id, course_id, certificate_url, issued_date]
-    );
-    res.status(201).json({ id: result.insertId, message: 'Certificate created successfully' });
-  } catch (error) {
-    console.error('Error creating certificate:', error);
-    res.status(500).json({ message: 'Failed to create certificate', details: error.message });
-  }
-});
-
-app.put('/api/admin/certificates/:id', authenticateToken, requireAdmin, async (req, res) => {
-  const { user_id, course_id, certificate_url, issued_date } = req.body;
-  const certificateId = req.params.id;
-  try {
-    const [result] = await pool.execute(
-      'UPDATE certificates SET user_id=?, course_id=?, certificate_url=?, issued_date=? WHERE id = ?',
-      [user_id, course_id, certificate_url, issued_date, certificateId]
-    );
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Certificate not found' });
-    res.json({ message: 'Certificate updated successfully' });
-  } catch (error) {
-    console.error('Error updating certificate:', error);
-    res.status(500).json({ message: 'Failed to update certificate', details: error.message });
-  }
-});
-
-app.delete('/api/admin/certificates/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [result] = await pool.execute('DELETE FROM certificates WHERE id = ?', [req.params.id]);
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Certificate not found' });
-    res.json({ message: 'Certificate deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting certificate:', error);
-    res.status(500).json({ message: 'Failed to delete certificate', details: error.message });
-  }
-});
-
-
-// --- Contact Messages Management ---
-// Fix: contact_messages table has no 'status' column.
-// Frontend will display a 'pending' status based on recent messages, but cannot update it.
-app.get('/api/admin/contact-messages', authenticateToken, requireAdmin, async (req, res) => {
-  const { limit = 10, offset = 0, search = '' } = req.query; // Removed 'status' filter
-  let query = `SELECT id, first_name, last_name, email, phone, company, message, DATE_FORMAT(created_at, '%d %b %Y') as created_at FROM contact_messages`;
-  let countQuery = `SELECT COUNT(*) as total FROM contact_messages`;
-  const queryParams = [];
-  const countParams = [];
-  const conditions = [];
-
-  if (search) {
-    conditions.push(`(first_name LIKE ? OR last_name LIKE ? OR email LIKE ? OR message LIKE ?)`);
-    queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
-    countParams.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
-  }
-  // Removed status condition: if (status !== 'all') { conditions.push('status = ?'); ... }
-
-  if (conditions.length > 0) {
-    query += ` WHERE ` + conditions.join(' AND ');
-    countQuery += ` WHERE ` + conditions.join(' AND ');
-  }
-
-  query += ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
-  queryParams.push(parseInt(limit), parseInt(offset));
-
-  try {
-    const [messages] = await pool.execute(query, queryParams);
-    const [totalResult] = await pool.execute(countQuery, countParams);
-    // For frontend display, assign a 'pending' status conceptually if it's recent for consistency
-    const formattedMessages = messages.map(msg => ({
-      ...msg,
-      status: (new Date(msg.created_at).getTime() > (Date.now() - 7 * 24 * 60 * 60 * 1000)) ? 'pending' : 'resolved' // Simple logic
-    }));
-    res.json({ messages: formattedMessages, total: totalResult[0].total });
-  } catch (error) {
-    console.error('Error fetching contact messages:', error);
-    res.status(500).json({ message: 'Failed to fetch contact messages', details: error.message });
-  }
-});
-
-app.get('/api/admin/contact-messages/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [rows] = await pool.execute('SELECT id, first_name, last_name, email, phone, company, message, DATE_FORMAT(created_at, \'%d %b %Y\') as created_at FROM contact_messages WHERE id = ?', [req.params.id]);
-    if (rows.length === 0) return res.status(404).json({ message: 'Contact message not found' });
-    const message = rows[0];
-    // Assign a conceptual status for frontend display
-    message.status = (new Date(message.created_at).getTime() > (Date.now() - 7 * 24 * 60 * 60 * 1000)) ? 'pending' : 'resolved';
-    res.json(message);
-  } catch (error) {
-    console.error('Error fetching contact message:', error);
-    res.status(500).json({ message: 'Failed to fetch contact message', details: error.message });
-  }
-});
-
-app.post('/api/admin/contact-messages', authenticateToken, requireAdmin, async (req, res) => {
-  // Fix: Removed 'status' field from insert
-  const { first_name, last_name, email, phone, company, message } = req.body;
-  if (!first_name || !last_name || !email || !message) {
-    return res.status(400).json({ message: 'Required fields missing' });
-  }
-  try {
-    const [result] = await pool.execute(
-      'INSERT INTO contact_messages (first_name, last_name, email, phone, company, message) VALUES (?, ?, ?, ?, ?, ?)',
-      [first_name, last_name, email, phone, company, message]
-    );
-    res.status(201).json({ id: result.insertId, message: 'Contact message created successfully' });
-  } catch (error) {
-    console.error('Error creating contact message:', error);
-    res.status(500).json({ message: 'Failed to create contact message', details: error.message });
-  }
-});
-
-app.put('/api/admin/contact-messages/:id', authenticateToken, requireAdmin, async (req, res) => {
-  // Fix: Removed 'status' field from update
-  const { first_name, last_name, email, phone, company, message } = req.body;
-  const messageId = req.params.id;
-  try {
-    const [result] = await pool.execute(
-      'UPDATE contact_messages SET first_name=?, last_name=?, email=?, phone=?, company=?, message=? WHERE id = ?',
-      [first_name, last_name, email, phone, company, message, messageId]
-    );
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Contact message not found' });
-    res.json({ message: 'Contact message updated successfully' });
-  } catch (error) {
-    console.error('Error updating contact message:', error);
-    res.status(500).json({ message: 'Failed to update contact message', details: error.message });
-  }
-});
-
-app.delete('/api/admin/contact-messages/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [result] = await pool.execute('DELETE FROM contact_messages WHERE id = ?', [req.params.id]);
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Contact message not found' });
-    res.json({ message: 'Contact message deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting contact message:', error);
-    res.status(500).json({ message: 'Failed to delete contact message', details: error.message });
-  }
-});
-
-
-// --- Calendar Events Management ---
-app.get('/api/admin/calendar-events', authenticateToken, requireAdmin, async (req, res) => {
-  const { limit = 10, offset = 0, search = '', event_type = 'all' } = req.query;
-  let query = `
-    SELECT cce.id, cce.user_id, cce.title, cce.description, DATE_FORMAT(cce.event_date, '%Y-%m-%d') as event_date, TIME_FORMAT(cce.event_time, '%H:%i') as event_time, cce.event_type, DATE_FORMAT(cce.created_at, '%d %b %Y') as created_at,
-           CONCAT(u.first_name, ' ', u.last_name) as user_name
-    FROM custom_calendar_events cce
-    JOIN users u ON cce.user_id = u.id
-  `;
-  let countQuery = `SELECT COUNT(*) as total FROM custom_calendar_events cce JOIN users u ON cce.user_id = u.id`;
-  const queryParams = [];
-  const countParams = [];
-  const conditions = [];
-
-  if (search) {
-    conditions.push(`(cce.title LIKE ? OR cce.description LIKE ? OR u.first_name LIKE ? OR u.last_name LIKE ?)`);
-    queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
-    countParams.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
-  }
-  if (event_type !== 'all') {
-    conditions.push('cce.event_type = ?');
-    queryParams.push(event_type);
-    countParams.push(event_type);
-  }
-
-  if (conditions.length > 0) {
-    query += ` WHERE ` + conditions.join(' AND ');
-    countQuery += ` WHERE ` + conditions.join(' AND ');
-  }
-
-  query += ` ORDER BY cce.event_date DESC, cce.event_time DESC LIMIT ? OFFSET ?`;
-  queryParams.push(parseInt(limit), parseInt(offset));
-
-  try {
-    const [events] = await pool.execute(query, queryParams);
-    const [totalResult] = await pool.execute(countQuery, countParams);
-    res.json({ events, total: totalResult[0].total });
-  } catch (error) {
-    console.error('Error fetching calendar events:', error);
-    res.status(500).json({ message: 'Failed to fetch calendar events', details: error.message });
-  }
-});
-
-app.get('/api/admin/calendar-events/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [rows] = await pool.execute(`
-      SELECT cce.id, cce.user_id, cce.title, cce.description, DATE_FORMAT(cce.event_date, '%Y-%m-%d') as event_date, TIME_FORMAT(cce.event_time, '%H:%i') as event_time, cce.event_type, DATE_FORMAT(cce.created_at, '%d %b %Y') as created_at,
-             CONCAT(u.first_name, ' ', u.last_name) as user_name
-      FROM custom_calendar_events cce
-      JOIN users u ON cce.user_id = u.id
-      WHERE cce.id = ?
-    `, [req.params.id]);
-    if (rows.length === 0) return res.status(404).json({ message: 'Event not found' });
-    res.json(rows[0]);
-  } catch (error) {
-    console.error('Error fetching calendar event:', error);
-    res.status(500).json({ message: 'Failed to fetch calendar event', details: error.message });
-  }
-});
-
-app.post('/api/admin/calendar-events', authenticateToken, requireAdmin, async (req, res) => {
-  const { user_id, title, description, event_date, event_time, event_type = 'custom' } = req.body;
-  if (!user_id || !title || !event_date) {
-    return res.status(400).json({ message: 'Required fields missing' });
-  }
-  try {
-    const [result] = await pool.execute(
-      'INSERT INTO custom_calendar_events (user_id, title, description, event_date, event_time, event_type) VALUES (?, ?, ?, ?, ?, ?)',
-      [user_id, title, description, event_date, event_time, event_type]
-    );
-    res.status(201).json({ id: result.insertId, message: 'Calendar event created successfully' });
-  } catch (error) {
-    console.error('Error creating calendar event:', error);
-    res.status(500).json({ message: 'Failed to create calendar event', details: error.message });
-  }
-});
-
-app.put('/api/admin/calendar-events/:id', authenticateToken, requireAdmin, async (req, res) => {
-  const { user_id, title, description, event_date, event_time, event_type } = req.body;
-  const eventId = req.params.id;
-  try {
-    const [result] = await pool.execute(
-      'UPDATE custom_calendar_events SET user_id=?, title=?, description=?, event_date=?, event_time=?, event_type=? WHERE id = ?',
-      [user_id, title, description, event_date, event_time, event_type, eventId]
-    );
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Calendar event not found' });
-    res.json({ message: 'Calendar event updated successfully' });
-  } catch (error) {
-    console.error('Error updating calendar event:', error);
-    res.status(500).json({ message: 'Failed to update calendar event', details: error.message });
-  }
-});
-
-app.delete('/api/admin/calendar-events/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [result] = await pool.execute('DELETE FROM custom_calendar_events WHERE id = ?', [req.params.id]);
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Calendar event not found' });
-    res.json({ message: 'Calendar event deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting calendar event:', error);
-    res.status(500).json({ message: 'Failed to delete calendar event', details: error.message });
-  }
-});
-
-
-// --- Service Categories Management ---
-// Using plural 'service-categories' for API consistency with frontend expectation
-app.get('/api/admin/service-categories', authenticateToken, requireAdmin, async (req, res) => {
-  const { limit = 10, offset = 0, search = '' } = req.query;
-  let query = `SELECT id, name, description, icon, is_active, DATE_FORMAT(created_at, '%d %b %Y') as created_at FROM service_categories`;
-  let countQuery = `SELECT COUNT(*) as total FROM service_categories`;
-  const queryParams = [];
-  const countParams = [];
-  const conditions = [];
-
-  if (search) {
-    conditions.push(`(name LIKE ? OR description LIKE ?)`);
-    queryParams.push(`%${search}%`, `%${search}%`);
-    countParams.push(`%${search}%`, `%${search}%`);
-  }
-
-  if (conditions.length > 0) {
-    query += ` WHERE ` + conditions.join(' AND ');
-    countQuery += ` WHERE ` + conditions.join(' AND ');
-  }
-
-  query += ` ORDER BY name LIMIT ? OFFSET ?`;
-  queryParams.push(parseInt(limit), parseInt(offset));
-
-  try {
-    const [categories] = await pool.execute(query, queryParams);
-    const [totalResult] = await pool.execute(countQuery, countParams);
-    res.json({ categories, total: totalResult[0].total });
-  } catch (error) {
-    console.error('Error fetching service categories:', error);
-    res.status(500).json({ message: 'Failed to fetch service categories', details: error.message });
-  }
-});
-
-app.get('/api/admin/service-categories/lookup', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [categories] = await pool.execute('SELECT id, name FROM service_categories WHERE is_active = 1 ORDER BY name');
-    res.json(categories);
-  } catch (error) {
-    console.error('Error fetching service category lookup:', error);
-    res.status(500).json({ message: 'Failed to fetch service category lookup', details: error.message });
-  }
-});
-
-app.get('/api/admin/service-categories/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [rows] = await pool.execute('SELECT id, name, description, icon, is_active, DATE_FORMAT(created_at, \'%d %b %Y\') as created_at FROM service_categories WHERE id = ?', [req.params.id]);
-    if (rows.length === 0) return res.status(404).json({ message: 'Service category not found' });
-    res.json(rows[0]);
-  } catch (error) {
-    console.error('Error fetching service category:', error);
-    res.status(500).json({ message: 'Failed to fetch service category', details: error.message });
-  }
-});
-
-app.post('/api/admin/service-categories', authenticateToken, requireAdmin, async (req, res) => {
-  const { name, description, icon, is_active } = req.body;
-  if (!name) return res.status(400).json({ message: 'Category name is required' });
-  try {
-    const [result] = await pool.execute('INSERT INTO service_categories (name, description, icon, is_active) VALUES (?, ?, ?, ?)', [name, description, icon, is_active]);
-    res.status(201).json({ id: result.insertId, message: 'Service category created successfully' });
-  } catch (error) {
-    console.error('Error creating service category:', error);
-    if (error.code === 'ER_DUP_ENTRY') { // Assuming name is unique
-      return res.status(409).json({ message: 'Category with this name already exists' });
-    }
-    res.status(500).json({ message: 'Failed to create service category', details: error.message });
-  }
-});
-
-app.put('/api/admin/service-categories/:id', authenticateToken, requireAdmin, async (req, res) => {
-  const { name, description, icon, is_active } = req.body;
-  const categoryId = req.params.id;
-  try {
-    const [result] = await pool.execute('UPDATE service_categories SET name=?, description=?, icon=?, is_active=? WHERE id = ?', [name, description, icon, is_active, categoryId]);
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Service category not found' });
-    res.json({ message: 'Service category updated successfully' });
-  } catch (error) {
-    console.error('Error updating service category:', error);
-    if (error.code === 'ER_DUP_ENTRY') { // Assuming name is unique
-      return res.status(409).json({ message: 'Category with this name already exists' });
-    }
-    res.status(500).json({ message: 'Failed to update service category', details: error.message });
-  }
-});
-
-app.delete('/api/admin/service-categories/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [result] = await pool.execute('DELETE FROM service_categories WHERE id = ?', [req.params.id]);
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Service category not found' });
-    res.json({ message: 'Service category deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting service category:', error);
-    res.status(500).json({ message: 'Failed to delete service category', details: error.message });
-  }
-});
-
-
-// --- Service Subcategories Management ---
-// Using plural 'service-sub-categories' for consistency in API
-app.get('/api/admin/service-sub-categories', authenticateToken, requireAdmin, async (req, res) => {
-  const { limit = 10, offset = 0, search = '', category_id } = req.query;
-  let query = `
-    SELECT ssc.id, ssc.name, ssc.description, ssc.base_price, ssc.is_active, DATE_FORMAT(ssc.created_at, '%d %b %Y') as created_at,
-           sc.name as category_name
-    FROM service_subcategories ssc
-    JOIN service_categories sc ON ssc.category_id = sc.id
-  `;
-  let countQuery = `SELECT COUNT(*) as total FROM service_subcategories ssc JOIN service_categories sc ON ssc.category_id = sc.id`;
-  const queryParams = [];
-  const countParams = [];
-  const conditions = [];
-
-  if (search) {
-    conditions.push(`(ssc.name LIKE ? OR ssc.description LIKE ? OR sc.name LIKE ?)`);
-    queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
-    countParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
-  }
-  if (category_id) {
-    conditions.push('ssc.category_id = ?');
-    queryParams.push(category_id);
-    countParams.push(category_id);
-  }
-
-  if (conditions.length > 0) {
-    query += ` WHERE ` + conditions.join(' AND ');
-    countQuery += ` WHERE ` + conditions.join(' AND ');
-  }
-
-  query += ` ORDER BY ssc.name LIMIT ? OFFSET ?`;
-  queryParams.push(parseInt(limit), parseInt(offset));
-
-  try {
-    const [subcategories] = await pool.execute(query, queryParams);
-    const [totalResult] = await pool.execute(countQuery, countParams);
-    res.json({ subcategories, total: totalResult[0].total });
-  } catch (error) {
-    console.error('Error fetching service subcategories:', error);
-    res.status(500).json({ message: 'Failed to fetch service subcategories', details: error.message });
-  }
-});
-
-app.get('/api/admin/service-sub-categories/lookup', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [subcategories] = await pool.execute('SELECT id, name, category_id FROM service_subcategories WHERE is_active = 1 ORDER BY name');
-    res.json(subcategories);
-  } catch (error) {
-    console.error('Error fetching service subcategory lookup:', error);
-    res.status(500).json({ message: 'Failed to fetch service subcategory lookup', details: error.message });
-  }
-});
-
-
-app.get('/api/admin/service-sub-categories/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [rows] = await pool.execute('SELECT id, category_id, name, description, base_price, is_active, DATE_FORMAT(created_at, \'%d %b %Y\') as created_at FROM service_subcategories WHERE id = ?', [req.params.id]);
-    if (rows.length === 0) return res.status(404).json({ message: 'Service subcategory not found' });
-    res.json(rows[0]);
-  } catch (error) {
-    console.error('Error fetching service subcategory:', error);
-    res.status(500).json({ message: 'Failed to fetch service subcategory', details: error.message });
-  }
-});
-
-app.post('/api/admin/service-sub-categories', authenticateToken, requireAdmin, async (req, res) => {
-  const { category_id, name, description, base_price, is_active } = req.body;
-  if (!category_id || !name) return res.status(400).json({ message: 'Category ID and name are required' });
-  try {
-    const [result] = await pool.execute('INSERT INTO service_sub_category (category_id, name, description, base_price, is_active) VALUES (?, ?, ?, ?, ?)', [category_id, name, description, base_price, is_active]);
-    res.status(201).json({ id: result.insertId, message: 'Service subcategory created successfully' });
-  } catch (error) {
-    console.error('Error creating service subcategory:', error);
-    if (error.code === 'ER_DUP_ENTRY') { // Assuming name is unique within a category
-      return res.status(409).json({ message: 'Subcategory with this name already exists in this category' });
-    }
-    res.status(500).json({ message: 'Failed to create service subcategory', details: error.message });
-  }
-});
-
-app.put('/api/admin/service-sub-categories/:id', authenticateToken, requireAdmin, async (req, res) => {
-  const { category_id, name, description, base_price, is_active } = req.body;
-  const subcategoryId = req.params.id;
-  try {
-    const [result] = await pool.execute('UPDATE service_sub_category SET category_id=?, name=?, description=?, base_price=?, is_active=? WHERE id = ?', [category_id, name, description, base_price, is_active, subcategoryId]);
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Service subcategory not found' });
-    res.json({ message: 'Service subcategory updated successfully' });
-  } catch (error) {
-    console.error('Error updating service subcategory:', error);
-    if (error.code === 'ER_DUP_ENTRY') { // Assuming name is unique within a category
-      return res.status(409).json({ message: 'Subcategory with this name already exists in this category' });
-    }
-    res.status(500).json({ message: 'Failed to update service subcategory', details: error.message });
-  }
-});
-
-app.delete('/api/admin/service-sub-categories/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [result] = await pool.execute('DELETE FROM service_subcategories WHERE id = ?', [req.params.id]);
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Service subcategory not found' });
-    res.json({ message: 'Service subcategory deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting service subcategory:', error);
-    res.status(500).json({ message: 'Failed to delete service subcategory', details: error.message });
-  }
-});
-
-
-// --- Services (Offerings) Management ---
-// Fix: Using singular 'service' table name. Frontend also expects a list of 'service offerings' for selection.
-app.get('/api/admin/services', authenticateToken, requireAdmin, async (req, res) => {
-  const { limit = 10, offset = 0, search = '', category_id } = req.query;
-  let query = `
-    SELECT s.id, s.name, s.category_id, s.description, s.price, s.duration, s.rating, s.reviews, s.features, s.popular, DATE_FORMAT(s.created_at, '%d %b %Y') as created_at,
-           sc.name as category_name
-    FROM services s
-    JOIN service_categories sc ON s.category_id = sc.id
-  `;
-  let countQuery = `SELECT COUNT(*) as total FROM services s JOIN service_categories sc ON s.category_id = sc.id`;
-  const queryParams = [];
-  const countParams = [];
-  const conditions = [];
-
-  if (search) {
-    conditions.push(`(s.name LIKE ? OR s.description LIKE ? OR sc.name LIKE ?)`);
-    queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
-    countParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
-  }
-  if (category_id) {
-    conditions.push('s.category_id = ?');
-    queryParams.push(category_id);
-    countParams.push(category_id);
-  }
-
-  if (conditions.length > 0) {
-    query += ` WHERE ` + conditions.join(' AND ');
-    countQuery += ` WHERE ` + conditions.join(' AND ');
-  }
-
-  query += ` ORDER BY s.name LIMIT ? OFFSET ?`;
-  queryParams.push(parseInt(limit), parseInt(offset));
-
-  try {
-    const [services] = await pool.execute(query, queryParams);
-    const [totalResult] = await pool.execute(countQuery, countParams);
-    res.json({ services, total: totalResult[0].total });
-  } catch (error) {
-    console.error('Error fetching services:', error);
-    res.status(500).json({ message: 'Failed to fetch services', details: error.message });
-  }
-});
-
-app.get('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [rows] = await pool.execute(`
-      SELECT s.id, s.name, s.category_id, s.description, s.price, s.duration, s.rating, s.reviews, s.features, s.popular, DATE_FORMAT(s.created_at, '%d %b %Y') as created_at,
-             sc.name as category_name
-      FROM services s
-      JOIN service_categories sc ON s.category_id = sc.id
-      WHERE s.id = ?
-    `, [req.params.id]);
-    if (rows.length === 0) return res.status(404).json({ message: 'Service offering not found' });
-    res.json(rows[0]);
-  } catch (error) {
-    console.error('Error fetching service offering:', error);
-    res.status(500).json({ message: 'Failed to fetch service offering', details: error.message });
-  }
-});
-
-app.post('/api/admin/services', authenticateToken, requireAdmin, async (req, res) => {
-  const { name, category_id, description, price, duration, features, popular } = req.body;
-  if (!name || !category_id || !price) return res.status(400).json({ message: 'Name, category ID, and price are required' });
-  try {
-    const [result] = await pool.execute(
-      'INSERT INTO service (name, category_id, description, price, duration, features, popular) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [name, category_id, description, price, duration, features, popular]
-    );
-    res.status(201).json({ id: result.insertId, message: 'Service offering created successfully' });
-  } catch (error) {
-    console.error('Error creating service offering:', error);
-    res.status(500).json({ message: 'Failed to create service offering', details: error.message });
-  }
-});
-
-app.put('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, res) => {
-  const { name, category_id, description, price, duration, features, popular } = req.body;
-  const serviceId = req.params.id;
-  try {
-    const [result] = await pool.execute(
-      'UPDATE service SET name=?, category_id=?, description=?, price=?, duration=?, features=?, popular=? WHERE id = ?',
-      [name, category_id, description, price, duration, features, popular, serviceId]
-    );
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Service offering not found' });
-    res.json({ message: 'Service offering updated successfully' });
-  } catch (error) {
-    console.error('Error updating service offering:', error);
-    res.status(500).json({ message: 'Failed to update service offering', details: error.message });
-  }
-});
-
-app.delete('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [result] = await pool.execute('DELETE FROM services WHERE id = ?', [req.params.id]);
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Service offering not found' });
-    res.json({ message: 'Service offering deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting service offering:', error);
-    res.status(500).json({ message: 'Failed to delete service offering', details: error.message });
-  }
-});
-
-
-// --- Service Requests Management ---
-// Fix: Endpoint name now matches the singular table name `service_request`
-app.get('/api/admin/service-requests', authenticateToken, requireAdmin, async (req, res) => {
-  const { limit = 10, offset = 0, search = '', status = 'all' } = req.query;
-  let query = `
-    SELECT sr.id, sr.user_id, sr.subcategory_id, sr.full_name as name, sr.email, sr.phone, sr.company, sr.website, sr.project_details, sr.budget_range, sr.timeline, sr.contact_method, sr.additional_requirements, DATE_FORMAT(sr.created_at, '%d %b %Y') as date, sr.status,
-           ssc.name as service_name
-    FROM service_requests sr
-    JOIN service_subcategories ssc ON sr.subcategory_id = ssc.id
-  `;
-  let countQuery = `SELECT COUNT(*) as total FROM service_requests sr JOIN service_subcategories ssc ON sr.subcategory_id = ssc.id`;
-  const queryParams = [];
-  const countParams = [];
-  const conditions = [];
-
-  if (search) {
-    conditions.push(`(sr.full_name LIKE ? OR sr.email LIKE ? OR ssc.name LIKE ?)`);
-    queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
-    countParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
-  }
-  if (status !== 'all') {
-    conditions.push('sr.status = ?');
-    queryParams.push(status);
-    countParams.push(status);
-  }
-
-  if (conditions.length > 0) {
-    query += ` WHERE ` + conditions.join(' AND ');
-    countQuery += ` WHERE ` + conditions.join(' AND ');
-  }
-
-  query += ` ORDER BY sr.created_at DESC LIMIT ? OFFSET ?`;
-  queryParams.push(parseInt(limit), parseInt(offset));
-
-  try {
-    const [requests] = await pool.execute(query, queryParams);
-    const [totalResult] = await pool.execute(countQuery, countParams);
-    res.json({ requests, total: totalResult[0].total });
-  } catch (error) {
-    console.error('Error fetching service requests:', error);
-    res.status(500).json({ message: 'Failed to fetch service requests', details: error.message });
-  }
-});
-
-app.get('/api/admin/service-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [rows] = await pool.execute(`
-      SELECT sr.id, sr.user_id, sr.subcategory_id, sr.full_name as name, sr.email, sr.phone, sr.company, sr.website, sr.project_details, sr.budget_range, sr.timeline, sr.contact_method, sr.additional_requirements, DATE_FORMAT(sr.created_at, '%d %b %Y') as date, sr.status,
-             ssc.name as service_name
-      FROM service_requests sr
-      JOIN service_sub_category ssc ON sr.subcategory_id = ssc.id
-      WHERE sr.id = ?
-    `, [req.params.id]);
-    if (rows.length === 0) return res.status(404).json({ message: 'Service request not found' });
-    res.json(rows[0]);
-  } catch (error) {
-    console.error('Error fetching service request:', error);
-    res.status(500).json({ message: 'Failed to fetch service request', details: error.message });
-  }
-});
-
-app.post('/api/admin/service-requests', authenticateToken, requireAdmin, async (req, res) => {
-  // Fix: user_id is NOT NULL in schema, so must be provided.
-  const { user_id, subcategory_id, full_name, email, phone, company, website, project_details, budget_range, timeline, contact_method, additional_requirements, status = 'pending' } = req.body;
-  if (!user_id || !subcategory_id || !full_name || !email || !phone || !project_details || !budget_range || !timeline || !contact_method) {
-    return res.status(400).json({ message: 'Required fields missing' });
-  }
-  try {
-    const [result] = await pool.execute(
-      'INSERT INTO service_request (user_id, subcategory_id, full_name, email, phone, company, website, project_details, budget_range, timeline, contact_method, additional_requirements, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [user_id, subcategory_id, full_name, email, phone, company, website, project_details, budget_range, timeline, contact_method, additional_requirements, status]
-    );
-    res.status(201).json({ id: result.insertId, message: 'Service request created successfully' });
-  } catch (error) {
-    console.error('Error creating service request:', error);
-    res.status(500).json({ message: 'Failed to create service request', details: error.message });
-  }
-});
-
-app.put('/api/admin/service-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
-  // Fix: user_id is NOT NULL in schema, so must be provided.
-  const { user_id, subcategory_id, full_name, email, phone, company, website, project_details, budget_range, timeline, contact_method, additional_requirements, status } = req.body;
-  const requestId = req.params.id;
-  try {
-    const [result] = await pool.execute(
-      'UPDATE service_request SET user_id=?, subcategory_id=?, full_name=?, email=?, phone=?, company=?, website=?, project_details=?, budget_range=?, timeline=?, contact_method=?, additional_requirements=?, status=? WHERE id = ?',
-      [user_id, subcategory_id, full_name, email, phone, company, website, project_details, budget_range, timeline, contact_method, additional_requirements, status, requestId]
-    );
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Service request not found' });
-    res.json({ message: 'Service request updated successfully' });
-  } catch (error) {
-    console.error('Error updating service request:', error);
-    res.status(500).json({ message: 'Failed to update service request', details: error.message });
-  }
-});
-
-app.delete('/api/admin/service-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [result] = await pool.execute('DELETE FROM service_requests WHERE id = ?', [req.params.id]);
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Service request not found' });
-    res.json({ message: 'Service request deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting service request:', error);
-    res.status(500).json({ message: 'Failed to delete service request', details: error.message });
-  }
-});
-
-
-// --- Internships Management --- (Frontend has a basic listing for this)
-app.get('/api/admin/internships', authenticateToken, requireAdmin, async (req, res) => {
-  const { limit = 10, offset = 0, search = '' } = req.query;
-  let query = `SELECT id, title, company, location, duration, type, level, description, requirements, benefits, DATE_FORMAT(posted_at, '%d %b %Y') as posted_at, applications_count, spots_available FROM internships`;
-  let countQuery = `SELECT COUNT(*) as total FROM internships`;
-  const queryParams = [];
-  const countParams = [];
-  const conditions = [];
-
-  if (search) {
-    conditions.push(`(title LIKE ? OR company LIKE ? OR location LIKE ?)`);
-    queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
-    countParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
-  }
-
-  if (conditions.length > 0) {
-    query += ` WHERE ` + conditions.join(' AND ');
-    countQuery += ` WHERE ` + conditions.join(' AND ');
-  }
-
-  query += ` ORDER BY posted_at DESC LIMIT ? OFFSET ?`;
-  queryParams.push(parseInt(limit), parseInt(offset));
-
-  try {
-    const [internships] = await pool.execute(query, queryParams);
-    const [totalResult] = await pool.execute(countQuery, countParams);
-    res.json({ internships, total: totalResult[0].total });
-  } catch (error) {
-    console.error('Error fetching internships:', error);
-    res.status(500).json({ message: 'Failed to fetch internships', details: error.message });
-  }
-});
-
-app.get('/api/admin/internships/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [rows] = await pool.execute('SELECT id, title, company, location, duration, type, level, description, requirements, benefits, DATE_FORMAT(posted_at, \'%Y-%m-%d\') as posted_at, applications_count, spots_available FROM internships WHERE id = ?', [req.params.id]);
-    if (rows.length === 0) return res.status(404).json({ message: 'Internship not found' });
-    res.json(rows[0]);
-  } catch (error) {
-    console.error('Error fetching internship:', error);
-    res.status(500).json({ message: 'Failed to fetch internship', details: error.message });
-  }
-});
-
-app.post('/api/admin/internships', authenticateToken, requireAdmin, async (req, res) => {
-  const { title, company, location, duration, type, level, description, requirements, benefits, applications_count = 0, spots_available } = req.body;
-  if (!title || !company || !location || !duration || !type || !level || !description || !requirements || !benefits || !spots_available) {
-    return res.status(400).json({ message: 'Required fields missing' });
-  }
-  try {
-    const [result] = await pool.execute(
-      'INSERT INTO internships (title, company, location, duration, type, level, description, requirements, benefits, applications_count, spots_available) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [title, company, location, duration, type, level, description, requirements, benefits, applications_count, spots_available]
-    );
-    res.status(201).json({ id: result.insertId, message: 'Internship created successfully' });
-  } catch (error) {
-    console.error('Error creating internship:', error);
-    res.status(500).json({ message: 'Failed to create internship', details: error.message });
-  }
-});
-
-app.put('/api/admin/internships/:id', authenticateToken, requireAdmin, async (req, res) => {
-  const { title, company, location, duration, type, level, description, requirements, benefits, applications_count, spots_available } = req.body;
-  const internshipId = req.params.id;
-  try {
-    const [result] = await pool.execute(
-      'UPDATE internships SET title=?, company=?, location=?, duration=?, type=?, level=?, description=?, requirements=?, benefits=?, applications_count=?, spots_available=? WHERE id = ?',
-      [title, company, location, duration, type, level, description, requirements, benefits, applications_count, spots_available, internshipId]
-    );
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Internship not found' });
-    res.json({ message: 'Internship updated successfully' });
-  } catch (error) {
-    console.error('Error updating internship:', error);
-    res.status(500).json({ message: 'Failed to update internship', details: error.message });
-  }
-});
-
-app.delete('/api/admin/internships/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const [result] = await pool.execute('DELETE FROM internships WHERE id = ?', [req.params.id]);
-    if (result.affectedRows === 0) return res.status(404).json({ message: 'Internship not found' });
-    res.json({ message: 'Internship deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting internship:', error);
-    res.status(500).json({ message: 'Failed to delete internship', details: error.message });
-  }
-});
-
-// Add similar CRUD endpoints for other tables not yet implemented if needed:
-// - assignment_submission
-// - download_log
-// - user_bookmarks
-// - user_stats
-// - course_enroll_requests
-// - social_activities
 
 // ==================== CONTACT ROUTES ====================
 
@@ -4740,42 +3349,6 @@ app.post('/api/contact', async (req, res) => {
 
   } catch (error) {
     console.error('Contact form error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Get contact messages (admin only)
-app.get('/api/admin/contact-messages', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const offset = (page - 1) * limit;
-
-    const [messages] = await pool.execute(
-      `SELECT id, first_name, last_name, email, phone, company, message, created_at
-         FROM contact_messages 
-         ORDER BY created_at DESC 
-         LIMIT ? OFFSET ?`,
-      [limit, offset]
-    );
-
-    const [totalCount] = await pool.execute(
-      'SELECT COUNT(*) as total FROM contact_messages'
-    );
-
-    res.json({
-      messages: messages,
-      pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(totalCount[0].total / limit),
-        totalMessages: totalCount[0].total,
-        hasNextPage: page < Math.ceil(totalCount[0].total / limit),
-        hasPreviousPage: page > 1
-      }
-    });
-
-  } catch (error) {
-    console.error('Get contact messages error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -4830,6 +3403,1240 @@ app.get('/api/admin/analytics', authenticateToken, requireAdmin, async (req, res
   } catch (error) {
     console.error('Get analytics error:', error);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ==================== ADMIN USER MANAGEMENT ENDPOINTS ====================
+
+// GET /api/admin/users - Get all users with pagination and filtering
+app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+    const accountType = req.query.accountType;
+    const status = req.query.status;
+    const search = req.query.search;
+
+    let whereClauses = [];
+    let queryParams = [];
+
+    // Add filters if provided
+    if (accountType && accountType !== 'all') {
+      whereClauses.push('account_type = ?');
+      queryParams.push(accountType);
+    }
+
+    if (status && status !== 'all') {
+      const isActive = status === 'active' ? 1 : 0;
+      whereClauses.push('is_active = ?');
+      queryParams.push(isActive);
+    }
+
+    if (search) {
+      whereClauses.push('(first_name LIKE ? OR last_name LIKE ? OR email LIKE ?)');
+      queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    // Build WHERE clause
+    const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+    // Get users with pagination
+    const [users] = await pool.execute(
+      `SELECT id, first_name, last_name, email, phone, account_type, 
+              profile_image, company, website, bio, is_active, email_verified,
+              created_at, updated_at
+       FROM users 
+       ${whereClause}
+       ORDER BY created_at DESC 
+       LIMIT ? OFFSET ?`,
+      [...queryParams, limit, offset]
+    );
+
+    // Get total count
+    const [totalCountResult] = await pool.execute(
+      `SELECT COUNT(*) as total FROM users ${whereClause}`,
+      queryParams
+    );
+
+    res.json({
+      users: users,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalCountResult[0].total / limit),
+        totalUsers: totalCountResult[0].total,
+        hasNextPage: page < Math.ceil(totalCountResult[0].total / limit),
+        hasPreviousPage: page > 1
+      }
+    });
+
+  } catch (error) {
+    console.error('Get users error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/admin/users/:id - Get a specific user
+app.get('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    const [users] = await pool.execute(
+      `SELECT id, first_name, last_name, email, phone, account_type, 
+              profile_image, company, website, bio, is_active, email_verified,
+              created_at, updated_at
+       FROM users 
+       WHERE id = ?`,
+      [userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json(users[0]);
+  } catch (error) {
+    console.error('Get user error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/admin/users - Create a new user
+app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { firstName, lastName, email, phone, password, accountType, isActive, company, website, bio } = req.body;
+
+    // Validate required fields
+    if (!firstName || !lastName || !email || !password) {
+      return res.status(400).json({
+        error: 'First name, last name, email, and password are required'
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Please provide a valid email address' });
+    }
+
+    // Validate password strength
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    }
+
+    // Check if email exists
+    const [existingUsers] = await pool.execute(
+      'SELECT * FROM users WHERE email = ?',
+      [email]
+    );
+
+    if (existingUsers.length > 0) {
+      return res.status(400).json({ error: 'Email already exists' });
+    }
+
+    // Hash password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    // Insert new user
+    const [result] = await pool.execute(
+      `INSERT INTO users 
+       (first_name, last_name, email, phone, password_hash, account_type, is_active, company, website, bio, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [firstName.trim(), lastName.trim(), email.trim(), phone || null, hashedPassword, 
+       accountType || 'student', isActive !== undefined ? isActive : true, 
+       company || null, website || null, bio || null]
+    );
+
+    // Create user stats entry
+    await pool.execute(
+      'INSERT INTO user_stats (user_id) VALUES (?)',
+      [result.insertId]
+    );
+
+    console.log('User created successfully by admin:', { userId: result.insertId, email });
+    
+    // Get the newly created user to return
+    const [newUser] = await pool.execute(
+      `SELECT id, first_name, last_name, email, phone, account_type, 
+              profile_image, company, website, bio, is_active, email_verified,
+              created_at, updated_at
+       FROM users 
+       WHERE id = ?`,
+      [result.insertId]
+    );
+
+    res.status(201).json({
+      message: 'User created successfully',
+      user: newUser[0]
+    });
+
+  } catch (error) {
+    console.error('Create user error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/admin/users/:id - Update a user
+app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { firstName, lastName, email, phone, accountType, isActive, company, website, bio } = req.body;
+
+    // Check if user exists
+    const [users] = await pool.execute(
+      'SELECT * FROM users WHERE id = ?',
+      [userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Validate email if changed
+    if (email && email !== users[0].email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({ error: 'Please provide a valid email address' });
+      }
+
+      // Check if new email already exists
+      const [existingUsers] = await pool.execute(
+        'SELECT * FROM users WHERE email = ? AND id != ?',
+        [email, userId]
+      );
+
+      if (existingUsers.length > 0) {
+        return res.status(400).json({ error: 'Email already exists' });
+      }
+    }
+
+    // Update user
+    await pool.execute(
+      `UPDATE users SET 
+       first_name = ?, last_name = ?, email = ?, phone = ?, account_type = ?, 
+       is_active = ?, company = ?, website = ?, bio = ?, updated_at = NOW()
+       WHERE id = ?`,
+      [firstName || users[0].first_name, 
+       lastName || users[0].last_name, 
+       email || users[0].email, 
+       phone || users[0].phone, 
+       accountType || users[0].account_type,
+       isActive !== undefined ? isActive : users[0].is_active,
+       company || users[0].company,
+       website || users[0].website,
+       bio || users[0].bio,
+       userId]
+    );
+
+    // Get the updated user to return
+    const [updatedUser] = await pool.execute(
+      `SELECT id, first_name, last_name, email, phone, account_type, 
+              profile_image, company, website, bio, is_active, email_verified,
+              created_at, updated_at
+       FROM users 
+       WHERE id = ?`,
+      [userId]
+    );
+
+    res.json({
+      message: 'User updated successfully',
+      user: updatedUser[0]
+    });
+
+  } catch (error) {
+    console.error('Update user error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/admin/users/:id - Delete a user
+app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const adminId = req.user.id;
+
+    // Prevent admin from deleting themselves
+    if (parseInt(userId) === parseInt(adminId)) {
+      return res.status(400).json({ error: 'You cannot delete your own account' });
+    }
+
+    // Check if user exists
+    const [users] = await pool.execute(
+      'SELECT * FROM users WHERE id = ?',
+      [userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // For safety, we'll do a soft delete by setting is_active to false
+    await pool.execute(
+      'UPDATE users SET is_active = false, updated_at = NOW() WHERE id = ?',
+      [userId]
+    );
+
+    res.json({ message: 'User deleted successfully' });
+
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(500).json({ error: 'Server error while deleting user' });
+  }
+});
+
+// PUT /api/admin/users/:id/password - Reset user password (admin only)
+app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({ error: 'Password is required' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    }
+
+    // Check if user exists
+    const [users] = await pool.execute(
+      'SELECT * FROM users WHERE id = ?',
+      [userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Hash new password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    // Update password
+    await pool.execute(
+      'UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?',
+      [hashedPassword, userId]
+    );
+
+    res.json({ message: 'Password reset successfully' });
+
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ==================== ADMIN ENROLLMENT MANAGEMENT ENDPOINTS ====================
+
+// GET all enrollments (admin only)
+app.get('/api/admin/enrollments', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [enrollments] = await pool.execute(`
+      SELECT 
+        e.id,
+        e.user_id,
+        CONCAT(u.first_name, ' ', u.last_name) as user_name,
+        e.course_id,
+        c.title as course_name,
+        e.progress,
+        e.status,
+        e.enrollment_date,
+        e.completion_date
+      FROM enrollments e
+      JOIN users u ON e.user_id = u.id
+      JOIN courses c ON e.course_id = c.id
+      ORDER BY e.enrollment_date DESC
+    `);
+
+    res.json(enrollments);
+  } catch (error) {
+    console.error('Error fetching enrollments:', error);
+    res.status(500).json({ error: 'Failed to fetch enrollments' });
+  }
+});
+
+// UPDATE enrollment (admin only)
+app.put('/api/admin/enrollments/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, progress, completion_date } = req.body;
+
+    await pool.execute(
+      'UPDATE enrollments SET status = ?, progress = ?, completion_date = ? WHERE id = ?',
+      [status, progress, status === 'completed' ? (completion_date || new Date()) : null, id]
+    );
+
+    res.json({ message: 'Enrollment updated successfully' });
+  } catch (error) {
+    console.error('Error updating enrollment:', error);
+    res.status(500).json({ error: 'Failed to update enrollment' });
+  }
+});
+
+// DELETE enrollment (admin only)
+app.delete('/api/admin/enrollments/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await pool.execute('DELETE FROM enrollments WHERE id = ?', [id]);
+
+    res.json({ message: 'Enrollment deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting enrollment:', error);
+    res.status(500).json({ error: 'Failed to delete enrollment' });
+  }
+});
+
+// ==================== ADMIN COURSE MANAGEMENT ENDPOINTS ====================
+
+// GET all courses (admin only)
+app.get('/api/admin/courses', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [courses] = await pool.execute(`
+      SELECT 
+        id,
+        title,
+        description,
+        instructor_name,
+        duration_weeks,
+        difficulty_level,
+        category,
+        price,
+        thumbnail,
+        is_active,
+        created_at,
+        updated_at
+      FROM courses 
+      ORDER BY created_at DESC
+    `);
+
+    res.json(courses);
+  } catch (error) {
+    console.error('Error fetching courses:', error);
+    res.status(500).json({ error: 'Failed to fetch courses' });
+  }
+});
+
+// CREATE new course (admin only)
+app.post('/api/admin/courses', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const {
+      title,
+      description,
+      instructor_name,
+      duration_weeks,
+      difficulty_level,
+      category,
+      price,
+      is_active
+    } = req.body;
+
+    // Validate required fields
+    if (!title || !instructor_name || !duration_weeks || !difficulty_level || !category || !price) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const [result] = await pool.execute(
+      `INSERT INTO courses 
+        (title, description, instructor_name, duration_weeks, difficulty_level, category, price, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [title, description, instructor_name, duration_weeks, difficulty_level, category, price, is_active || 1]
+    );
+
+    res.status(201).json({ 
+      message: 'Course created successfully',
+      courseId: result.insertId
+    });
+  } catch (error) {
+    console.error('Error creating course:', error);
+    res.status(500).json({ error: 'Failed to create course' });
+  }
+});
+
+// UPDATE course (admin only)
+app.put('/api/admin/courses/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      title,
+      description,
+      instructor_name,
+      duration_weeks,
+      difficulty_level,
+      category,
+      price,
+      is_active
+    } = req.body;
+
+    // Validate required fields
+    if (!title || !instructor_name || !duration_weeks || !difficulty_level || !category || !price) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    await pool.execute(
+      `UPDATE courses SET 
+        title = ?, description = ?, instructor_name = ?, duration_weeks = ?, 
+        difficulty_level = ?, category = ?, price = ?, is_active = ?, updated_at = NOW()
+        WHERE id = ?`,
+      [title, description, instructor_name, duration_weeks, difficulty_level, category, price, is_active, id]
+    );
+
+    res.json({ message: 'Course updated successfully' });
+  } catch (error) {
+    console.error('Error updating course:', error);
+    res.status(500).json({ error: 'Failed to update course' });
+  }
+});
+
+// DELETE course (admin only)
+app.delete('/api/admin/courses/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if course has enrollments
+    const [enrollments] = await pool.execute(
+      'SELECT COUNT(*) as count FROM enrollments WHERE course_id = ?',
+      [id]
+    );
+
+    if (enrollments[0].count > 0) {
+      return res.status(400).json({ error: 'Cannot delete course with active enrollments' });
+    }
+
+    await pool.execute('DELETE FROM courses WHERE id = ?', [id]);
+
+    res.json({ message: 'Course deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting course:', error);
+    res.status(500).json({ error: 'Failed to delete course' });
+  }
+});
+
+// Upload course thumbnail
+app.post('/api/admin/courses/:id/thumbnail', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const thumbnailPath = `/uploads/courses/${req.file.filename}`;
+
+    await pool.execute(
+      'UPDATE courses SET thumbnail = ?, updated_at = NOW() WHERE id = ?',
+      [thumbnailPath, id]
+    );
+
+    res.json({ message: 'Thumbnail uploaded successfully', thumbnail: thumbnailPath });
+  } catch (error) {
+    console.error('Error uploading thumbnail:', error);
+    res.status(500).json({ error: 'Failed to upload thumbnail' });
+  }
+});
+
+// ==================== ADMIN ASSIGNMENT MANAGEMENT ENDPOINTS ====================
+
+// GET all assignments (admin only)
+app.get('/api/admin/assignments', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [assignments] = await pool.execute(`
+      SELECT 
+        a.id,
+        a.course_id,
+        a.title,
+        a.description,
+        a.due_date,
+        a.max_points,
+        a.created_at,
+        c.title as course_title
+      FROM assignments a
+      LEFT JOIN courses c ON a.course_id = c.id
+      ORDER BY a.created_at DESC
+    `);
+
+    res.json(assignments);
+  } catch (error) {
+    console.error('Error fetching assignments:', error);
+    res.status(500).json({ error: 'Failed to fetch assignments' });
+  }
+});
+
+// CREATE new assignment (admin only)
+app.post('/api/admin/assignments', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const {
+      title,
+      course_id,
+      description,
+      due_date,
+      max_points
+    } = req.body;
+
+    // Validate required fields
+    if (!title || !course_id || !due_date || !max_points) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const [result] = await pool.execute(
+      `INSERT INTO assignments 
+        (title, course_id, description, due_date, max_points)
+        VALUES (?, ?, ?, ?, ?)`,
+      [title, course_id, description, due_date, max_points]
+    );
+
+    res.status(201).json({ 
+      message: 'Assignment created successfully',
+      assignmentId: result.insertId
+    });
+  } catch (error) {
+    console.error('Error creating assignment:', error);
+    res.status(500).json({ error: 'Failed to create assignment' });
+  }
+});
+
+// UPDATE assignment (admin only)
+app.put('/api/admin/assignments/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      title,
+      course_id,
+      description,
+      due_date,
+      max_points
+    } = req.body;
+
+    // Validate required fields
+    if (!title || !course_id || !due_date || !max_points) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    await pool.execute(
+      `UPDATE assignments SET 
+        title = ?, course_id = ?, description = ?, due_date = ?, max_points = ?
+        WHERE id = ?`,
+      [title, course_id, description, due_date, max_points, id]
+    );
+
+    res.json({ message: 'Assignment updated successfully' });
+  } catch (error) {
+    console.error('Error updating assignment:', error);
+    res.status(500).json({ error: 'Failed to update assignment' });
+  }
+});
+
+// DELETE assignment (admin only)
+app.delete('/api/admin/assignments/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if assignment has submissions
+    const [submissions] = await pool.execute(
+      'SELECT COUNT(*) as count FROM assignment_submissions WHERE assignment_id = ?',
+      [id]
+    );
+
+    if (submissions[0].count > 0) {
+      return res.status(400).json({ error: 'Cannot delete assignment with existing submissions' });
+    }
+
+    await pool.execute('DELETE FROM assignments WHERE id = ?', [id]);
+
+    res.json({ message: 'Assignment deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting assignment:', error);
+    res.status(500).json({ error: 'Failed to delete assignment' });
+  }
+});
+
+// ==================== ADMIN CONTACT MESSAGES ENDPOINTS ====================
+
+// Get contact messages (admin only) - CORRECTED VERSION
+app.get('/api/admin/contact-messages', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    // Check if status column exists in the table
+    let statusColumnExists = true;
+    try {
+      await pool.execute('SELECT status FROM contact_messages LIMIT 1');
+    } catch (error) {
+      statusColumnExists = false;
+    }
+
+    const selectFields = statusColumnExists 
+      ? `id, first_name, last_name, email, phone, company, message, status, created_at`
+      : `id, first_name, last_name, email, phone, company, message, created_at`;
+
+    const [messages] = await pool.execute(
+      `SELECT ${selectFields}
+       FROM contact_messages 
+       ORDER BY created_at DESC 
+       LIMIT ? OFFSET ?`,
+      [limit, offset]
+    );
+
+    const [totalCount] = await pool.execute(
+      'SELECT COUNT(*) as total FROM contact_messages'
+    );
+
+    // If status column doesn't exist, add default status to each message
+    if (!statusColumnExists) {
+      messages.forEach(message => {
+        message.status = 'pending';
+      });
+    }
+
+    res.json({
+      messages: messages,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalCount[0].total / limit),
+        totalMessages: totalCount[0].total,
+        hasNextPage: page < Math.ceil(totalCount[0].total / limit),
+        hasPreviousPage: page > 1
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching contact messages:', error);
+    res.status(500).json({ error: 'Failed to fetch contact messages' });
+  }
+});
+
+// UPDATE contact message status (admin only)
+app.put('/api/admin/contact-messages/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    // First check if status column exists
+    let statusColumnExists = true;
+    try {
+      await pool.execute('SELECT status FROM contact_messages LIMIT 1');
+    } catch (error) {
+      statusColumnExists = false;
+      
+      // If status column doesn't exist, add it to the table
+      if (!statusColumnExists) {
+        await pool.execute(`
+          ALTER TABLE contact_messages 
+          ADD COLUMN status ENUM('pending', 'contacted', 'resolved', 'closed') DEFAULT 'pending'
+        `);
+        statusColumnExists = true;
+      }
+    }
+
+    if (!status || !['pending', 'contacted', 'resolved', 'closed'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status value' });
+    }
+
+    await pool.execute(
+      'UPDATE contact_messages SET status = ? WHERE id = ?',
+      [status, id]
+    );
+
+    res.json({ message: 'Contact message updated successfully' });
+  } catch (error) {
+    console.error('Error updating contact message:', error);
+    res.status(500).json({ error: 'Failed to update contact message' });
+  }
+});
+
+// DELETE contact message (admin only)
+app.delete('/api/admin/contact-messages/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await pool.execute('DELETE FROM contact_messages WHERE id = ?', [id]);
+
+    res.json({ message: 'Contact message deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting contact message:', error);
+    res.status(500).json({ error: 'Failed to delete contact message' });
+  }
+});
+
+// ==================== ADMIN SERVICE MANAGEMENT ENDPOINTS ====================
+
+// Get all services (admin only)
+app.get('/api/admin/services', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [services] = await pool.execute(`
+      SELECT 
+        s.*,
+        sc.name as category_name,
+        sc.id as category_id
+      FROM services s
+      LEFT JOIN service_categories sc ON s.category_id = sc.id
+      ORDER BY s.created_at DESC
+    `);
+
+    // Parse JSON fields
+    const parsedServices = services.map(service => ({
+      ...service,
+      features: service.features ? JSON.parse(service.features) : [],
+      is_active: service.is_active === 1,
+      popular: service.popular === 1
+    }));
+
+    res.json(parsedServices);
+  } catch (error) {
+    console.error('Error fetching services:', error);
+    res.status(500).json({ error: 'Failed to fetch services' });
+  }
+});
+
+// Get service by ID (admin only)
+app.get('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const [services] = await pool.execute(`
+      SELECT 
+        s.*,
+        sc.name as category_name,
+        sc.id as category_id
+      FROM services s
+      LEFT JOIN service_categories sc ON s.category_id = sc.id
+      WHERE s.id = ?
+    `, [id]);
+
+    if (services.length === 0) {
+      return res.status(404).json({ error: 'Service not found' });
+    }
+
+    const service = services[0];
+    // Parse JSON fields
+    service.features = service.features ? JSON.parse(service.features) : [];
+    service.is_active = service.is_active === 1;
+    service.popular = service.popular === 1;
+
+    res.json(service);
+  } catch (error) {
+    console.error('Error fetching service:', error);
+    res.status(500).json({ error: 'Failed to fetch service' });
+  }
+});
+
+// Create new service (admin only)
+app.post('/api/admin/services', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const {
+      name,
+      category_id,
+      description,
+      price,
+      duration,
+      features,
+      popular,
+      is_active
+    } = req.body;
+
+    // Validate required fields
+    if (!name || !category_id || !price) {
+      return res.status(400).json({ error: 'Name, category, and price are required' });
+    }
+
+    const [result] = await pool.execute(`
+      INSERT INTO services 
+        (name, category_id, description, price, duration, features, popular, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+    `, [
+      name,
+      category_id,
+      description || null,
+      price,
+      duration || null,
+      features ? JSON.stringify(features) : null,
+      popular ? 1 : 0,
+      is_active ? 1 : 0
+    ]);
+
+    res.status(201).json({
+      message: 'Service created successfully',
+      serviceId: result.insertId
+    });
+  } catch (error) {
+    console.error('Error creating service:', error);
+    res.status(500).json({ error: 'Failed to create service' });
+  }
+});
+
+// Update service (admin only)
+app.put('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      name,
+      category_id,
+      description,
+      price,
+      duration,
+      features,
+      popular,
+      is_active
+    } = req.body;
+
+    // Check if service exists
+    const [services] = await pool.execute('SELECT id FROM services WHERE id = ?', [id]);
+    if (services.length === 0) {
+      return res.status(404).json({ error: 'Service not found' });
+    }
+
+    await pool.execute(`
+      UPDATE services 
+      SET name = ?, category_id = ?, description = ?, price = ?, duration = ?, 
+          features = ?, popular = ?, is_active = ?, updated_at = NOW()
+      WHERE id = ?
+    `, [
+      name,
+      category_id,
+      description || null,
+      price,
+      duration || null,
+      features ? JSON.stringify(features) : null,
+      popular ? 1 : 0,
+      is_active ? 1 : 0,
+      id
+    ]);
+
+    res.json({ message: 'Service updated successfully' });
+  } catch (error) {
+    console.error('Error updating service:', error);
+    res.status(500).json({ error: 'Failed to update service' });
+  }
+});
+
+// Delete service (admin only)
+app.delete('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if service exists
+    const [services] = await pool.execute('SELECT id FROM services WHERE id = ?', [id]);
+    if (services.length === 0) {
+      return res.status(404).json({ error: 'Service not found' });
+    }
+
+    await pool.execute('DELETE FROM services WHERE id = ?', [id]);
+
+    res.json({ message: 'Service deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting service:', error);
+    res.status(500).json({ error: 'Failed to delete service' });
+  }
+});
+
+// Get service categories (admin only)
+app.get('/api/admin/service-categories', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [categories] = await pool.execute(`
+      SELECT * FROM service_categories 
+      WHERE is_active = 1 
+      ORDER BY name
+    `);
+
+    res.json(categories);
+  } catch (error) {
+    console.error('Error fetching service categories:', error);
+    res.status(500).json({ error: 'Failed to fetch service categories' });
+  }
+});
+
+// ==================== ADMIN CALENDAR MANAGEMENT ENDPOINTS ====================
+
+// Get all calendar events (admin only)
+app.get('/api/admin/calendar-events', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [events] = await pool.execute(`
+      SELECT 
+        cce.*,
+        u.first_name,
+        u.last_name,
+        u.email
+      FROM custom_calendar_events cce
+      LEFT JOIN users u ON cce.user_id = u.id
+      ORDER BY cce.event_date DESC, cce.event_time DESC
+    `);
+
+    res.json(events);
+  } catch (error) {
+    console.error('Error fetching calendar events:', error);
+    res.status(500).json({ error: 'Failed to fetch calendar events' });
+  }
+});
+
+// Get calendar event by ID (admin only)
+app.get('/api/admin/calendar-events/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const [events] = await pool.execute(`
+      SELECT 
+        cce.*,
+        u.first_name,
+        u.last_name,
+        u.email
+      FROM custom_calendar_events cce
+      LEFT JOIN users u ON cce.user_id = u.id
+      WHERE cce.id = ?
+    `, [id]);
+
+    if (events.length === 0) {
+      return res.status(404).json({ error: 'Calendar event not found' });
+    }
+
+    res.json(events[0]);
+  } catch (error) {
+    console.error('Error fetching calendar event:', error);
+    res.status(500).json({ error: 'Failed to fetch calendar event' });
+  }
+});
+
+// Create new calendar event (admin only)
+app.post('/api/admin/calendar-events', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const {
+      user_id,
+      title,
+      description,
+      event_date,
+      event_time,
+      event_type
+    } = req.body;
+
+    // Validate required fields
+    if (!title || !event_date) {
+      return res.status(400).json({ error: 'Title and date are required' });
+    }
+
+    // Validate date format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(event_date)) {
+      return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
+    }
+
+    const [result] = await pool.execute(`
+      INSERT INTO custom_calendar_events 
+        (user_id, title, description, event_date, event_time, event_type, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+    `, [
+      user_id || null,
+      title,
+      description || null,
+      event_date,
+      event_time || null,
+      event_type || 'custom'
+    ]);
+
+    res.status(201).json({
+      message: 'Calendar event created successfully',
+      eventId: result.insertId
+    });
+  } catch (error) {
+    console.error('Error creating calendar event:', error);
+    res.status(500).json({ error: 'Failed to create calendar event' });
+  }
+});
+
+// Update calendar event (admin only)
+app.put('/api/admin/calendar-events/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      user_id,
+      title,
+      description,
+      event_date,
+      event_time,
+      event_type
+    } = req.body;
+
+    // Check if event exists
+    const [events] = await pool.execute('SELECT id FROM custom_calendar_events WHERE id = ?', [id]);
+    if (events.length === 0) {
+      return res.status(404).json({ error: 'Calendar event not found' });
+    }
+
+    // Validate date format if provided
+    if (event_date) {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(event_date)) {
+        return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
+      }
+    }
+
+    await pool.execute(`
+      UPDATE custom_calendar_events 
+      SET user_id = ?, title = ?, description = ?, event_date = ?, 
+          event_time = ?, event_type = ?, updated_at = NOW()
+      WHERE id = ?
+    `, [
+      user_id || null,
+      title,
+      description || null,
+      event_date,
+      event_time || null,
+      event_type || 'custom',
+      id
+    ]);
+
+    res.json({ message: 'Calendar event updated successfully' });
+  } catch (error) {
+    console.error('Error updating calendar event:', error);
+    res.status(500).json({ error: 'Failed to update calendar event' });
+  }
+});
+
+// Delete calendar event (admin only)
+app.delete('/api/admin/calendar-events/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if event exists
+    const [events] = await pool.execute('SELECT id FROM custom_calendar_events WHERE id = ?', [id]);
+    if (events.length === 0) {
+      return res.status(404).json({ error: 'Calendar event not found' });
+    }
+
+    await pool.execute('DELETE FROM custom_calendar_events WHERE id = ?', [id]);
+
+    res.json({ message: 'Calendar event deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting calendar event:', error);
+    res.status(500).json({ error: 'Failed to delete calendar event' });
+  }
+});
+
+// Get all users for dropdown (admin only)
+app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [users] = await pool.execute(`
+      SELECT id, first_name, last_name, email 
+      FROM users 
+      WHERE is_active = 1 
+      ORDER BY first_name, last_name
+    `);
+
+    res.json(users);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+// ==================== ADMIN SERVICE REQUEST MANAGEMENT PAGE ====================
+
+// Updated GET endpoint for service requests
+app.get('/api/admin/service-requests', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [requests] = await pool.execute(`
+      SELECT 
+        sr.id,
+        sr.full_name as name,
+        sc.name as service,
+        DATE_FORMAT(sr.created_at, '%d %b %Y') as date,
+        sr.status,
+        sr.email,
+        sr.phone,
+        sr.company,
+        sr.website,
+        sr.project_details,
+        sr.budget_range,
+        sr.timeline,
+        sr.contact_method,
+        sr.additional_requirements,
+        sr.user_id,
+        u.first_name as user_first_name,
+        u.last_name as user_last_name,
+        u.account_type as user_account_type
+      FROM service_requests sr
+      LEFT JOIN service_subcategories sc ON sr.subcategory_id = sc.id
+      LEFT JOIN users u ON sr.user_id = u.id
+      ORDER BY sr.created_at DESC
+    `);
+
+    res.json(requests);
+  } catch (error) {
+    console.error('Error fetching service requests:', error);
+    res.status(500).json({ error: 'Failed to fetch service requests', details: error.message });
+  }
+});
+
+// Updated PUT endpoint for service requests
+app.put('/api/admin/service-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, project_details, budget_range, timeline, additional_requirements } = req.body;
+
+    const [result] = await pool.execute(
+      `UPDATE service_requests SET 
+        status = ?, 
+        project_details = ?, 
+        budget_range = ?, 
+        timeline = ?, 
+        additional_requirements = ?, 
+        updated_at = NOW() 
+       WHERE id = ?`,
+      [status, project_details, budget_range, timeline, additional_requirements, id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Service request not found' });
+    }
+
+    res.json({ message: 'Service request updated successfully' });
+  } catch (error) {
+    console.error('Error updating service request:', error);
+    res.status(500).json({ error: 'Failed to update service request', details: error.message });
+  }
+});
+
+// PUT /api/admin/service-requests/:id - Update service request status
+app.put('/api/admin/service-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const [result] = await pool.execute(
+      'UPDATE service_requests SET status = ?, updated_at = NOW() WHERE id = ?',
+      [status, id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Service request not found' });
+    }
+
+    res.json({ message: 'Service request updated successfully' });
+  } catch (error) {
+    console.error('Error updating service request:', error);
+    res.status(500).json({ error: 'Failed to update service request', details: error.message });
+  }
+});
+
+// DELETE /api/admin/service-requests/:id - Delete service request
+app.delete('/api/admin/service-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [result] = await pool.execute(
+      'DELETE FROM service_requests WHERE id = ?',
+      [id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Service request not found' });
+    }
+
+    res.json({ message: 'Service request deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting service request:', error);
+    res.status(500).json({ error: 'Failed to delete service request', details: error.message });
   }
 });
 

@@ -3,15 +3,15 @@ import React, { useState, useEffect } from 'react';
 import {
   Trash2, Download, Search, PlusCircle, Edit3, FileText, BookOpen, Users, Building,
   GraduationCap, Shield, Briefcase, Globe, TrendingUp, Target, BarChart3, PenTool,
-  MessageSquare, Calendar, Star, Award, BookmarkPlus, Info, ExternalLink 
+  MessageSquare, Calendar, Star, Award, BookmarkPlus, Info, ExternalLink
 } from 'lucide-react';
 import DataTable from '../../../components/admin/DataTable';
 import Modal from '../../../components/admin/Modal';
 
 // This map allows converting an icon name string to its Lucide React component
 const LucideIconsMap: { [key: string]: React.ElementType } = {
-  FileText, Download, ExternalLink: ExternalLink, BookOpen, Users, Building, GraduationCap,
-  Shield, Briefcase, Globe, TrendingUp, Target, BarChart3, PenTool, Search: Search,
+  FileText, Download, ExternalLink, BookOpen, Users, Building, GraduationCap,
+  Shield, Briefcase, Globe, TrendingUp, Target, BarChart3, PenTool, Search,
   MessageSquare, Calendar, Star, Award, BookmarkPlus, Info
 };
 
@@ -29,7 +29,6 @@ const accountTypes = ['student', 'professional', 'business', 'agency', 'admin'];
 // Available Lucide icon names for dropdown (keys from LucideIconsMap)
 const lucideIconNames = Object.keys(LucideIconsMap).sort();
 
-
 interface AdminResource {
   id: number;
   title: string;
@@ -38,11 +37,11 @@ interface AdminResource {
   size?: string;
   url?: string;
   category: string;
-  icon_name: string; // Store icon name as string
+  icon_name: string;
   button_color: string;
   allowed_account_types: string[];
   is_premium: boolean;
-  created_at: string; // Add these for potential display/sorting
+  created_at: string;
   updated_at: string;
 }
 
@@ -74,8 +73,8 @@ const ResourceManagement: React.FC = () => {
     size: '',
     url: '',
     category: 'Course Materials',
-    icon_name: 'FileText', // Default icon
-    button_color: 'blue', // Default color
+    icon_name: 'FileText',
+    button_color: 'blue',
     allowed_account_types: [],
     is_premium: false,
   });
@@ -96,7 +95,7 @@ const ResourceManagement: React.FC = () => {
     return headers;
   };
 
-  const baseURL = 'http://localhost:5000'; // Consistent with CertificateManagement
+  const baseURL = 'http://localhost:5000';
 
   const fetchResources = async () => {
     try {
@@ -191,7 +190,7 @@ const ResourceManagement: React.FC = () => {
 
       if (response.ok) {
         setIsDeleteModalOpen(false);
-        fetchResources(); // Refresh the data
+        fetchResources();
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to delete resource');
@@ -221,7 +220,7 @@ const ResourceManagement: React.FC = () => {
 
       if (response.ok) {
         setIsCreateEditModalOpen(false);
-        fetchResources(); // Refresh the data
+        fetchResources();
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to save resource');
@@ -334,18 +333,18 @@ const ResourceManagement: React.FC = () => {
           ]}
           actions={(resource) => (
             <div className="flex space-x-2">
-{resource.url && (resource.type === 'tool' || resource.type === 'pdf') && (
-  <button
-    onClick={(e) => {
-      e.stopPropagation();
-      window.open(resource.url, '_blank');
-    }}
-    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-    title={resource.type === 'tool' ? 'Visit Tool' : 'View/Download Resource'}
-  >
-    {resource.type === 'tool' ? <ExternalLink size={16} className="text-purple-500" /> : <Download size={16} className="text-green-500" />}
-  </button>
-)}
+              {resource.url && (resource.type === 'tool' || resource.type === 'pdf') && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(resource.url, '_blank');
+                  }}
+                  className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                  title={resource.type === 'tool' ? 'Visit Tool' : 'View/Download Resource'}
+                >
+                  {resource.type === 'tool' ? <ExternalLink size={16} className="text-purple-500" /> : <Download size={16} className="text-green-500" />}
+                </button>
+              )}
               <button
                 onClick={(e) => {
                   e.stopPropagation();

@@ -3936,6 +3936,146 @@ app.post('/api/admin/courses/:id/thumbnail', authenticateToken, requireAdmin, as
   }
 });
 
+// ==================== ADMIN RESOURCE MANAGEMENT ENDPOINTS ====================
+
+// GET all resources (admin only)
+app.get('/api/admin/resources', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [resources] = await pool.execute(`
+      SELECT 
+        id,
+        title,
+        description,
+        type,
+        size,
+        url,
+        category,
+        icon_name,
+        button_color,
+        allowed_account_types,
+        is_premium,
+        created_at,
+        updated_at
+      FROM resources 
+      ORDER BY created_at DESC
+    `);
+
+    // Parse allowed_account_types from JSON string to array
+    const resourcesWithParsedTypes = resources.map(resource => ({
+      ...resource,
+      allowed_account_types: JSON.parse(resource.allowed_account_types)
+    }));
+
+    res.json(resourcesWithParsedTypes);
+  } catch (error) {
+    console.error('Error fetching resources:', error);
+    res.status(500).json({ error: 'Failed to fetch resources' });
+  }
+});
+
+// CREATE new resource (admin only)
+app.post('/api/admin/resources', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const {
+      title,
+      description,
+      type,
+      size,
+      url,
+      category,
+      icon_name,
+      button_color,
+      allowed_account_types,
+      is_premium
+    } = req.body;
+
+    // Validate required fields
+    if (!title || !description || !type || !category || !icon_name || !button_color || !allowed_account_types) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Ensure allowed_account_types is an array and convert to JSON string
+    const accountTypesArray = Array.isArray(allowed_account_types) 
+      ? allowed_account_types 
+      : [allowed_account_types];
+    
+    const accountTypesJSON = JSON.stringify(accountTypesArray);
+
+    const [result] = await pool.execute(
+      `INSERT INTO resources 
+        (title, description, type, size, url, category, icon_name, button_color, allowed_account_types, is_premium)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [title, description, type, size || null, url || null, category, icon_name, button_color, accountTypesJSON, is_premium || false]
+    );
+
+    res.status(201).json({ 
+      message: 'Resource created successfully',
+      resourceId: result.insertId
+    });
+  } catch (error) {
+    console.error('Error creating resource:', error);
+    res.status(500).json({ error: 'Failed to create resource' });
+  }
+});
+
+// UPDATE resource (admin only)
+app.put('/api/admin/resources/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      title,
+      description,
+      type,
+      size,
+      url,
+      category,
+      icon_name,
+      button_color,
+      allowed_account_types,
+      is_premium
+    } = req.body;
+
+    // Validate required fields
+    if (!title || !description || !type || !category || !icon_name || !button_color || !allowed_account_types) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Ensure allowed_account_types is an array and convert to JSON string
+    const accountTypesArray = Array.isArray(allowed_account_types) 
+      ? allowed_account_types 
+      : [allowed_account_types];
+    
+    const accountTypesJSON = JSON.stringify(accountTypesArray);
+
+    await pool.execute(
+      `UPDATE resources SET 
+        title = ?, description = ?, type = ?, size = ?, url = ?, category = ?,
+        icon_name = ?, button_color = ?, allowed_account_types = ?, is_premium = ?, updated_at = NOW()
+        WHERE id = ?`,
+      [title, description, type, size || null, url || null, category, icon_name, button_color, accountTypesJSON, is_premium, id]
+    );
+
+    res.json({ message: 'Resource updated successfully' });
+  } catch (error) {
+    console.error('Error updating resource:', error);
+    res.status(500).json({ error: 'Failed to update resource' });
+  }
+});
+
+// DELETE resource (admin only)
+app.delete('/api/admin/resources/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await pool.execute('DELETE FROM resources WHERE id = ?', [id]);
+
+    res.json({ message: 'Resource deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting resource:', error);
+    res.status(500).json({ error: 'Failed to delete resource' });
+  }
+});
+
 // ==================== ADMIN ASSIGNMENT MANAGEMENT ENDPOINTS ====================
 
 // GET all assignments (admin only)
