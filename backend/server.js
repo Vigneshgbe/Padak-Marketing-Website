@@ -22,6 +22,10 @@ if (!fs.existsSync(assignmentsDir)) fs.mkdirSync(assignmentsDir, { recursive: tr
 const avatarsDir = path.join(__dirname, 'uploads', 'avatars');
 if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
 
+//Newly added after new resourse payment proof function multer
+const paymentsDir = path.join(__dirname, 'uploads', 'payments');
+if (!fs.existsSync(paymentsDir)) fs.mkdirSync(paymentsDir, { recursive: true });
+
 // Database connection pool
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost',
@@ -130,7 +134,7 @@ const assignmentUpload = multer({
   }
 });
 
-// ===== PAYMENT SCREENSHOT COURSE MULTER CONFIGURATION =====
+// ===== PAYMENT SCREENSHOT MULTER CONFIGURATION =====
 const paymentScreenshotStorage = multer.diskStorage({
   destination: function (req, file, cb) {
     const uploadDir = path.join(__dirname, 'uploads', 'payments');
@@ -159,7 +163,32 @@ const paymentScreenshotUpload = multer({
   }
 });
 
-// ===== PAYMENT PROOF UPLOAD RESOURCES MULTER CONFIGURATION =====
+// ===== PAYMENT PROOF RESOURCES OLD MULTER CONFIGURATION =====
+// const storage = multer.diskStorage({
+//   destination: (req, file, cb) => {
+//     cb(null, 'uploads/payments/');
+//   },
+//   filename: (req, file, cb) => {
+//     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+//     cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+//   }
+// });
+
+// const upload = multer({
+//   storage: storage,
+//   limits: {
+//     fileSize: 5 * 1024 * 1024 // 5MB limit
+//   },
+//   fileFilter: (req, file, cb) => {
+//     if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
+//       cb(null, true);
+//     } else {
+//       cb(new Error('Only images and PDF files are allowed'));
+//     }
+//   }
+// });
+
+// ===== PAYMENT PROOF RESOURCES NEW MULTER CONFIGURATION =====
 const paymentProofStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadDir = path.join(__dirname, 'uploads', 'payments');
@@ -185,7 +214,6 @@ const paymentProofUpload = multer({
     }
   }
 });
-
 
 // CORS configuration
 const allowedOrigins = [
@@ -3847,8 +3875,11 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
 });
 
 // ===================== ADMIN PAYMENTS MANAGEMENT ENDPOINT ======================
-// Payment proof upload endpoint
-app.post('/api/payments/upload-proof', authenticateToken, upload.single('proof'), async (req, res) => {
+
+//app.post('/api/payments/upload-proof', authenticateToken, upload.single('proof'), async (req, res) => {
+
+app.post('/api/payments/upload-proof', authenticateToken, paymentProofUpload.single('file'), async (req, res) => {
+
   try {
     const { transaction_id, payment_method, resource_id, plan, amount, user_id } = req.body;
 
