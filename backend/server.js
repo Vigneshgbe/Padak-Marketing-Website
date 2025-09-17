@@ -215,17 +215,15 @@ const paymentProofUpload = multer({
   }
 });
 
-// CORS configuration
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:8080',
-  'http://localhost:5173',
-  process.env.FRONTEND_URL
-].filter(Boolean);
+// ===== CORS configuration ======
+const allowedOrigins = [process.env.FRONTEND_URL].filter(Boolean);
+
+//const allowedOrigins = [process.env.FRONTEND_URL,'http://localhost:3000','http://localhost:8080'].filter(Boolean);
 
 
 app.use(cors({
-  origin: ['http://localhost:8080', 'http://localhost:3000', 'http://localhost:5173', process.env.FRONTEND_URL], 
+  origin: [process.env.FRONTEND_URL], 
+  //origin: [process.env.FRONTEND_URL, 'http://localhost:8080', 'http://localhost:3000'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -5088,17 +5086,9 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
-process.on('SIGTERM', async () => {
-  console.log('Received SIGTERM. Graceful shutdown...');
-  await pool.end();
-  process.exit(0);
-});
-
 // Start server
 app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
-  console.log(`📊 Health check: http://localhost:${port}/api/health`);
-  console.log(`📚 API Info: http://localhost:${port}/api/info`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 

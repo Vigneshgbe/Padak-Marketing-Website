@@ -22,6 +22,10 @@ if (!fs.existsSync(assignmentsDir)) fs.mkdirSync(assignmentsDir, { recursive: tr
 const avatarsDir = path.join(__dirname, 'uploads', 'avatars');
 if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
 
+//Newly added after new resourse payment proof function multer
+const paymentsDir = path.join(__dirname, 'uploads', 'payments');
+if (!fs.existsSync(paymentsDir)) fs.mkdirSync(paymentsDir, { recursive: true });
+
 // Database connection pool
 const pool = mysql.createPool({
   host: process.env.DB_HOST || 'localhost',
@@ -159,17 +163,67 @@ const paymentScreenshotUpload = multer({
   }
 });
 
-// CORS configuration
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:8080',
-  'http://localhost:5173',
-  process.env.FRONTEND_URL
-].filter(Boolean);
+// ===== PAYMENT PROOF RESOURCES OLD MULTER CONFIGURATION =====
+// const storage = multer.diskStorage({
+//   destination: (req, file, cb) => {
+//     cb(null, 'uploads/payments/');
+//   },
+//   filename: (req, file, cb) => {
+//     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+//     cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+//   }
+// });
+
+// const upload = multer({
+//   storage: storage,
+//   limits: {
+//     fileSize: 5 * 1024 * 1024 // 5MB limit
+//   },
+//   fileFilter: (req, file, cb) => {
+//     if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
+//       cb(null, true);
+//     } else {
+//       cb(new Error('Only images and PDF files are allowed'));
+//     }
+//   }
+// });
+
+// ===== PAYMENT PROOF RESOURCES NEW MULTER CONFIGURATION =====
+const paymentProofStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(__dirname, 'uploads', 'payments');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `payment-proof-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+const paymentProofUpload = multer({
+  storage: paymentProofStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only images and PDF files are allowed'));
+    }
+  }
+});
+
+// ===== CORS configuration ======
+const allowedOrigins = [process.env.FRONTEND_URL].filter(Boolean);
+
+//const allowedOrigins = [process.env.FRONTEND_URL,'http://localhost:3000','http://localhost:8080'].filter(Boolean);
 
 
 app.use(cors({
-  origin: ['http://localhost:8080', 'http://localhost:3000'], // Add your frontend URLs
+  origin: [process.env.FRONTEND_URL], 
+  //origin: [process.env.FRONTEND_URL, 'http://localhost:8080', 'http://localhost:3000'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -2417,9 +2471,100 @@ app.use((error, req, res, next) => {
   next(error);
 });
 
+// ==================== RESOURCES ROUTES ======================
+// GET resources for current user
+app.get('/api/resources', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // First get user's account type
+    const [users] = await pool.execute(
+      'SELECT account_type FROM users WHERE id = ?',
+      [userId]
+    );
+    
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const accountType = users[0].account_type;
+    
+    // Get all resources that are allowed for this account type
+    const [resources] = await pool.execute(`
+      SELECT 
+        id,
+        title,
+        description,
+        type,
+        size,
+        url,
+        category,
+        icon_name,
+        button_color,
+        allowed_account_types,
+        is_premium,
+        created_at,
+        updated_at
+      FROM resources 
+      WHERE JSON_CONTAINS(allowed_account_types, JSON_QUOTE(?))
+      ORDER BY created_at DESC
+    `, [accountType]);
+    
+    res.json(resources);
+  } catch (error) {
+    console.error('Error fetching resources:', error);
+    res.status(500).json({ error: 'Failed to fetch resources' });
+  }
+});
+
+// GET resource download
+app.get('/api/resources/:id/download', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    
+    // First check if user has access to this resource
+    const [resources] = await pool.execute(`
+      SELECT r.*, u.account_type 
+      FROM resources r, users u 
+      WHERE r.id = ? AND u.id = ? AND JSON_CONTAINS(r.allowed_account_types, JSON_QUOTE(u.account_type))
+    `, [id, userId]);
+    
+    if (resources.length === 0) {
+      return res.status(404).json({ error: 'Resource not found or access denied' });
+    }
+    
+    const resource = resources[0];
+    
+    // Check if resource is premium and user doesn't have access
+    if (resource.is_premium && !['professional', 'business', 'agency', 'admin'].includes(resource.account_type)) {
+      return res.status(403).json({ error: 'Premium resource requires upgraded account' });
+    }
+    
+    // For demo purposes, we'll return a simple text file
+    // In a real application, you would serve the actual file
+    res.setHeader('Content-Disposition', `attachment; filename="${resource.title}.txt"`);
+    res.setHeader('Content-Type', 'text/plain');
+    
+    // Create a simple text file with resource details
+    const fileContent = `
+      Resource: ${resource.title}
+      Description: ${resource.description}
+      Type: ${resource.type}
+      Category: ${resource.category}
+      Access Level: ${resource.is_premium ? 'Premium' : 'Free'}
+      
+      This is a demo download. In a real application, this would be the actual resource file.
+    `;
+    
+    res.send(fileContent);
+  } catch (error) {
+    console.error('Error downloading resource:', error);
+    res.status(500).json({ error: 'Failed to download resource' });
+  }
+});
 
 // ==================== CERTIFICATES ROUTES ====================
-
 
 // Certificate Routes
 app.get('/api/certificates/my-certificates', authenticateToken, async (req, res) => {
@@ -3727,6 +3872,108 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
   }
 });
 
+// ===================== ADMIN PAYMENTS MANAGEMENT ENDPOINT ======================
+
+//app.post('/api/payments/upload-proof', authenticateToken, upload.single('proof'), async (req, res) => {
+
+app.post('/api/payments/upload-proof', authenticateToken, paymentProofUpload.single('file'), async (req, res) => {
+
+  try {
+    const { transaction_id, payment_method, resource_id, plan, amount, user_id } = req.body;
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'Payment proof file is required' });
+    }
+
+    if (!transaction_id) {
+      return res.status(400).json({ error: 'Transaction ID is required' });
+    }
+
+    // Save payment record to database
+    const [result] = await pool.execute(
+      `INSERT INTO payments 
+        (user_id, resource_id, plan, amount, payment_method, transaction_id, proof_file, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [user_id, resource_id || null, plan, amount, payment_method, transaction_id, req.file.filename, 'pending']
+    );
+
+    res.json({ 
+      message: 'Payment proof uploaded successfully', 
+      paymentId: result.insertId 
+    });
+  } catch (error) {
+    console.error('Error uploading payment proof:', error);
+    res.status(500).json({ error: 'Failed to upload payment proof' });
+  }
+});
+
+// Admin payment management endpoint
+app.get('/api/admin/payments', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [payments] = await pool.execute(`
+      SELECT 
+        p.*,
+        u.first_name,
+        u.last_name,
+        u.email,
+        r.title as resource_title
+      FROM payments p
+      LEFT JOIN users u ON p.user_id = u.id
+      LEFT JOIN resources r ON p.resource_id = r.id
+      ORDER BY p.created_at DESC
+    `);
+
+    res.json(payments);
+  } catch (error) {
+    console.error('Error fetching payments:', error);
+    res.status(500).json({ error: 'Failed to fetch payments' });
+  }
+});
+
+// Admin payment verification endpoint
+app.put('/api/admin/payments/:id/verify', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    await pool.execute(
+      'UPDATE payments SET status = ?, verified_at = NOW() WHERE id = ?',
+      [status, id]
+    );
+
+    // If payment is approved, grant access to the resource
+    if (status === 'approved') {
+      const [payment] = await pool.execute(
+        'SELECT user_id, resource_id, plan FROM payments WHERE id = ?',
+        [id]
+      );
+
+      if (payment.length > 0) {
+        const { user_id, resource_id, plan } = payment[0];
+        
+        if (plan === 'individual' && resource_id) {
+          // Grant access to specific resource
+          await pool.execute(
+            'INSERT INTO user_resources (user_id, resource_id) VALUES (?, ?)',
+            [user_id, resource_id]
+          );
+        } else if (plan === 'premium') {
+          // Upgrade user to premium
+          await pool.execute(
+            'UPDATE users SET subscription_plan = "premium" WHERE id = ?',
+            [user_id]
+          );
+        }
+      }
+    }
+
+    res.json({ message: 'Payment status updated successfully' });
+  } catch (error) {
+    console.error('Error verifying payment:', error);
+    res.status(500).json({ error: 'Failed to verify payment' });
+  }
+});
+
 // ==================== ADMIN ENROLLMENT MANAGEMENT ENDPOINTS ====================
 
 // GET all enrollments (admin only)
@@ -3933,6 +4180,146 @@ app.post('/api/admin/courses/:id/thumbnail', authenticateToken, requireAdmin, as
   } catch (error) {
     console.error('Error uploading thumbnail:', error);
     res.status(500).json({ error: 'Failed to upload thumbnail' });
+  }
+});
+
+// ==================== ADMIN RESOURCE MANAGEMENT ENDPOINTS ====================
+
+// GET all resources (admin only)
+app.get('/api/admin/resources', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const [resources] = await pool.execute(`
+      SELECT 
+        id,
+        title,
+        description,
+        type,
+        size,
+        url,
+        category,
+        icon_name,
+        button_color,
+        allowed_account_types,
+        is_premium,
+        created_at,
+        updated_at
+      FROM resources 
+      ORDER BY created_at DESC
+    `);
+
+    // Parse allowed_account_types from JSON string to array
+    const resourcesWithParsedTypes = resources.map(resource => ({
+      ...resource,
+      allowed_account_types: JSON.parse(resource.allowed_account_types)
+    }));
+
+    res.json(resourcesWithParsedTypes);
+  } catch (error) {
+    console.error('Error fetching resources:', error);
+    res.status(500).json({ error: 'Failed to fetch resources' });
+  }
+});
+
+// CREATE new resource (admin only)
+app.post('/api/admin/resources', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const {
+      title,
+      description,
+      type,
+      size,
+      url,
+      category,
+      icon_name,
+      button_color,
+      allowed_account_types,
+      is_premium
+    } = req.body;
+
+    // Validate required fields
+    if (!title || !description || !type || !category || !icon_name || !button_color || !allowed_account_types) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Ensure allowed_account_types is an array and convert to JSON string
+    const accountTypesArray = Array.isArray(allowed_account_types) 
+      ? allowed_account_types 
+      : [allowed_account_types];
+    
+    const accountTypesJSON = JSON.stringify(accountTypesArray);
+
+    const [result] = await pool.execute(
+      `INSERT INTO resources 
+        (title, description, type, size, url, category, icon_name, button_color, allowed_account_types, is_premium)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [title, description, type, size || null, url || null, category, icon_name, button_color, accountTypesJSON, is_premium || false]
+    );
+
+    res.status(201).json({ 
+      message: 'Resource created successfully',
+      resourceId: result.insertId
+    });
+  } catch (error) {
+    console.error('Error creating resource:', error);
+    res.status(500).json({ error: 'Failed to create resource' });
+  }
+});
+
+// UPDATE resource (admin only)
+app.put('/api/admin/resources/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      title,
+      description,
+      type,
+      size,
+      url,
+      category,
+      icon_name,
+      button_color,
+      allowed_account_types,
+      is_premium
+    } = req.body;
+
+    // Validate required fields
+    if (!title || !description || !type || !category || !icon_name || !button_color || !allowed_account_types) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Ensure allowed_account_types is an array and convert to JSON string
+    const accountTypesArray = Array.isArray(allowed_account_types) 
+      ? allowed_account_types 
+      : [allowed_account_types];
+    
+    const accountTypesJSON = JSON.stringify(accountTypesArray);
+
+    await pool.execute(
+      `UPDATE resources SET 
+        title = ?, description = ?, type = ?, size = ?, url = ?, category = ?,
+        icon_name = ?, button_color = ?, allowed_account_types = ?, is_premium = ?, updated_at = NOW()
+        WHERE id = ?`,
+      [title, description, type, size || null, url || null, category, icon_name, button_color, accountTypesJSON, is_premium, id]
+    );
+
+    res.json({ message: 'Resource updated successfully' });
+  } catch (error) {
+    console.error('Error updating resource:', error);
+    res.status(500).json({ error: 'Failed to update resource' });
+  }
+});
+
+// DELETE resource (admin only)
+app.delete('/api/admin/resources/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await pool.execute('DELETE FROM resources WHERE id = ?', [id]);
+
+    res.json({ message: 'Resource deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting resource:', error);
+    res.status(500).json({ error: 'Failed to delete resource' });
   }
 });
 

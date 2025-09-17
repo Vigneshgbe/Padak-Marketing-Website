@@ -40,7 +40,8 @@ export const useAdminData = (endpoint: string) => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = 'http://localhost:5000';
+      const baseURL = 'https://padak-backend.onrender.com'; 
+      //const baseURL = 'http://localhost:5000';
       const response = await fetch(`${baseURL}${endpoint}`, {
         method: 'GET',
         headers,
