@@ -10,7 +10,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const app = express();
-const port = process.env.PORT || 5000;
+const port = process.env.PORT; // || 5000;
 
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-secret-key';
@@ -28,10 +28,10 @@ if (!fs.existsSync(paymentsDir)) fs.mkdirSync(paymentsDir, { recursive: true });
 
 // Database connection pool
 const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'padak_digital_marketing',
+  host: process.env.DB_HOST, // || 'localhost',
+  user: process.env.DB_USER, // || 'root',
+  password: process.env.DB_PASSWORD, // || '',
+  database: process.env.DB_NAME, // || 'padak_digital_marketing',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
