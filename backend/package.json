@@ -1,7 +1,7 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "Padak Dashboard Backend API",
+  "description": "Padak Dashboard Backend",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
