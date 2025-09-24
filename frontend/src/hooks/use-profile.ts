@@ -53,8 +53,9 @@ export const useProfile = () => {
       formData.append('avatar', file);
       
       const response = await fetch(
-        `https://padak-backend.onrender.com/api/auth/avatar`,
-       // `http://localhost:5000/api/auth/avatar`,
+        // `https://padak-backend.onrender.com/api/auth/avatar`,
+
+       `http://localhost:5000/api/auth/avatar`,
         {
           method: 'POST',
           headers: {
