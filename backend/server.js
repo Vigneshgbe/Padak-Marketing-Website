@@ -1,4 +1,4 @@
-// server.js
+// server.js - Firebase Firestore Version
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -9,7 +9,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { initializeApp } = require('firebase/app');
-const { getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit } = require('firebase/firestore');
+const { getFirestore, collection, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, query, where, orderBy, limit, addDoc, serverTimestamp, increment, arrayUnion, arrayRemove } = require('firebase/firestore');
 const { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } = require('firebase/storage');
 
 const app = express();
@@ -18,7 +18,7 @@ const port = process.env.PORT || 5000;
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-secret-key';
 
-// Your Firebase configuration
+// Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyA4uHspTDS-8kIT2HsmPFGL9JNNBvI6NI4",
   authDomain: "startup-dbs-1.firebaseapp.com",
@@ -35,7 +35,33 @@ const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 const storage = getStorage(firebaseApp);
 
-// Create necessary directories for file uploads
+// Collections mapping to original MySQL tables
+const COLLECTIONS = {
+  USERS: 'users',
+  USER_STATS: 'user_stats',
+  COURSES: 'courses',
+  ENROLLMENTS: 'enrollments',
+  ASSIGNMENTS: 'assignments',
+  ASSIGNMENT_SUBMISSIONS: 'assignment_submissions',
+  SOCIAL_ACTIVITIES: 'social_activities',
+  USER_CONNECTIONS: 'user_connections',
+  RESOURCES: 'resources',
+  CERTIFICATES: 'certificates',
+  INTERNSHIPS: 'internships',
+  INTERNSHIP_SUBMISSIONS: 'internship_submissions',
+  SERVICE_CATEGORIES: 'service_categories',
+  SERVICE_SUBCATEGORIES: 'service_subcategories',
+  SERVICES: 'services',
+  SERVICE_REQUESTS: 'service_requests',
+  CONTACT_MESSAGES: 'contact_messages',
+  PAYMENTS: 'payments',
+  DOWNLOAD_LOGS: 'download_logs',
+  CUSTOM_CALENDAR_EVENTS: 'custom_calendar_events',
+  COURSE_ENROLL_REQUESTS: 'course_enroll_requests',
+  USER_RESOURCES: 'user_resources'
+};
+
+// Create necessary directories for local file handling (for compatibility)
 const assignmentsDir = path.join(__dirname, 'uploads', 'assignments');
 if (!fs.existsSync(assignmentsDir)) fs.mkdirSync(assignmentsDir, { recursive: true });
 
@@ -45,24 +71,11 @@ if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
 const paymentsDir = path.join(__dirname, 'uploads', 'payments');
 if (!fs.existsSync(paymentsDir)) fs.mkdirSync(paymentsDir, { recursive: true });
 
-const socialUploadDir = path.join(__dirname, 'public', 'uploads', 'social');
-if (!fs.existsSync(socialUploadDir)) fs.mkdirSync(socialUploadDir, { recursive: true });
-
-// ===== COMPLETE MULTER CONFIGURATIONS =====
+// ===== MULTER CONFIGURATIONS (For file uploads to Firebase Storage) =====
 
 // Avatar upload configuration
-const avatarStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, avatarsDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'avatar-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
 const avatarUpload = multer({
-  storage: avatarStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: function (req, file, cb) {
     if (file.mimetype.startsWith('image/')) {
@@ -74,22 +87,8 @@ const avatarUpload = multer({
 });
 
 // Assignment upload configuration
-const assignmentStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, 'uploads', 'assignments');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, `assignment-${uniqueSuffix}${path.extname(file.originalname)}`);
-  }
-});
-
 const assignmentUpload = multer({
-  storage: assignmentStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: function (req, file, cb) {
     const allowedTypes = ['.pdf', '.doc', '.docx', '.txt', '.zip', '.rar'];
@@ -102,23 +101,9 @@ const assignmentUpload = multer({
   }
 });
 
-// Payment screenshot upload configuration - THIS WAS MISSING!
-const paymentScreenshotStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, 'uploads', 'payments');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, `payment-${uniqueSuffix}${path.extname(file.originalname)}`);
-  }
-});
-
+// Payment screenshot upload configuration
 const paymentScreenshotUpload = multer({
-  storage: paymentScreenshotStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: function (req, file, cb) {
     const allowedTypes = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
@@ -132,22 +117,8 @@ const paymentScreenshotUpload = multer({
 });
 
 // Payment proof upload configuration
-const paymentProofStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, 'uploads', 'payments');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, `payment-proof-${uniqueSuffix}${path.extname(file.originalname)}`);
-  }
-});
-
 const paymentProofUpload = multer({
-  storage: paymentProofStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
@@ -158,18 +129,9 @@ const paymentProofUpload = multer({
   }
 });
 
-// Social upload configuration
-const socialStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, socialUploadDir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, `social-${Date.now()}${path.extname(file.originalname)}`);
-  },
-});
-
+// Social post image upload configuration
 const socialUpload = multer({
-  storage: socialStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const filetypes = /jpeg|jpg|png|gif/;
@@ -179,29 +141,16 @@ const socialUpload = multer({
       return cb(null, true);
     }
     cb(new Error('Error: File upload only supports the following filetypes - ' + filetypes));
-  },
+  }
 }).single('image');
 
-// ===== FIREBASE HELPER FUNCTIONS =====
+// ===== FIREBASE STORAGE HELPER FUNCTIONS =====
 
-// Firebase storage upload function
-const uploadToFirebaseStorage = async (filePath, destinationPath) => {
+const uploadToFirebase = async (file, folder, fileName) => {
   try {
-    // Read the file
-    const fileBuffer = fs.readFileSync(filePath);
-    
-    // Create a reference to the file in Firebase Storage
-    const storageRef = ref(storage, destinationPath);
-    
-    // Upload the file
-    const snapshot = await uploadBytes(storageRef, fileBuffer);
-    
-    // Get the download URL
+    const storageRef = ref(storage, `${folder}/${fileName}`);
+    const snapshot = await uploadBytes(storageRef, file.buffer);
     const downloadURL = await getDownloadURL(snapshot.ref);
-    
-    // Delete local file after upload
-    fs.unlinkSync(filePath);
-    
     return downloadURL;
   } catch (error) {
     console.error('Error uploading to Firebase Storage:', error);
@@ -209,11 +158,25 @@ const uploadToFirebaseStorage = async (filePath, destinationPath) => {
   }
 };
 
-// Get server timestamp
-const getServerTimestamp = () => new Date();
+const deleteFromFirebase = async (fileUrl) => {
+  try {
+    if (!fileUrl) return;
+    
+    // Extract file path from URL
+    const matches = fileUrl.match(/\/o\/(.+)\?/);
+    if (matches && matches[1]) {
+      const filePath = decodeURIComponent(matches[1]);
+      const fileRef = ref(storage, filePath);
+      await deleteObject(fileRef);
+    }
+  } catch (error) {
+    console.error('Error deleting from Firebase Storage:', error);
+  }
+};
 
-// ===== CORS configuration ======
+// ===== CORS configuration =====
 const allowedOrigins = [process.env.FRONTEND_URL].filter(Boolean);
+
 app.use(cors({
   origin: allowedOrigins,
   credentials: true,
@@ -224,13 +187,14 @@ app.use(cors({
 // Middleware
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
-app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
-// ======== AUTHENTICATION MIDDLEWARE ========
+// Request logging middleware
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
+
+// ======== AUTHENTICATION MIDDLEWARE ========
 
 // JWT Authentication middleware
 const authenticateToken = async (req, res, next) => {
@@ -243,7 +207,9 @@ const authenticateToken = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const userDoc = await getDoc(doc(db, 'users', decoded.userId));
+    
+    // Get user from Firestore
+    const userDoc = await getDoc(doc(db, COLLECTIONS.USERS, decoded.userId));
     
     if (!userDoc.exists() || !userDoc.data().is_active) {
       return res.status(401).json({ error: 'Invalid token' });
@@ -290,10 +256,13 @@ app.post('/api/register', async (req, res) => {
     }
 
     // Check if email exists
-    const usersQuery = query(collection(db, 'users'), where('email', '==', email));
-    const usersSnapshot = await getDocs(usersQuery);
-
-    if (!usersSnapshot.empty) {
+    const usersQuery = query(
+      collection(db, COLLECTIONS.USERS), 
+      where('email', '==', email.trim())
+    );
+    const querySnapshot = await getDocs(usersQuery);
+    
+    if (!querySnapshot.empty) {
       return res.status(400).json({ error: 'Email already exists' });
     }
 
@@ -301,7 +270,8 @@ app.post('/api/register', async (req, res) => {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    // Create user data
+    // Create new user document
+    const userRef = doc(collection(db, COLLECTIONS.USERS));
     const userData = {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
@@ -315,28 +285,27 @@ app.post('/api/register', async (req, res) => {
       bio: null,
       is_active: true,
       email_verified: false,
-      created_at: getServerTimestamp(),
-      updated_at: getServerTimestamp()
+      created_at: serverTimestamp(),
+      updated_at: serverTimestamp()
     };
 
-    // Insert new user
-    const userRef = await addDoc(collection(db, 'users'), userData);
-    const userId = userRef.id;
+    await setDoc(userRef, userData);
 
     // Create user stats entry
-    await addDoc(collection(db, 'user_stats'), {
-      user_id: userId,
+    const statsRef = doc(db, COLLECTIONS.USER_STATS, userRef.id);
+    await setDoc(statsRef, {
+      user_id: userRef.id,
       courses_enrolled: 0,
       courses_completed: 0,
       certificates_earned: 0,
       learning_streak: 0,
-      last_activity: getServerTimestamp()
+      last_activity: serverTimestamp()
     });
 
-    console.log('User registered successfully:', { userId, email: email.trim() });
+    console.log('User registered successfully:', { userId: userRef.id, email });
     res.status(201).json({
       message: 'User registered successfully',
-      userId: userId
+      userId: userRef.id
     });
 
   } catch (error) {
@@ -357,17 +326,17 @@ app.post('/api/login', async (req, res) => {
 
     // Check if user exists
     const usersQuery = query(
-      collection(db, 'users'), 
+      collection(db, COLLECTIONS.USERS), 
       where('email', '==', email),
       where('is_active', '==', true)
     );
-    const usersSnapshot = await getDocs(usersQuery);
+    const querySnapshot = await getDocs(usersQuery);
 
-    if (usersSnapshot.empty) {
+    if (querySnapshot.empty) {
       return res.status(404).json({ error: 'No account found with this email' });
     }
 
-    const userDoc = usersSnapshot.docs[0];
+    const userDoc = querySnapshot.docs[0];
     const user = { id: userDoc.id, ...userDoc.data() };
 
     // Verify password
@@ -390,8 +359,8 @@ app.post('/api/login', async (req, res) => {
     );
 
     // Update last login timestamp
-    await updateDoc(doc(db, 'users', user.id), {
-      updated_at: getServerTimestamp()
+    await updateDoc(doc(db, COLLECTIONS.USERS, user.id), {
+      updated_at: serverTimestamp()
     });
 
     console.log('User logged in successfully:', { userId: user.id, email: user.email });
@@ -456,18 +425,18 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
     const { firstName, lastName, phone, company, website, bio } = req.body;
     const userId = req.user.id;
 
-    await updateDoc(doc(db, 'users', userId), {
+    await updateDoc(doc(db, COLLECTIONS.USERS, userId), {
       first_name: firstName,
       last_name: lastName,
       phone: phone,
       company: company,
       website: website,
       bio: bio,
-      updated_at: getServerTimestamp()
+      updated_at: serverTimestamp()
     });
 
     // Get updated user data
-    const userDoc = await getDoc(doc(db, 'users', userId));
+    const userDoc = await getDoc(doc(db, COLLECTIONS.USERS, userId));
     const user = { id: userDoc.id, ...userDoc.data() };
 
     res.json({
@@ -494,14 +463,7 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
 });
 
 // Upload avatar
-app.post('/api/auth/avatar', authenticateToken, (req, res, next) => {
-  avatarUpload.single('avatar')(req, res, (err) => {
-    if (err) {
-      return res.status(400).json({ error: err.message });
-    }
-    next();
-  });
-}, async (req, res) => {
+app.post('/api/auth/avatar', authenticateToken, avatarUpload.single('avatar'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -509,27 +471,26 @@ app.post('/api/auth/avatar', authenticateToken, (req, res, next) => {
 
     const userId = req.user.id;
     
+    // Generate unique filename
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const fileExtension = path.extname(req.file.originalname);
+    const fileName = `avatar-${uniqueSuffix}${fileExtension}`;
+
     // Upload to Firebase Storage
-    const firebasePath = `avatars/${userId}/${req.file.filename}`;
-    const imageUrl = await uploadToFirebaseStorage(req.file.path, firebasePath);
+    const downloadURL = await uploadToFirebase(req.file, 'avatars', fileName);
 
     // Delete old avatar if exists
     if (req.user.profile_image) {
-      try {
-        const oldFileName = req.user.profile_image.split('/').pop();
-        const oldFileRef = ref(storage, `avatars/${userId}/${oldFileName}`);
-        await deleteObject(oldFileRef);
-      } catch (error) {
-        console.error('Error deleting old avatar:', error);
-      }
+      await deleteFromFirebase(req.user.profile_image);
     }
 
-    await updateDoc(doc(db, 'users', userId), {
-      profile_image: imageUrl,
-      updated_at: getServerTimestamp()
+    // Update user profile image
+    await updateDoc(doc(db, COLLECTIONS.USERS, userId), {
+      profile_image: downloadURL,
+      updated_at: serverTimestamp()
     });
 
-    res.status(200).send(imageUrl);
+    res.status(200).send(downloadURL);
 
   } catch (error) {
     console.error('Avatar upload error:', error);
@@ -537,86 +498,295 @@ app.post('/api/auth/avatar', authenticateToken, (req, res, next) => {
   }
 });
 
-// ==================== COURSES ROUTES ====================
+// ==================== DASHBOARD ROUTES ====================
 
-// GET all courses
-app.get('/api/courses', async (req, res) => {
+// Get user stats
+app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
   try {
-    const coursesQuery = query(
-      collection(db, 'courses'),
-      where('is_active', '==', true),
-      orderBy('created_at', 'desc')
-    );
-    const coursesSnapshot = await getDocs(coursesQuery);
+    const userId = req.user.id;
 
-    const courses = [];
-    coursesSnapshot.forEach(doc => {
-      const course = { id: doc.id, ...doc.data() };
-      // Format price
-      course.price = course.price !== null ? `₹${parseFloat(course.price).toFixed(2)}` : '₹0.00';
-      courses.push(course);
-    });
+    const statsDoc = await getDoc(doc(db, COLLECTIONS.USER_STATS, userId));
+    
+    if (!statsDoc.exists()) {
+      // Create default stats if not exists
+      const defaultStats = {
+        user_id: userId,
+        courses_enrolled: 0,
+        courses_completed: 0,
+        certificates_earned: 0,
+        learning_streak: 0,
+        last_activity: serverTimestamp()
+      };
+      await setDoc(doc(db, COLLECTIONS.USER_STATS, userId), defaultStats);
+      
+      res.json({
+        coursesEnrolled: 0,
+        coursesCompleted: 0,
+        certificatesEarned: 0,
+        learningStreak: 0,
+        lastActivity: new Date().toISOString()
+      });
+    } else {
+      const userStats = statsDoc.data();
+      res.json({
+        coursesEnrolled: userStats.courses_enrolled || 0,
+        coursesCompleted: userStats.courses_completed || 0,
+        certificatesEarned: userStats.certificates_earned || 0,
+        learningStreak: userStats.learning_streak || 0,
+        lastActivity: userStats.last_activity?.toDate().toISOString() || new Date().toISOString()
+      });
+    }
 
-    res.json(courses);
   } catch (error) {
-    console.error('Get courses error:', error);
+    console.error('Get stats error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Enroll in a course
-app.post('/api/courses/enroll', authenticateToken, async (req, res) => {
+// ==================== SOCIAL FEED FUNCTIONALITY ====================
+
+// Helper function to get full URL for images
+const getFullImageUrl = (req, imagePath) => {
+  if (!imagePath) return null;
+  if (imagePath.startsWith('http')) return imagePath;
+  return imagePath; // Firebase URLs are already full URLs
+};
+
+// GET All Posts (with Pagination, Likes, Comments, etc.)
+app.get('/api/posts', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 10;
+
   try {
-    const { courseId } = req.body;
-    const userId = req.user.id;
-
-    // Check if already enrolled
-    const enrollmentQuery = query(
-      collection(db, 'enrollments'),
-      where('user_id', '==', userId),
-      where('course_id', '==', courseId)
+    // Get user connections
+    const connectionsQuery = query(
+      collection(db, COLLECTIONS.USER_CONNECTIONS),
+      where('status', '==', 'accepted'),
+      where('user_id_1', '==', userId)
     );
-    const enrollmentSnapshot = await getDocs(enrollmentQuery);
+    const connectionsSnapshot = await getDocs(connectionsQuery);
+    const connectedUserIds = connectionsSnapshot.docs.map(doc => doc.data().user_id_2);
+    connectedUserIds.push(userId); // Include current user
 
-    if (!enrollmentSnapshot.empty) {
-      return res.status(400).json({ error: 'Already enrolled in this course' });
+    // Build query for posts
+    let postsQuery = query(
+      collection(db, COLLECTIONS.SOCIAL_ACTIVITIES),
+      where('activity_type', '==', 'post'),
+      orderBy('created_at', 'desc'),
+      limit(limit * page)
+    );
+
+    const postsSnapshot = await getDocs(postsQuery);
+    let posts = [];
+
+    for (const postDoc of postsSnapshot.docs) {
+      const post = { id: postDoc.id, ...postDoc.data() };
+      
+      // Check visibility
+      if (post.visibility === 'public' || 
+          post.user_id === userId || 
+          (post.visibility === 'connections' && connectedUserIds.includes(post.user_id))) {
+        
+        // Get user info
+        const userDoc = await getDoc(doc(db, COLLECTIONS.USERS, post.user_id));
+        const user = userDoc.exists() ? { id: userDoc.id, ...userDoc.data() } : null;
+
+        if (user) {
+          // Get likes count
+          const likesQuery = query(
+            collection(db, COLLECTIONS.SOCIAL_ACTIVITIES),
+            where('activity_type', '==', 'like'),
+            where('target_id', '==', post.id)
+          );
+          const likesSnapshot = await getDocs(likesQuery);
+
+          // Get comments
+          const commentsQuery = query(
+            collection(db, COLLECTIONS.SOCIAL_ACTIVITIES),
+            where('activity_type', '==', 'comment'),
+            where('target_id', '==', post.id),
+            orderBy('created_at', 'asc')
+          );
+          const commentsSnapshot = await getDocs(commentsQuery);
+          const comments = [];
+
+          for (const commentDoc of commentsSnapshot.docs) {
+            const comment = { id: commentDoc.id, ...commentDoc.data() };
+            const commentUserDoc = await getDoc(doc(db, COLLECTIONS.USERS, comment.user_id));
+            const commentUser = commentUserDoc.exists() ? { id: commentUserDoc.id, ...commentUserDoc.data() } : null;
+            
+            if (commentUser) {
+              comments.push({
+                ...comment,
+                user: {
+                  id: commentUser.id,
+                  first_name: commentUser.first_name,
+                  last_name: commentUser.last_name,
+                  profile_image: getFullImageUrl(req, commentUser.profile_image),
+                  account_type: commentUser.account_type
+                }
+              });
+            }
+          }
+
+          // Check if current user has liked or bookmarked
+          const userLikeQuery = query(
+            collection(db, COLLECTIONS.SOCIAL_ACTIVITIES),
+            where('activity_type', '==', 'like'),
+            where('target_id', '==', post.id),
+            where('user_id', '==', userId)
+          );
+          const userLikeSnapshot = await getDocs(userLikeQuery);
+
+          const userBookmarkQuery = query(
+            collection(db, COLLECTIONS.SOCIAL_ACTIVITIES),
+            where('activity_type', '==', 'bookmark'),
+            where('target_id', '==', post.id),
+            where('user_id', '==', userId)
+          );
+          const userBookmarkSnapshot = await getDocs(userBookmarkQuery);
+
+          posts.push({
+            ...post,
+            has_liked: !userLikeSnapshot.empty,
+            has_bookmarked: !userBookmarkSnapshot.empty,
+            likes: likesSnapshot.size,
+            comment_count: commentsSnapshot.size,
+            image_url: getFullImageUrl(req, post.image_url),
+            user: {
+              id: user.id,
+              first_name: user.first_name,
+              last_name: user.last_name,
+              profile_image: getFullImageUrl(req, user.profile_image),
+              account_type: user.account_type
+            },
+            comments: comments
+          });
+        }
+      }
     }
 
-    // Check if course exists
-    const courseDoc = await getDoc(doc(db, 'courses', courseId));
-    if (!courseDoc.exists()) {
-      return res.status(404).json({ error: 'Course not found' });
-    }
+    // Apply pagination
+    const startIndex = (page - 1) * limit;
+    const paginatedPosts = posts.slice(startIndex, startIndex + limit);
 
-    // Create enrollment
-    const enrollmentData = {
-      user_id: userId,
-      course_id: courseId,
-      progress: 0,
-      status: 'active',
-      enrollment_date: getServerTimestamp(),
-      completion_date: null
-    };
+    res.json({
+      posts: paginatedPosts,
+      pagination: {
+        page,
+        totalPages: Math.ceil(posts.length / limit),
+        totalPosts: posts.length
+      }
+    });
 
-    await addDoc(collection(db, 'enrollments'), enrollmentData);
-
-    // Update user stats
-    const statsQuery = query(collection(db, 'user_stats'), where('user_id', '==', userId));
-    const statsSnapshot = await getDocs(statsQuery);
-    
-    if (!statsSnapshot.empty) {
-      const statsDoc = statsSnapshot.docs[0];
-      const currentStats = statsDoc.data();
-      await updateDoc(doc(db, 'user_stats', statsDoc.id), {
-        courses_enrolled: (currentStats.courses_enrolled || 0) + 1,
-        last_activity: getServerTimestamp()
-      });
-    }
-
-    res.status(201).json({ message: 'Successfully enrolled in course' });
   } catch (error) {
-    console.error('Course enrollment error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Error fetching posts:', error);
+    res.status(500).json({ error: 'Failed to fetch posts.' });
+  }
+});
+
+// POST a new post
+app.post('/api/posts', authenticateToken, (req, res) => {
+  socialUpload(req, res, async (err) => {
+    if (err) {
+      console.error('Multer error:', err);
+      return res.status(400).json({ error: err.message });
+    }
+
+    try {
+      const { content, achievement, visibility } = req.body;
+      const userId = req.user.id;
+
+      if (!content && !req.file) {
+        return res.status(400).json({ error: 'Post must have content or an image.' });
+      }
+
+      let imageUrl = null;
+      if (req.file) {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const fileExtension = path.extname(req.file.originalname);
+        const fileName = `social-${uniqueSuffix}${fileExtension}`;
+        imageUrl = await uploadToFirebase(req.file, 'social', fileName);
+      }
+
+      const isAchievement = achievement === 'true';
+
+      // Create post document
+      const postRef = doc(collection(db, COLLECTIONS.SOCIAL_ACTIVITIES));
+      const postData = {
+        user_id: userId,
+        activity_type: 'post',
+        content: content || '',
+        image_url: imageUrl,
+        achievement: isAchievement,
+        visibility: visibility || 'public',
+        share_count: 0,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp()
+      };
+
+      await setDoc(postRef, postData);
+
+      // Get user info for response
+      const userDoc = await getDoc(doc(db, COLLECTIONS.USERS, userId));
+      const user = userDoc.exists() ? { id: userDoc.id, ...userDoc.data() } : null;
+
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      res.status(201).json({
+        id: postRef.id,
+        ...postData,
+        has_liked: false,
+        has_bookmarked: false,
+        likes: 0,
+        comment_count: 0,
+        image_url: getFullImageUrl(req, imageUrl),
+        user: {
+          id: user.id,
+          first_name: user.first_name,
+          last_name: user.last_name,
+          profile_image: getFullImageUrl(req, user.profile_image),
+          account_type: user.account_type
+        },
+        comments: []
+      });
+    } catch (error) {
+      console.error('Error creating post:', error);
+      res.status(500).json({ error: 'Failed to create post.' });
+    }
+  });
+});
+
+// [Additional social functionality routes would follow similar pattern...]
+
+// ==================== COURSES ROUTES ====================
+
+// Get all courses
+app.get('/api/courses', async (req, res) => {
+  try {
+    const coursesQuery = query(
+      collection(db, COLLECTIONS.COURSES),
+      where('is_active', '==', true),
+      orderBy('created_at', 'desc')
+    );
+    
+    const coursesSnapshot = await getDocs(coursesQuery);
+    const courses = coursesSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      price: doc.data().price !== null ? `₹${parseFloat(doc.data().price).toFixed(2)}` : '₹0.00'
+    }));
+
+    res.json(courses);
+  } catch (error) {
+    console.error('Get courses error:', error);
+    res.status(500).json({ 
+      error: 'Server error',
+      details: error.message
+    });
   }
 });
 
@@ -626,21 +796,22 @@ app.get('/api/enrollments/my-courses', authenticateToken, async (req, res) => {
     const userId = req.user.id;
 
     const enrollmentsQuery = query(
-      collection(db, 'enrollments'),
+      collection(db, COLLECTIONS.ENROLLMENTS),
       where('user_id', '==', userId),
-      where('status', '==', 'active'),
-      orderBy('enrollment_date', 'desc')
+      where('status', '==', 'active')
     );
-    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
-
-    const enrollments = [];
     
-    for (const doc of enrollmentsSnapshot.docs) {
-      const enrollment = { id: doc.id, ...doc.data() };
-      const courseDoc = await getDoc(doc(db, 'courses', enrollment.course_id));
+    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
+    const enrollments = [];
+
+    for (const enrollmentDoc of enrollmentsSnapshot.docs) {
+      const enrollment = { id: enrollmentDoc.id, ...enrollmentDoc.data() };
       
+      // Get course details
+      const courseDoc = await getDoc(doc(db, COLLECTIONS.COURSES, enrollment.course_id));
       if (courseDoc.exists()) {
         const course = { id: courseDoc.id, ...courseDoc.data() };
+        
         enrollments.push({
           id: enrollment.id,
           userId: enrollment.user_id,
@@ -660,6 +831,367 @@ app.get('/api/enrollments/my-courses', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+
+// Enroll in a course
+app.post('/api/courses/enroll', authenticateToken, async (req, res) => {
+  try {
+    const { courseId } = req.body;
+    const userId = req.user.id;
+
+    // Check if already enrolled
+    const existingEnrollmentQuery = query(
+      collection(db, COLLECTIONS.ENROLLMENTS),
+      where('user_id', '==', userId),
+      where('course_id', '==', courseId)
+    );
+    
+    const existingEnrollmentSnapshot = await getDocs(existingEnrollmentQuery);
+    
+    if (!existingEnrollmentSnapshot.empty) {
+      return res.status(400).json({ error: 'Already enrolled in this course' });
+    }
+
+    // Check if course exists and is active
+    const courseDoc = await getDoc(doc(db, COLLECTIONS.COURSES, courseId));
+    if (!courseDoc.exists() || !courseDoc.data().is_active) {
+      return res.status(404).json({ error: 'Course not found' });
+    }
+
+    // Create enrollment
+    const enrollmentRef = doc(collection(db, COLLECTIONS.ENROLLMENTS));
+    await setDoc(enrollmentRef, {
+      user_id: userId,
+      course_id: courseId,
+      progress: 0,
+      status: 'active',
+      enrollment_date: serverTimestamp(),
+      completion_date: null
+    });
+
+    // Update user stats
+    const statsDoc = await getDoc(doc(db, COLLECTIONS.USER_STATS, userId));
+    if (statsDoc.exists()) {
+      await updateDoc(doc(db, COLLECTIONS.USER_STATS, userId), {
+        courses_enrolled: increment(1),
+        last_activity: serverTimestamp()
+      });
+    }
+
+    res.status(201).json({ message: 'Successfully enrolled in course' });
+  } catch (error) {
+    console.error('Course enrollment error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// [Additional courses routes would follow similar pattern...]
+
+// ==================== ASSIGNMENTS ROUTES ====================
+
+// Get user's assignments
+app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Get user's enrolled courses
+    const enrollmentsQuery = query(
+      collection(db, COLLECTIONS.ENROLLMENTS),
+      where('user_id', '==', userId),
+      where('status', '==', 'active')
+    );
+    
+    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
+    const courseIds = enrollmentsSnapshot.docs.map(doc => doc.data().course_id);
+
+    if (courseIds.length === 0) {
+      return res.json([]);
+    }
+
+    // Get assignments for enrolled courses
+    const assignmentsQuery = query(
+      collection(db, COLLECTIONS.ASSIGNMENTS),
+      where('course_id', 'in', courseIds)
+    );
+    
+    const assignmentsSnapshot = await getDocs(assignmentsQuery);
+    const assignments = [];
+
+    for (const assignmentDoc of assignmentsSnapshot.docs) {
+      const assignment = { id: assignmentDoc.id, ...assignmentDoc.data() };
+      
+      // Get course details
+      const courseDoc = await getDoc(doc(db, COLLECTIONS.COURSES, assignment.course_id));
+      const course = courseDoc.exists() ? { id: courseDoc.id, ...courseDoc.data() } : null;
+
+      // Get submission if exists
+      const submissionQuery = query(
+        collection(db, COLLECTIONS.ASSIGNMENT_SUBMISSIONS),
+        where('assignment_id', '==', assignment.id),
+        where('user_id', '==', userId)
+      );
+      
+      const submissionSnapshot = await getDocs(submissionQuery);
+      const submission = submissionSnapshot.empty ? null : {
+        id: submissionSnapshot.docs[0].id,
+        ...submissionSnapshot.docs[0].data()
+      };
+
+      if (course) {
+        assignments.push({
+          id: assignment.id,
+          course_id: assignment.course_id,
+          title: assignment.title,
+          description: assignment.description,
+          due_date: assignment.due_date,
+          max_points: assignment.max_points,
+          created_at: assignment.created_at,
+          course: {
+            id: course.id,
+            title: course.title,
+            category: course.category
+          },
+          submission: submission
+        });
+      }
+    }
+
+    // Sort by due date
+    assignments.sort((a, b) => new Date(a.due_date) - new Date(b.due_date));
+
+    res.json(assignments);
+  } catch (error) {
+    console.error('Error fetching assignments:', error);
+    res.status(500).json({ error: 'Failed to fetch assignments' });
+  }
+});
+
+// Submit assignment
+app.post('/api/assignments/submit', authenticateToken, assignmentUpload.single('file'), async (req, res) => {
+  try {
+    const { assignment_id, content } = req.body;
+    const userId = req.user.id;
+
+    if (!assignment_id) {
+      return res.status(400).json({ error: 'Assignment ID is required' });
+    }
+
+    if (!content && !req.file) {
+      return res.status(400).json({ error: 'Either content or file is required' });
+    }
+
+    // Check if assignment exists and user is enrolled
+    const assignmentDoc = await getDoc(doc(db, COLLECTIONS.ASSIGNMENTS, assignment_id));
+    if (!assignmentDoc.exists()) {
+      return res.status(404).json({ error: 'Assignment not found' });
+    }
+
+    const courseId = assignmentDoc.data().course_id;
+    
+    const enrollmentQuery = query(
+      collection(db, COLLECTIONS.ENROLLMENTS),
+      where('user_id', '==', userId),
+      where('course_id', '==', courseId)
+    );
+    
+    const enrollmentSnapshot = await getDocs(enrollmentQuery);
+    if (enrollmentSnapshot.empty) {
+      return res.status(403).json({ error: 'Not enrolled in this course' });
+    }
+
+    // Check if already submitted
+    const existingSubmissionQuery = query(
+      collection(db, COLLECTIONS.ASSIGNMENT_SUBMISSIONS),
+      where('assignment_id', '==', assignment_id),
+      where('user_id', '==', userId)
+    );
+    
+    const existingSubmissionSnapshot = await getDocs(existingSubmissionQuery);
+    if (!existingSubmissionSnapshot.empty) {
+      return res.status(400).json({ error: 'Assignment already submitted' });
+    }
+
+    let fileUrl = null;
+    if (req.file) {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const fileExtension = path.extname(req.file.originalname);
+      const fileName = `assignment-${uniqueSuffix}${fileExtension}`;
+      fileUrl = await uploadToFirebase(req.file, 'assignments', fileName);
+    }
+
+    // Create submission
+    const submissionRef = doc(collection(db, COLLECTIONS.ASSIGNMENT_SUBMISSIONS));
+    await setDoc(submissionRef, {
+      assignment_id: assignment_id,
+      user_id: userId,
+      content: content || '',
+      file_path: fileUrl,
+      submitted_at: serverTimestamp(),
+      grade: null,
+      feedback: null,
+      status: 'submitted'
+    });
+
+    res.json({
+      success: true,
+      message: 'Assignment submitted successfully',
+      submission_id: submissionRef.id
+    });
+  } catch (error) {
+    console.error('Error submitting assignment:', error);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// [Additional assignment routes would follow similar pattern...]
+
+// ==================== RESOURCES ROUTES ====================
+
+// GET resources for current user
+app.get('/api/resources', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const accountType = req.user.account_type;
+
+    const resourcesQuery = query(collection(db, COLLECTIONS.RESOURCES));
+    const resourcesSnapshot = await getDocs(resourcesQuery);
+    
+    const resources = resourcesSnapshot.docs
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        allowed_account_types: doc.data().allowed_account_types || []
+      }))
+      .filter(resource => 
+        resource.allowed_account_types.includes(accountType)
+      );
+
+    res.json(resources);
+  } catch (error) {
+    console.error('Error fetching resources:', error);
+    res.status(500).json({ error: 'Failed to fetch resources' });
+  }
+});
+
+// [Additional resources routes would follow similar pattern...]
+
+// ==================== CONTACT ROUTES ====================
+
+// Contact form endpoint
+app.post('/api/contact', async (req, res) => {
+  const { firstName, lastName, email, phone, company, message } = req.body;
+
+  try {
+    // Validate required fields
+    if (!firstName || !lastName || !email || !message) {
+      return res.status(400).json({
+        error: 'First name, last name, email, and message are required'
+      });
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Please provide a valid email address' });
+    }
+
+    // Create contact message document
+    const contactRef = doc(collection(db, COLLECTIONS.CONTACT_MESSAGES));
+    await setDoc(contactRef, {
+      first_name: firstName.trim(),
+      last_name: lastName.trim(),
+      email: email.trim(),
+      phone: phone || null,
+      company: company || null,
+      message: message.trim(),
+      status: 'pending',
+      created_at: serverTimestamp()
+    });
+
+    console.log('Contact message saved successfully:', {
+      id: contactRef.id,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: email.trim()
+    });
+
+    res.status(201).json({
+      message: 'Contact message sent successfully',
+      contactId: contactRef.id
+    });
+
+  } catch (error) {
+    console.error('Contact form error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ==================== ADMIN ROUTES ====================
+
+// Admin Dashboard Stats
+app.get('/api/admin/dashboard-stats', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    // Get total users
+    const usersSnapshot = await getDocs(collection(db, COLLECTIONS.USERS));
+    const totalUsers = usersSnapshot.size;
+
+    // Get total courses
+    const coursesSnapshot = await getDocs(collection(db, COLLECTIONS.COURSES));
+    const totalCourses = coursesSnapshot.size;
+
+    // Get total enrollments
+    const enrollmentsSnapshot = await getDocs(collection(db, COLLECTIONS.ENROLLMENTS));
+    const totalEnrollments = enrollmentsSnapshot.size;
+
+    // Calculate total revenue (simplified - sum of course prices for completed enrollments)
+    let totalRevenue = 0;
+    const completedEnrollmentsQuery = query(
+      collection(db, COLLECTIONS.ENROLLMENTS),
+      where('status', '==', 'completed')
+    );
+    const completedEnrollmentsSnapshot = await getDocs(completedEnrollmentsQuery);
+    
+    for (const enrollmentDoc of completedEnrollmentsSnapshot.docs) {
+      const enrollment = enrollmentDoc.data();
+      const courseDoc = await getDoc(doc(db, COLLECTIONS.COURSES, enrollment.course_id));
+      if (courseDoc.exists()) {
+        totalRevenue += parseFloat(courseDoc.data().price) || 0;
+      }
+    }
+
+    // Get pending contacts from last 7 days
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+    
+    const recentContactsQuery = query(
+      collection(db, COLLECTIONS.CONTACT_MESSAGES),
+      where('created_at', '>=', oneWeekAgo)
+    );
+    const recentContactsSnapshot = await getDocs(recentContactsQuery);
+    const pendingContacts = recentContactsSnapshot.size;
+
+    // Get pending service requests
+    const pendingServiceRequestsQuery = query(
+      collection(db, COLLECTIONS.SERVICE_REQUESTS),
+      where('status', '==', 'pending')
+    );
+    const pendingServiceRequestsSnapshot = await getDocs(pendingServiceRequestsQuery);
+    const pendingServiceRequests = pendingServiceRequestsSnapshot.size;
+
+    res.json({
+      totalUsers,
+      totalCourses,
+      totalEnrollments,
+      totalRevenue,
+      pendingContacts,
+      pendingServiceRequests
+    });
+  } catch (error) {
+    console.error('Error fetching admin stats:', error);
+    res.status(500).json({ error: 'Failed to fetch dashboard stats', details: error.message });
+  }
+});
+
+// [Additional admin routes would follow similar pattern...]
 
 // ==================== COURSE ENROLLMENT REQUESTS ====================
 app.post('/api/enroll-request', 
@@ -698,12 +1230,15 @@ app.post('/api/enroll-request',
         return res.status(400).json({ error: 'Payment screenshot is required' });
       }
 
-      // Upload payment screenshot to Firebase
-      const firebasePath = `payments/${userId}/${req.file.filename}`;
-      const paymentScreenshotUrl = await uploadToFirebaseStorage(req.file.path, firebasePath);
+      // Upload payment screenshot
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      const fileExtension = path.extname(req.file.originalname);
+      const fileName = `payment-${uniqueSuffix}${fileExtension}`;
+      const paymentScreenshotUrl = await uploadToFirebase(req.file, 'payments', fileName);
 
-      // Insert into Firestore
-      const enrollmentRequestData = {
+      // Create enrollment request document
+      const requestRef = doc(collection(db, COLLECTIONS.COURSE_ENROLL_REQUESTS));
+      await setDoc(requestRef, {
         user_id: userId,
         course_id: courseId,
         full_name: fullName,
@@ -717,14 +1252,12 @@ app.post('/api/enroll-request',
         transaction_id: transactionId,
         payment_screenshot: paymentScreenshotUrl,
         status: 'pending',
-        created_at: getServerTimestamp()
-      };
-
-      const result = await addDoc(collection(db, 'course_enroll_requests'), enrollmentRequestData);
+        created_at: serverTimestamp()
+      });
 
       res.status(201).json({
         message: 'Enrollment request submitted successfully',
-        requestId: result.id
+        requestId: requestRef.id
       });
 
     } catch (error) {
@@ -734,59 +1267,7 @@ app.post('/api/enroll-request',
   }
 );
 
-// ==================== CONTACT ROUTES ====================
-
-// Contact form endpoint
-app.post('/api/contact', async (req, res) => {
-  const { firstName, lastName, email, phone, company, message } = req.body;
-
-  try {
-    // Validate required fields
-    if (!firstName || !lastName || !email || !message) {
-      return res.status(400).json({
-        error: 'First name, last name, email, and message are required'
-      });
-    }
-
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: 'Please provide a valid email address' });
-    }
-
-    // Insert contact form data into database
-    const contactData = {
-      first_name: firstName.trim(),
-      last_name: lastName.trim(),
-      email: email.trim(),
-      phone: phone || null,
-      company: company || null,
-      message: message.trim(),
-      status: 'pending',
-      created_at: getServerTimestamp()
-    };
-
-    const result = await addDoc(collection(db, 'contact_messages'), contactData);
-
-    console.log('Contact message saved successfully:', {
-      id: result.id,
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      email: email.trim()
-    });
-
-    res.status(201).json({
-      message: 'Contact message sent successfully',
-      contactId: result.id
-    });
-
-  } catch (error) {
-    console.error('Contact form error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// ==================== HEALTH CHECK AND INFO ====================
+// ==================== UTILITY ROUTES ====================
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -802,7 +1283,7 @@ app.get('/api/health', (req, res) => {
 app.get('/api/info', (req, res) => {
   res.json({
     name: 'Padak Dashboard API',
-    version: '1.0.0',
+    version: '2.0.0',
     environment: process.env.NODE_ENV || 'development',
     database: 'Firebase Firestore',
     timestamp: new Date().toISOString()
@@ -828,7 +1309,7 @@ app.use((err, req, res, next) => {
     return res.status(400).json({ error: 'File too large' });
   }
 
-  if (err.message === 'Only image files are allowed for avatar') {
+  if (err.message.includes('Only image files are allowed')) {
     return res.status(400).json({ error: err.message });
   }
 
@@ -838,14 +1319,11 @@ app.use((err, req, res, next) => {
   });
 });
 
-// ==================== SERVER STARTUP ====================
-
 // Start server
 app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🗄️  Database: Firebase Firestore`);
-  console.log(`🔥 Using Firebase Project: startup-dbs-1`);
 });
 
 module.exports = app;
