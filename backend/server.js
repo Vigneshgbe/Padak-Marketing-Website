@@ -1,3 +1,4 @@
+// server.js
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -8,10 +9,23 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const admin = require('firebase-admin');
-const serviceAccount = require('./serviceAccountKey.json');
+
+const serviceAccount = {
+  "type": "service_account",
+  "project_id": "startup-dbs-1",
+  "private_key_id": "379e14e75ef08331690e76197c989e62252e8f9f",
+  "private_key": `-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC8QMKq9c3jxxHw\nIRXDKF07ndJr0ju76IT5Iz2v6IXuBqxAMHej8mGm4mx5c/iA9J5tJ/p5DQylCL3s\nhnOyow6UVvaF2a6qcVic+nx4FeWFmXjn1kjmPZ8ARcQLco1UDGt2dx279AYDFb63\nsqqdDTnw5kGPfLK0HNz8OoWntRjuNPefRZ/XwnFSGg41dPFtUQKQ0Wkg6z6TWHmK\nY9o4TcRBvNA3ujLoE3988x6DCQaidX5O4LC3CqsU03YCJaZ//47gcVp3laj8v5LX\nqoXp0Oa+UOVq+3xudbzHHGC1ixoqSpXfcGo/n0MPudK0ezkpBgYNS/N5+De1kwUP\n+/3q2g1RAgMBAAECggEAAbVHNLnCNluIvFSM4pdkk/YwxcjsVHeAsCm4WSlG2dKz\nhoirBME3L+N6F35j0GEQkBa3+O1shVOeLS9IhZ4jab4orx1puh0gamQaDw1toNrP\ncUsz/VBICRnTIw8mnq4c5YH+XSaDNi4LjtQGYq4He4OXs6JuhXWFhoXheeJPw6TQ\nSH22RlYnjSRhsWpVojHVrSgyF4+Jqvv+eN3gOX3HHjv0XoTVSmFjQDj0bncv8Xa6\n39tP0NdMjkjo6DaaFDVifu9/wP+D0iKi+q0L/U3XQKxHMOhq4tOb9XNheY02z3RI\nU69Rr3Xnqu8myldbDMKpNbqxXQWAT73bW3S+VYnOLwKBgQDkxjsBXcn6GBMdGV1c\njl9F6i3M+GSJR5tApjoEPBerahL0eszxF5DLZVm2z5+2em4Zc6HV4aAmnTTVc2nJ\nwvMCRVL4R2gCs8t5XlmGHNSsVqzxIb1xILzQkgA+Flgr5oA9BpDorunm+Ea7EBYM\n/YewTi6Q+bTLuXVSH7CQzKBZBwKBgQDSqASsWV4UlCfB2SMIt1T9tNDmwo7oIamj\n1WwPxo3GY6GCpD4BqYZ+00aY4LhAhyeK7om9kLoxLkd1cpc1dVO1r4EuVU7HSnWC\nEA9ZDREEmVMJ8k42KFlLCT3P1m5O85DU/WwzK99ywXw5tRHfBu1inhsOLhG7OTiG\nFxgwULKI5wKBgQCkN1L1mSA5gHx/38wvexcSdZWo0wg/roHX9zof/g6zgbHXgiqI\nSPUruzWZzxGDCADuDh22DH5MGX5qVa0zIdgT4jU7eO5FOlAtb7dtWFak2pbLg/+b\nK/e884BvENT7tjqJE6SDEcNegwsqjdJ2QqrauFQexs+riRWY/JxeZDQZkwKBgQC6\ndYAVcdEFlBIQ0nrhJy1yl87kwsetjsZSPwG0gQJS3TNDqM89t2lV7vqpLRfJ/hex\nMOz4vxcfmyAjRDe1WNGsmtlUQqxFWJHkewSqxRcQJArNXg1+gH5xHY/53IqtFYhY\nDqzsKmRRdhPYHH7iE4ahaOL3zS1itAZlIiIF+hfddwKBgGpAx336Vg4zana4957d\n/iw9YrVkcZrH9h9naIYPPVndvIi8TDpMQAHrzQFFNdEM2vBgTLNGr008eXVFsjvd\nSU8fDl0jaxvQcfRcq1q4yRiwSmxt0WGzsK32F1UFknZOXEc47dcVoqWHNrtvSZOp\nRTQmoD23+iHGv75ueRYOlRQK\n-----END PRIVATE KEY-----\n`,
+  "client_email": "firebase-adminsdk-fbsvc@startup-dbs-1.iam.gserviceaccount.com",
+  "client_id": "110678261411363611678",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40startup-dbs-1.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+};
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
+  credential: admin.credential.cert(serviceAccount)
 });
 
 const db = admin.firestore();
