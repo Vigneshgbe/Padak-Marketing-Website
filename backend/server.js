@@ -45,13 +45,144 @@ if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
 const paymentsDir = path.join(__dirname, 'uploads', 'payments');
 if (!fs.existsSync(paymentsDir)) fs.mkdirSync(paymentsDir, { recursive: true });
 
+const socialUploadDir = path.join(__dirname, 'public', 'uploads', 'social');
+if (!fs.existsSync(socialUploadDir)) fs.mkdirSync(socialUploadDir, { recursive: true });
+
+// ===== COMPLETE MULTER CONFIGURATIONS =====
+
+// Avatar upload configuration
+const avatarStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, avatarsDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'avatar-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const avatarUpload = multer({
+  storage: avatarStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: function (req, file, cb) {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed for avatars'));
+    }
+  }
+});
+
+// Assignment upload configuration
+const assignmentStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadDir = path.join(__dirname, 'uploads', 'assignments');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `assignment-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+const assignmentUpload = multer({
+  storage: assignmentStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: function (req, file, cb) {
+    const allowedTypes = ['.pdf', '.doc', '.docx', '.txt', '.zip', '.rar'];
+    const fileExt = path.extname(file.originalname).toLowerCase();
+    if (allowedTypes.includes(fileExt)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, TXT, ZIP, RAR files are allowed.'));
+    }
+  }
+});
+
+// Payment screenshot upload configuration - THIS WAS MISSING!
+const paymentScreenshotStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadDir = path.join(__dirname, 'uploads', 'payments');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `payment-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+const paymentScreenshotUpload = multer({
+  storage: paymentScreenshotStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: function (req, file, cb) {
+    const allowedTypes = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
+    const fileExt = path.extname(file.originalname).toLowerCase();
+    if (allowedTypes.includes(fileExt)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only images are allowed.'));
+    }
+  }
+});
+
+// Payment proof upload configuration
+const paymentProofStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(__dirname, 'uploads', 'payments');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `payment-proof-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+const paymentProofUpload = multer({
+  storage: paymentProofStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only images and PDF files are allowed'));
+    }
+  }
+});
+
+// Social upload configuration
+const socialStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, socialUploadDir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `social-${Date.now()}${path.extname(file.originalname)}`);
+  },
+});
+
+const socialUpload = multer({
+  storage: socialStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const filetypes = /jpeg|jpg|png|gif/;
+    const mimetype = filetypes.test(file.mimetype);
+    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+    if (mimetype && extname) {
+      return cb(null, true);
+    }
+    cb(new Error('Error: File upload only supports the following filetypes - ' + filetypes));
+  },
+}).single('image');
+
 // ===== FIREBASE HELPER FUNCTIONS =====
-
-// Generate unique ID
-const generateId = () => doc(collection(db, 'temp')).id;
-
-// Convert to Firestore timestamp (we'll use server timestamps)
-const getServerTimestamp = () => new Date();
 
 // Firebase storage upload function
 const uploadToFirebaseStorage = async (filePath, destinationPath) => {
@@ -78,30 +209,8 @@ const uploadToFirebaseStorage = async (filePath, destinationPath) => {
   }
 };
 
-// ===== MULTER CONFIGURATIONS (Same as before) =====
-const avatarStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, avatarsDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'avatar-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-const avatarUpload = multer({
-  storage: avatarStorage,
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: function (req, file, cb) {
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed for avatars'));
-    }
-  }
-});
-
-// ... (other multer configurations remain the same as in previous response)
+// Get server timestamp
+const getServerTimestamp = () => new Date();
 
 // ===== CORS configuration ======
 const allowedOrigins = [process.env.FRONTEND_URL].filter(Boolean);
@@ -552,58 +661,6 @@ app.get('/api/enrollments/my-courses', authenticateToken, async (req, res) => {
   }
 });
 
-// ==================== CONTACT ROUTES ====================
-
-// Contact form endpoint
-app.post('/api/contact', async (req, res) => {
-  const { firstName, lastName, email, phone, company, message } = req.body;
-
-  try {
-    // Validate required fields
-    if (!firstName || !lastName || !email || !message) {
-      return res.status(400).json({
-        error: 'First name, last name, email, and message are required'
-      });
-    }
-
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: 'Please provide a valid email address' });
-    }
-
-    // Insert contact form data into database
-    const contactData = {
-      first_name: firstName.trim(),
-      last_name: lastName.trim(),
-      email: email.trim(),
-      phone: phone || null,
-      company: company || null,
-      message: message.trim(),
-      status: 'pending',
-      created_at: getServerTimestamp()
-    };
-
-    const result = await addDoc(collection(db, 'contact_messages'), contactData);
-
-    console.log('Contact message saved successfully:', {
-      id: result.id,
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      email: email.trim()
-    });
-
-    res.status(201).json({
-      message: 'Contact message sent successfully',
-      contactId: result.id
-    });
-
-  } catch (error) {
-    console.error('Contact form error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
 // ==================== COURSE ENROLLMENT REQUESTS ====================
 app.post('/api/enroll-request', 
   authenticateToken, 
@@ -676,6 +733,58 @@ app.post('/api/enroll-request',
     }
   }
 );
+
+// ==================== CONTACT ROUTES ====================
+
+// Contact form endpoint
+app.post('/api/contact', async (req, res) => {
+  const { firstName, lastName, email, phone, company, message } = req.body;
+
+  try {
+    // Validate required fields
+    if (!firstName || !lastName || !email || !message) {
+      return res.status(400).json({
+        error: 'First name, last name, email, and message are required'
+      });
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: 'Please provide a valid email address' });
+    }
+
+    // Insert contact form data into database
+    const contactData = {
+      first_name: firstName.trim(),
+      last_name: lastName.trim(),
+      email: email.trim(),
+      phone: phone || null,
+      company: company || null,
+      message: message.trim(),
+      status: 'pending',
+      created_at: getServerTimestamp()
+    };
+
+    const result = await addDoc(collection(db, 'contact_messages'), contactData);
+
+    console.log('Contact message saved successfully:', {
+      id: result.id,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: email.trim()
+    });
+
+    res.status(201).json({
+      message: 'Contact message sent successfully',
+      contactId: result.id
+    });
+
+  } catch (error) {
+    console.error('Contact form error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 // ==================== HEALTH CHECK AND INFO ====================
 
