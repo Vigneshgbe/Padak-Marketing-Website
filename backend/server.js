@@ -1723,12 +1723,11 @@ app.get('/api/enrollments/my-courses', authenticateToken, async (req, res) => {
 
     const eventCourse  = [];
 
-              const courseSnapshot = await db.collection('enrollments')
+            const courseSnapshot = await db.collection('enrollments')
             .where('user_id', '==', userId)
             .where('status','==','active')
                .get();
 
-          const eventCourse  = [];
           for (const doc of courseSnapshot.docs) {
                const enroData  = doc.data()
                const coursesShot = await db.collection('courses').doc(enroData.course_id).get()
@@ -1796,7 +1795,7 @@ app.post('/api/courses/enroll', authenticateToken, async (req, res) => {
         const query = enrollmentsRef.where('user_id', '==', userId)
           .where('course_id', '==', courseId).get();
        let  existing = []
-         query.then((querySnapshot) => {
+         query.then(async (querySnapshot) => {
                querySnapshot.forEach((doc) => {
                   existing.push({id: doc.id, ...doc.data()});
                   console.log(doc.id, ' => ', doc.data());
