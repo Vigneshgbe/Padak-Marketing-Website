@@ -1,4 +1,4 @@
-// server.js - Converted to Firebase Firestore
+// server.js - Converted to Firebase Firestore with Admin SDK
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -11,23 +11,35 @@ const fs = require('fs');
 const app = express();
 const port = process.env.PORT;
 
-// Firebase Client SDK Configuration
-const { initializeApp } = require('firebase/app');
-const { getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, startAfter, Timestamp, writeBatch, runTransaction } = require('firebase/firestore');
+// Firebase Admin SDK Configuration
+const admin = require('firebase-admin');
 
-const firebaseConfig = {
-  apiKey: "AIzaSyA4uHspTDS-8kIT2HsmPFGL9JNNBvI6NI4",
-  authDomain: "startup-dbs-1.firebaseapp.com",
-  projectId: "startup-dbs-1",
-  storageBucket: "startup-dbs-1.firebasestorage.app",
-  messagingSenderId: "70939047801",
-  appId: "1:70939047801:web:08a6a9d17f6b63af9261a8",
-  measurementId: "G-KQ59313LSD"
+// Initialize Firebase Admin with service account
+const serviceAccount = {
+  type: "service_account",
+  project_id: "startup-dbs-1",
+  private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
+  private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+  client_email: process.env.FIREBASE_CLIENT_EMAIL || "firebase-adminsdk@startup-dbs-1.iam.gserviceaccount.com",
+  client_id: process.env.FIREBASE_CLIENT_ID,
+  auth_uri: "https://accounts.google.com/o/oauth2/auth",
+  token_uri: "https://oauth2.googleapis.com/token",
+  auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
+  client_x509_cert_url: process.env.FIREBASE_CLIENT_CERT_URL
 };
 
-// Initialize Firebase
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp);
+// Initialize Firebase Admin
+try {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    databaseURL: "https://startup-dbs-1.firebaseio.com"
+  });
+  console.log('Firebase Admin SDK initialized successfully');
+} catch (error) {
+  console.error('Error initializing Firebase Admin:', error);
+}
+
+const db = admin.firestore();
 
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-secret-key';
@@ -217,11 +229,11 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 app.use('/uploads/avatars', express.static(path.join(__dirname, 'uploads', 'avatars')));
 
-// ======== FIREBASE HELPER FUNCTIONS ========
+// ======== FIREBASE ADMIN HELPER FUNCTIONS ========
 
 // Helper to convert Firestore data to plain object
 const firestoreToObject = (doc) => {
-  if (!doc.exists()) return null;
+  if (!doc.exists) return null;
   const data = doc.data();
   return {
     id: doc.id,
@@ -236,16 +248,16 @@ const firestoreToObject = (doc) => {
   };
 };
 
-// Helper to get multiple documents
+// Helper to get multiple documents with filtering
 const getCollectionData = async (collectionName, conditions = []) => {
   try {
-    let q = query(collection(db, collectionName));
+    let query = db.collection(collectionName);
     
     conditions.forEach(condition => {
-      q = query(q, where(condition.field, condition.operator, condition.value));
+      query = query.where(condition.field, condition.operator, condition.value);
     });
     
-    const querySnapshot = await getDocs(q);
+    const querySnapshot = await query.get();
     return querySnapshot.docs.map(firestoreToObject);
   } catch (error) {
     console.error(`Error getting ${collectionName}:`, error);
@@ -256,8 +268,8 @@ const getCollectionData = async (collectionName, conditions = []) => {
 // Helper to get single document
 const getDocument = async (collectionName, docId) => {
   try {
-    const docRef = doc(db, collectionName, docId);
-    const docSnap = await getDoc(docRef);
+    const docRef = db.collection(collectionName).doc(docId);
+    const docSnap = await docRef.get();
     return firestoreToObject(docSnap);
   } catch (error) {
     console.error(`Error getting document ${docId} from ${collectionName}:`, error);
@@ -268,10 +280,11 @@ const getDocument = async (collectionName, docId) => {
 // Helper to add document
 const addDocument = async (collectionName, data) => {
   try {
-    const docRef = await addDoc(collection(db, collectionName), {
+    const docRef = db.collection(collectionName).doc();
+    await docRef.set({
       ...data,
-      created_at: Timestamp.now(),
-      updated_at: Timestamp.now()
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      updated_at: admin.firestore.FieldValue.serverTimestamp()
     });
     return docRef.id;
   } catch (error) {
@@ -283,10 +296,10 @@ const addDocument = async (collectionName, data) => {
 // Helper to update document
 const updateDocument = async (collectionName, docId, data) => {
   try {
-    const docRef = doc(db, collectionName, docId);
-    await updateDoc(docRef, {
+    const docRef = db.collection(collectionName).doc(docId);
+    await docRef.update({
       ...data,
-      updated_at: Timestamp.now()
+      updated_at: admin.firestore.FieldValue.serverTimestamp()
     });
     return true;
   } catch (error) {
@@ -298,11 +311,46 @@ const updateDocument = async (collectionName, docId, data) => {
 // Helper to delete document
 const deleteDocument = async (collectionName, docId) => {
   try {
-    const docRef = doc(db, collectionName, docId);
-    await deleteDoc(docRef);
+    const docRef = db.collection(collectionName).doc(docId);
+    await docRef.delete();
     return true;
   } catch (error) {
     console.error(`Error deleting document ${docId} from ${collectionName}:`, error);
+    throw error;
+  }
+};
+
+// Helper for complex queries with ordering and limiting
+const queryCollection = async (collectionName, options = {}) => {
+  try {
+    let query = db.collection(collectionName);
+    
+    // Add where conditions
+    if (options.where) {
+      options.where.forEach(condition => {
+        query = query.where(condition.field, condition.operator, condition.value);
+      });
+    }
+    
+    // Add ordering
+    if (options.orderBy) {
+      query = query.orderBy(options.orderBy.field, options.orderBy.direction || 'asc');
+    }
+    
+    // Add limiting
+    if (options.limit) {
+      query = query.limit(options.limit);
+    }
+    
+    // Add offset
+    if (options.offset) {
+      query = query.offset(options.offset);
+    }
+    
+    const querySnapshot = await query.get();
+    return querySnapshot.docs.map(firestoreToObject);
+  } catch (error) {
+    console.error(`Error querying ${collectionName}:`, error);
     throw error;
   }
 };
@@ -387,12 +435,12 @@ app.post('/api/register', async (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters long' });
     }
 
-    // Check if email exists
-    const existingUsers = await getCollectionData(COLLECTIONS.USERS, [
-      { field: 'email', operator: '==', value: email }
-    ]);
+    // Check if email exists using Admin SDK query
+    const usersSnapshot = await db.collection(COLLECTIONS.USERS)
+      .where('email', '==', email)
+      .get();
 
-    if (existingUsers.length > 0) {
+    if (!usersSnapshot.empty) {
       return res.status(400).json({ error: 'Email already exists' });
     }
 
@@ -401,7 +449,8 @@ app.post('/api/register', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     // Insert new user
-    const userId = await addDocument(COLLECTIONS.USERS, {
+    const userRef = db.collection(COLLECTIONS.USERS).doc();
+    await userRef.set({
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       email: email.trim(),
@@ -413,23 +462,26 @@ app.post('/api/register', async (req, res) => {
       profile_image: null,
       company: null,
       website: null,
-      bio: null
+      bio: null,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      updated_at: admin.firestore.FieldValue.serverTimestamp()
     });
 
     // Create user stats entry
-    await addDocument(COLLECTIONS.USER_STATS, {
-      user_id: userId,
+    const statsRef = db.collection(COLLECTIONS.USER_STATS).doc();
+    await statsRef.set({
+      user_id: userRef.id,
       courses_enrolled: 0,
       courses_completed: 0,
       certificates_earned: 0,
       learning_streak: 0,
-      last_activity: Timestamp.now()
+      last_activity: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    console.log('User registered successfully:', { userId, email });
+    console.log('User registered successfully:', { userId: userRef.id, email });
     res.status(201).json({
       message: 'User registered successfully',
-      userId: userId
+      userId: userRef.id
     });
 
   } catch (error) {
@@ -448,17 +500,18 @@ app.post('/api/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    // Check if user exists
-    const users = await getCollectionData(COLLECTIONS.USERS, [
-      { field: 'email', operator: '==', value: email },
-      { field: 'is_active', operator: '==', value: true }
-    ]);
+    // Check if user exists using Admin SDK query
+    const usersSnapshot = await db.collection(COLLECTIONS.USERS)
+      .where('email', '==', email)
+      .where('is_active', '==', true)
+      .get();
 
-    if (users.length === 0) {
+    if (usersSnapshot.empty) {
       return res.status(404).json({ error: 'No account found with this email' });
     }
 
-    const user = users[0];
+    const userDoc = usersSnapshot.docs[0];
+    const user = firestoreToObject(userDoc);
 
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
@@ -480,8 +533,8 @@ app.post('/api/login', async (req, res) => {
     );
 
     // Update last login timestamp
-    await updateDocument(COLLECTIONS.USERS, user.id, {
-      updated_at: Timestamp.now()
+    await db.collection(COLLECTIONS.USERS).doc(user.id).update({
+      updated_at: admin.firestore.FieldValue.serverTimestamp()
     });
 
     console.log('User logged in successfully:', { userId: user.id, email: user.email });
@@ -546,17 +599,19 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
     const { firstName, lastName, phone, company, website, bio } = req.body;
     const userId = req.user.id;
 
-    await updateDocument(COLLECTIONS.USERS, userId, {
+    await db.collection(COLLECTIONS.USERS).doc(userId).update({
       first_name: firstName,
       last_name: lastName,
       phone: phone,
       company: company,
       website: website,
-      bio: bio
+      bio: bio,
+      updated_at: admin.firestore.FieldValue.serverTimestamp()
     });
 
     // Get updated user data
-    const user = await getDocument(COLLECTIONS.USERS, userId);
+    const userDoc = await db.collection(COLLECTIONS.USERS).doc(userId).get();
+    const user = firestoreToObject(userDoc);
 
     res.json({
       id: user.id,
@@ -607,8 +662,9 @@ app.post('/api/auth/avatar', authenticateToken, (req, res, next) => {
       }
     }
 
-    await updateDocument(COLLECTIONS.USERS, userId, {
-      profile_image: profileImage
+    await db.collection(COLLECTIONS.USERS).doc(userId).update({
+      profile_image: profileImage,
+      updated_at: admin.firestore.FieldValue.serverTimestamp()
     });
 
     res.status(200).send(profileImage);
@@ -626,19 +682,20 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const stats = await getCollectionData(COLLECTIONS.USER_STATS, [
-      { field: 'user_id', operator: '==', value: userId }
-    ]);
+    const statsSnapshot = await db.collection(COLLECTIONS.USER_STATS)
+      .where('user_id', '==', userId)
+      .get();
 
-    if (stats.length === 0) {
+    if (statsSnapshot.empty) {
       // Create default stats if not exists
-      await addDocument(COLLECTIONS.USER_STATS, {
+      const statsRef = db.collection(COLLECTIONS.USER_STATS).doc();
+      await statsRef.set({
         user_id: userId,
         courses_enrolled: 0,
         courses_completed: 0,
         certificates_earned: 0,
         learning_streak: 0,
-        last_activity: Timestamp.now()
+        last_activity: admin.firestore.FieldValue.serverTimestamp()
       });
 
       res.json({
@@ -649,7 +706,7 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
         lastActivity: new Date().toISOString()
       });
     } else {
-      const userStats = stats[0];
+      const userStats = firestoreToObject(statsSnapshot.docs[0]);
       res.json({
         coursesEnrolled: userStats.courses_enrolled,
         coursesCompleted: userStats.courses_completed,
@@ -674,22 +731,19 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
   const limit = parseInt(req.query.limit, 10) || 10;
 
   try {
-    // Get all posts with pagination
-    let postsQuery = query(
-      collection(db, COLLECTIONS.SOCIAL_ACTIVITIES),
-      where('activity_type', '==', 'post'),
-      orderBy('created_at', 'desc'),
-      limit(limit * page)
-    );
+    // Get all posts with pagination using Admin SDK
+    let postsQuery = db.collection(COLLECTIONS.SOCIAL_ACTIVITIES)
+      .where('activity_type', '==', 'post')
+      .orderBy('created_at', 'desc')
+      .limit(limit * page);
 
-    const postsSnapshot = await getDocs(postsQuery);
+    const postsSnapshot = await postsQuery.get();
     const allPosts = postsSnapshot.docs.map(firestoreToObject);
     
-    // Filter posts based on visibility (simplified for Firestore)
+    // Filter posts based on visibility
     const filteredPosts = allPosts.filter(post => {
       if (post.visibility === 'public') return true;
       if (post.visibility === 'private' && post.user_id === userId) return true;
-      // For connections visibility, we'd need to check connections - simplified here
       return post.user_id === userId;
     });
 
@@ -699,28 +753,27 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
 
     // Get user data and engagement for each post
     const postsWithData = await Promise.all(posts.map(async (post) => {
-      const user = await getDocument(COLLECTIONS.USERS, post.user_id);
+      const userDoc = await db.collection(COLLECTIONS.USERS).doc(post.user_id).get();
+      const user = firestoreToObject(userDoc);
       
       // Get likes count
-      const likesQuery = query(
-        collection(db, COLLECTIONS.SOCIAL_ACTIVITIES),
-        where('activity_type', '==', 'like'),
-        where('target_id', '==', post.id)
-      );
-      const likesSnapshot = await getDocs(likesQuery);
+      const likesSnapshot = await db.collection(COLLECTIONS.SOCIAL_ACTIVITIES)
+        .where('activity_type', '==', 'like')
+        .where('target_id', '==', post.id)
+        .get();
       const likes = likesSnapshot.size;
 
       // Get comments
-      const commentsQuery = query(
-        collection(db, COLLECTIONS.SOCIAL_ACTIVITIES),
-        where('activity_type', '==', 'comment'),
-        where('target_id', '==', post.id),
-        orderBy('created_at', 'asc')
-      );
-      const commentsSnapshot = await getDocs(commentsQuery);
+      const commentsSnapshot = await db.collection(COLLECTIONS.SOCIAL_ACTIVITIES)
+        .where('activity_type', '==', 'comment')
+        .where('target_id', '==', post.id)
+        .orderBy('created_at', 'asc')
+        .get();
+
       const comments = await Promise.all(commentsSnapshot.docs.map(async (doc) => {
         const comment = firestoreToObject(doc);
-        const commentUser = await getDocument(COLLECTIONS.USERS, comment.user_id);
+        const commentUserDoc = await db.collection(COLLECTIONS.USERS).doc(comment.user_id).get();
+        const commentUser = firestoreToObject(commentUserDoc);
         return {
           ...comment,
           user: {
@@ -734,22 +787,20 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
       }));
 
       // Check if current user has liked or bookmarked
-      const userLikeQuery = query(
-        collection(db, COLLECTIONS.SOCIAL_ACTIVITIES),
-        where('activity_type', '==', 'like'),
-        where('target_id', '==', post.id),
-        where('user_id', '==', userId)
-      );
-      const userLikeSnapshot = await getDocs(userLikeQuery);
+      const userLikeSnapshot = await db.collection(COLLECTIONS.SOCIAL_ACTIVITIES)
+        .where('activity_type', '==', 'like')
+        .where('target_id', '==', post.id)
+        .where('user_id', '==', userId)
+        .get();
+
       const hasLiked = !userLikeSnapshot.empty;
 
-      const userBookmarkQuery = query(
-        collection(db, COLLECTIONS.SOCIAL_ACTIVITIES),
-        where('activity_type', '==', 'bookmark'),
-        where('target_id', '==', post.id),
-        where('user_id', '==', userId)
-      );
-      const userBookmarkSnapshot = await getDocs(userBookmarkQuery);
+      const userBookmarkSnapshot = await db.collection(COLLECTIONS.SOCIAL_ACTIVITIES)
+        .where('activity_type', '==', 'bookmark')
+        .where('target_id', '==', post.id)
+        .where('user_id', '==', userId)
+        .get();
+
       const hasBookmarked = !userBookmarkSnapshot.empty;
 
       return {
@@ -804,19 +855,24 @@ app.post('/api/posts', authenticateToken, (req, res) => {
       const imageUrl = req.file ? `/uploads/social/${req.file.filename}` : null;
       const isAchievement = achievement === 'true';
 
-      const postId = await addDocument(COLLECTIONS.SOCIAL_ACTIVITIES, {
+      const postRef = db.collection(COLLECTIONS.SOCIAL_ACTIVITIES).doc();
+      await postRef.set({
         user_id: userId,
         activity_type: 'post',
         content: content || '',
         image_url: imageUrl,
         achievement: isAchievement,
         visibility: visibility || 'public',
-        share_count: 0
+        share_count: 0,
+        created_at: admin.firestore.FieldValue.serverTimestamp(),
+        updated_at: admin.firestore.FieldValue.serverTimestamp()
       });
 
       // Fetch the newly created post to return to frontend
-      const newPost = await getDocument(COLLECTIONS.SOCIAL_ACTIVITIES, postId);
-      const user = await getDocument(COLLECTIONS.USERS, userId);
+      const newPostDoc = await postRef.get();
+      const newPost = firestoreToObject(newPostDoc);
+      const userDoc = await db.collection(COLLECTIONS.USERS).doc(userId).get();
+      const user = firestoreToObject(userDoc);
 
       res.status(201).json({
         ...newPost,
@@ -852,7 +908,8 @@ app.put('/api/posts/:id', authenticateToken, async (req, res) => {
   }
 
   try {
-    const post = await getDocument(COLLECTIONS.SOCIAL_ACTIVITIES, id);
+    const postDoc = await db.collection(COLLECTIONS.SOCIAL_ACTIVITIES).doc(id).get();
+    const post = firestoreToObject(postDoc);
 
     if (!post) {
       return res.status(404).json({ error: 'Post not found.' });
@@ -862,8 +919,9 @@ app.put('/api/posts/:id', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'You are not authorized to edit this post.' });
     }
 
-    await updateDocument(COLLECTIONS.SOCIAL_ACTIVITIES, id, {
-      content: content
+    await db.collection(COLLECTIONS.SOCIAL_ACTIVITIES).doc(id).update({
+      content: content,
+      updated_at: admin.firestore.FieldValue.serverTimestamp()
     });
 
     res.json({ message: 'Post updated successfully.' });
@@ -879,7 +937,8 @@ app.delete('/api/posts/:id', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const post = await getDocument(COLLECTIONS.SOCIAL_ACTIVITIES, id);
+    const postDoc = await db.collection(COLLECTIONS.SOCIAL_ACTIVITIES).doc(id).get();
+    const post = firestoreToObject(postDoc);
 
     if (!post) {
       return res.status(404).json({ error: 'Post not found.' });
@@ -889,32 +948,30 @@ app.delete('/api/posts/:id', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'You are not authorized to delete this post.' });
     }
 
-    // Delete the post and related activities (comments, likes, bookmarks)
-    const batch = writeBatch(db);
+    // Use batched write for multiple operations
+    const batch = db.batch();
     
     // Delete post
-    const postRef = doc(db, COLLECTIONS.SOCIAL_ACTIVITIES, id);
-    batch.delete(postRef);
+    batch.delete(db.collection(COLLECTIONS.SOCIAL_ACTIVITIES).doc(id));
 
     // Delete related comments
-    const commentsQuery = query(
-      collection(db, COLLECTIONS.SOCIAL_ACTIVITIES),
-      where('activity_type', '==', 'comment'),
-      where('target_id', '==', id)
-    );
-    const commentsSnapshot = await getDocs(commentsQuery);
+    const commentsSnapshot = await db.collection(COLLECTIONS.SOCIAL_ACTIVITIES)
+      .where('activity_type', '==', 'comment')
+      .where('target_id', '==', id)
+      .get();
+
     commentsSnapshot.docs.forEach(doc => {
       batch.delete(doc.ref);
     });
 
     // Delete related likes and bookmarks
-    const engagementsQuery = query(
-      collection(db, COLLECTIONS.SOCIAL_ACTIVITIES),
-      where('target_id', '==', id)
-    );
-    const engagementsSnapshot = await getDocs(engagementsQuery);
+    const engagementsSnapshot = await db.collection(COLLECTIONS.SOCIAL_ACTIVITIES)
+      .where('target_id', '==', id)
+      .get();
+
     engagementsSnapshot.docs.forEach(doc => {
-      if (doc.data().activity_type === 'like' || doc.data().activity_type === 'bookmark') {
+      const data = doc.data();
+      if (data.activity_type === 'like' || data.activity_type === 'bookmark') {
         batch.delete(doc.ref);
       }
     });
@@ -946,16 +1003,21 @@ app.post('/api/posts/:id/comment', authenticateToken, async (req, res) => {
   }
 
   try {
-    const commentId = await addDocument(COLLECTIONS.SOCIAL_ACTIVITIES, {
+    const commentRef = db.collection(COLLECTIONS.SOCIAL_ACTIVITIES).doc();
+    await commentRef.set({
       user_id: userId,
       activity_type: 'comment',
       content: content,
-      target_id: target_id
+      target_id: targetId,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      updated_at: admin.firestore.FieldValue.serverTimestamp()
     });
 
     // Fetch the new comment with user info
-    const newComment = await getDocument(COLLECTIONS.SOCIAL_ACTIVITIES, commentId);
-    const user = await getDocument(COLLECTIONS.USERS, userId);
+    const newCommentDoc = await commentRef.get();
+    const newComment = firestoreToObject(newCommentDoc);
+    const userDoc = await db.collection(COLLECTIONS.USERS).doc(userId).get();
+    const user = firestoreToObject(userDoc);
 
     res.status(201).json({
       ...newComment,
@@ -972,145 +1034,17 @@ app.post('/api/posts/:id/comment', authenticateToken, async (req, res) => {
   }
 });
 
-// POST (like) a post
-app.post('/api/posts/:id/like', authenticateToken, async (req, res) => {
-  const targetId = req.params.id;
-  const userId = req.user.id;
-
-  try {
-    // Check if already liked
-    const existingLikeQuery = query(
-      collection(db, COLLECTIONS.SOCIAL_ACTIVITIES),
-      where('activity_type', '==', 'like'),
-      where('target_id', '==', targetId),
-      where('user_id', '==', userId)
-    );
-    const existingLikeSnapshot = await getDocs(existingLikeQuery);
-
-    if (existingLikeSnapshot.empty) {
-      await addDocument(COLLECTIONS.SOCIAL_ACTIVITIES, {
-        user_id: userId,
-        activity_type: 'like',
-        target_id: targetId
-      });
-    }
-
-    res.status(201).json({ message: 'Post liked.' });
-  } catch (error) {
-    console.error('Error liking post:', error);
-    res.status(500).json({ error: 'Failed to like post.' });
-  }
-});
-
-// DELETE (unlike) a post
-app.delete('/api/posts/:id/like', authenticateToken, async (req, res) => {
-  const targetId = req.params.id;
-  const userId = req.user.id;
-
-  try {
-    const likeQuery = query(
-      collection(db, COLLECTIONS.SOCIAL_ACTIVITIES),
-      where('activity_type', '==', 'like'),
-      where('target_id', '==', targetId),
-      where('user_id', '==', userId)
-    );
-    const likeSnapshot = await getDocs(likeQuery);
-
-    if (!likeSnapshot.empty) {
-      const likeDoc = likeSnapshot.docs[0];
-      await deleteDocument(COLLECTIONS.SOCIAL_ACTIVITIES, likeDoc.id);
-    }
-
-    res.json({ message: 'Post unliked.' });
-  } catch (error) {
-    console.error('Error unliking post:', error);
-    res.status(500).json({ error: 'Failed to unlike post.' });
-  }
-});
-
-// POST (bookmark) a post
-app.post('/api/posts/:id/bookmark', authenticateToken, async (req, res) => {
-  const targetId = req.params.id;
-  const userId = req.user.id;
-
-  try {
-    // Check if already bookmarked
-    const existingBookmarkQuery = query(
-      collection(db, COLLECTIONS.SOCIAL_ACTIVITIES),
-      where('activity_type', '==', 'bookmark'),
-      where('target_id', '==', targetId),
-      where('user_id', '==', userId)
-    );
-    const existingBookmarkSnapshot = await getDocs(existingBookmarkQuery);
-
-    if (existingBookmarkSnapshot.empty) {
-      await addDocument(COLLECTIONS.SOCIAL_ACTIVITIES, {
-        user_id: userId,
-        activity_type: 'bookmark',
-        target_id: targetId
-      });
-    }
-
-    res.status(201).json({ message: 'Post bookmarked.' });
-  } catch (error) {
-    console.error('Error bookmarking post:', error);
-    res.status(500).json({ error: 'Failed to bookmark post.' });
-  }
-});
-
-// DELETE (unbookmark) a post
-app.delete('/api/posts/:id/bookmark', authenticateToken, async (req, res) => {
-  const targetId = req.params.id;
-  const userId = req.user.id;
-
-  try {
-    const bookmarkQuery = query(
-      collection(db, COLLECTIONS.SOCIAL_ACTIVITIES),
-      where('activity_type', '==', 'bookmark'),
-      where('target_id', '==', targetId),
-      where('user_id', '==', userId)
-    );
-    const bookmarkSnapshot = await getDocs(bookmarkQuery);
-
-    if (!bookmarkSnapshot.empty) {
-      const bookmarkDoc = bookmarkSnapshot.docs[0];
-      await deleteDocument(COLLECTIONS.SOCIAL_ACTIVITIES, bookmarkDoc.id);
-    }
-
-    res.json({ message: 'Post unbookmarked.' });
-  } catch (error) {
-    console.error('Error unbookmarking post:', error);
-    res.status(500).json({ error: 'Failed to unbookmark post.' });
-  }
-});
-
-// POST (track) a share
-app.post('/api/posts/:id/share', authenticateToken, async (req, res) => {
-  const postId = req.params.id;
-
-  try {
-    const post = await getDocument(COLLECTIONS.SOCIAL_ACTIVITIES, postId);
-    if (post) {
-      await updateDocument(COLLECTIONS.SOCIAL_ACTIVITIES, postId, {
-        share_count: (post.share_count || 0) + 1
-      });
-    }
-
-    res.json({ message: 'Share tracked.' });
-  } catch (error) {
-    console.error('Error tracking share:', error);
-    res.status(500).json({ error: 'Failed to track share.' });
-  }
-});
-
 // ==================== COURSES ROUTES ====================
 
 // GET all courses
 app.get('/api/courses', async (req, res) => {
   try {
-    const courses = await getCollectionData(COLLECTIONS.COURSES, [
-      { field: 'is_active', operator: '==', value: true }
-    ]);
+    const coursesSnapshot = await db.collection(COLLECTIONS.COURSES)
+      .where('is_active', '==', true)
+      .orderBy('created_at', 'desc')
+      .get();
+
+    const courses = coursesSnapshot.docs.map(firestoreToObject);
 
     const formattedCourses = courses.map(course => ({
       ...course,
@@ -1133,14 +1067,19 @@ app.get('/api/enrollments/my-courses', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const enrollments = await getCollectionData(COLLECTIONS.ENROLLMENTS, [
-      { field: 'user_id', operator: '==', value: userId },
-      { field: 'status', operator: '==', value: 'active' }
-    ]);
+    const enrollmentsSnapshot = await db.collection(COLLECTIONS.ENROLLMENTS)
+      .where('user_id', '==', userId)
+      .where('status', '==', 'active')
+      .orderBy('enrollment_date', 'desc')
+      .get();
+
+    const enrollments = enrollmentsSnapshot.docs.map(firestoreToObject);
 
     const enrollmentsWithCourses = await Promise.all(
       enrollments.map(async (enrollment) => {
-        const course = await getDocument(COLLECTIONS.COURSES, enrollment.course_id);
+        const courseDoc = await db.collection(COLLECTIONS.COURSES).doc(enrollment.course_id).get();
+        const course = firestoreToObject(courseDoc);
+        
         return {
           id: enrollment.id,
           userId: enrollment.user_id,
@@ -1180,39 +1119,43 @@ app.post('/api/courses/enroll', authenticateToken, async (req, res) => {
     const userId = req.user.id;
 
     // Check if already enrolled
-    const existingEnrollments = await getCollectionData(COLLECTIONS.ENROLLMENTS, [
-      { field: 'user_id', operator: '==', value: userId },
-      { field: 'course_id', operator: '==', value: courseId }
-    ]);
+    const existingEnrollmentsSnapshot = await db.collection(COLLECTIONS.ENROLLMENTS)
+      .where('user_id', '==', userId)
+      .where('course_id', '==', courseId)
+      .get();
 
-    if (existingEnrollments.length > 0) {
+    if (!existingEnrollmentsSnapshot.empty) {
       return res.status(400).json({ error: 'Already enrolled in this course' });
     }
 
     // Check if course exists
-    const course = await getDocument(COLLECTIONS.COURSES, courseId);
+    const courseDoc = await db.collection(COLLECTIONS.COURSES).doc(courseId).get();
+    const course = firestoreToObject(courseDoc);
+    
     if (!course || !course.is_active) {
       return res.status(404).json({ error: 'Course not found' });
     }
 
     // Create enrollment
-    await addDocument(COLLECTIONS.ENROLLMENTS, {
+    const enrollmentRef = db.collection(COLLECTIONS.ENROLLMENTS).doc();
+    await enrollmentRef.set({
       user_id: userId,
       course_id: courseId,
-      enrollment_date: Timestamp.now(),
+      enrollment_date: admin.firestore.FieldValue.serverTimestamp(),
       progress: 0,
       status: 'active',
       completion_date: null
     });
 
     // Update user stats
-    const userStats = await getCollectionData(COLLECTIONS.USER_STATS, [
-      { field: 'user_id', operator: '==', value: userId }
-    ]);
+    const userStatsSnapshot = await db.collection(COLLECTIONS.USER_STATS)
+      .where('user_id', '==', userId)
+      .get();
 
-    if (userStats.length > 0) {
-      const stats = userStats[0];
-      await updateDocument(COLLECTIONS.USER_STATS, stats.id, {
+    if (!userStatsSnapshot.empty) {
+      const statsDoc = userStatsSnapshot.docs[0];
+      const stats = firestoreToObject(statsDoc);
+      await db.collection(COLLECTIONS.USER_STATS).doc(stats.id).update({
         courses_enrolled: (stats.courses_enrolled || 0) + 1
       });
     }
@@ -1233,11 +1176,12 @@ app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) =
     const userId = req.user.id;
 
     // Get user's enrollments to find their courses
-    const enrollments = await getCollectionData(COLLECTIONS.ENROLLMENTS, [
-      { field: 'user_id', operator: '==', value: userId },
-      { field: 'status', operator: '==', value: 'active' }
-    ]);
+    const enrollmentsSnapshot = await db.collection(COLLECTIONS.ENROLLMENTS)
+      .where('user_id', '==', userId)
+      .where('status', '==', 'active')
+      .get();
 
+    const enrollments = enrollmentsSnapshot.docs.map(firestoreToObject);
     const courseIds = enrollments.map(e => e.course_id);
     
     if (courseIds.length === 0) {
@@ -1245,7 +1189,8 @@ app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) =
     }
 
     // Get assignments for these courses
-    const assignments = await getCollectionData(COLLECTIONS.ASSIGNMENTS);
+    const assignmentsSnapshot = await db.collection(COLLECTIONS.ASSIGNMENTS).get();
+    const assignments = assignmentsSnapshot.docs.map(firestoreToObject);
     const userAssignments = assignments.filter(assignment => 
       courseIds.includes(assignment.course_id)
     );
@@ -1253,14 +1198,16 @@ app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) =
     // Get submission data for each assignment
     const assignmentsWithSubmissions = await Promise.all(
       userAssignments.map(async (assignment) => {
-        const course = await getDocument(COLLECTIONS.COURSES, assignment.course_id);
+        const courseDoc = await db.collection(COLLECTIONS.COURSES).doc(assignment.course_id).get();
+        const course = firestoreToObject(courseDoc);
         
         // Get user's submission for this assignment
-        const submissions = await getCollectionData(COLLECTIONS.ASSIGNMENT_SUBMISSIONS, [
-          { field: 'assignment_id', operator: '==', value: assignment.id },
-          { field: 'user_id', operator: '==', value: userId }
-        ]);
+        const submissionsSnapshot = await db.collection(COLLECTIONS.ASSIGNMENT_SUBMISSIONS)
+          .where('assignment_id', '==', assignment.id)
+          .where('user_id', '==', userId)
+          .get();
 
+        const submissions = submissionsSnapshot.docs.map(firestoreToObject);
         const submission = submissions.length > 0 ? submissions[0] : null;
 
         return {
@@ -1299,71 +1246,6 @@ app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) =
   }
 });
 
-// Submit assignment
-app.post('/api/assignments/submit', authenticateToken, assignmentUpload.single('file'), async (req, res) => {
-  const { assignment_id, content } = req.body;
-  const file_path = req.file ? req.file.filename : null;
-  const userId = req.user.id;
-
-  if (!assignment_id) {
-    return res.status(400).json({ error: 'Assignment ID is required' });
-  }
-
-  if (!content && !file_path) {
-    return res.status(400).json({ error: 'Either content or file is required' });
-  }
-
-  try {
-    // Check if assignment exists and user is enrolled
-    const assignment = await getDocument(COLLECTIONS.ASSIGNMENTS, assignment_id);
-    if (!assignment) {
-      return res.status(404).json({ error: 'Assignment not found' });
-    }
-
-    // Check if user is enrolled in the course
-    const enrollments = await getCollectionData(COLLECTIONS.ENROLLMENTS, [
-      { field: 'user_id', operator: '==', value: userId },
-      { field: 'course_id', operator: '==', value: assignment.course_id },
-      { field: 'status', operator: '==', value: 'active' }
-    ]);
-
-    if (enrollments.length === 0) {
-      return res.status(403).json({ error: 'You are not enrolled in this course' });
-    }
-
-    // Check if already submitted
-    const existingSubmissions = await getCollectionData(COLLECTIONS.ASSIGNMENT_SUBMISSIONS, [
-      { field: 'assignment_id', operator: '==', value: assignment_id },
-      { field: 'user_id', operator: '==', value: userId }
-    ]);
-
-    if (existingSubmissions.length > 0) {
-      return res.status(400).json({ error: 'Assignment already submitted' });
-    }
-
-    // Create submission
-    const submissionId = await addDocument(COLLECTIONS.ASSIGNMENT_SUBMISSIONS, {
-      assignment_id: assignment_id,
-      user_id: userId,
-      content: content || '',
-      file_path: file_path,
-      submitted_at: Timestamp.now(),
-      status: 'submitted',
-      grade: null,
-      feedback: null
-    });
-
-    res.json({
-      success: true,
-      message: 'Assignment submitted successfully',
-      submission_id: submissionId
-    });
-  } catch (error) {
-    console.error('Error submitting assignment:', error);
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
 // ==================== CONTACT ROUTES ====================
 
 // Contact form endpoint
@@ -1385,18 +1267,20 @@ app.post('/api/contact', async (req, res) => {
     }
 
     // Insert contact form data
-    const contactId = await addDocument(COLLECTIONS.CONTACT_MESSAGES, {
+    const contactRef = db.collection(COLLECTIONS.CONTACT_MESSAGES).doc();
+    await contactRef.set({
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       email: email.trim(),
       phone: phone || null,
       company: company || null,
       message: message.trim(),
-      status: 'pending'
+      status: 'pending',
+      created_at: admin.firestore.FieldValue.serverTimestamp()
     });
 
     console.log('Contact message saved successfully:', {
-      id: contactId,
+      id: contactRef.id,
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       email: email.trim()
@@ -1404,7 +1288,7 @@ app.post('/api/contact', async (req, res) => {
 
     res.status(201).json({
       message: 'Contact message sent successfully',
-      contactId: contactId
+      contactId: contactRef.id
     });
 
   } catch (error) {
@@ -1450,8 +1334,9 @@ app.post('/api/enroll-request',
         return res.status(400).json({ error: 'Payment screenshot is required' });
       }
 
-      // Insert into database
-      const requestId = await addDocument(COLLECTIONS.COURSE_ENROLL_REQUESTS, {
+      // Insert into database using Admin SDK
+      const requestRef = db.collection(COLLECTIONS.COURSE_ENROLL_REQUESTS).doc();
+      await requestRef.set({
         user_id: userId,
         course_id: courseId,
         full_name: fullName,
@@ -1464,12 +1349,13 @@ app.post('/api/enroll-request',
         payment_method: paymentMethod,
         transaction_id: transactionId,
         payment_screenshot: `/uploads/payments/${req.file.filename}`,
-        status: 'pending'
+        status: 'pending',
+        created_at: admin.firestore.FieldValue.serverTimestamp()
       });
 
       res.status(201).json({
         message: 'Enrollment request submitted successfully',
-        requestId: requestId
+        requestId: requestRef.id
       });
 
     } catch (error) {
@@ -1485,29 +1371,29 @@ app.post('/api/enroll-request',
 app.get('/api/admin/dashboard-stats', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const [
-      totalUsers,
-      totalCourses,
-      totalEnrollments,
-      contactMessages,
-      serviceRequests
+      usersSnapshot,
+      coursesSnapshot,
+      enrollmentsSnapshot,
+      contactMessagesSnapshot,
+      serviceRequestsSnapshot
     ] = await Promise.all([
-      getCollectionData(COLLECTIONS.USERS),
-      getCollectionData(COLLECTIONS.COURSES, [{ field: 'is_active', operator: '==', value: true }]),
-      getCollectionData(COLLECTIONS.ENROLLMENTS),
-      getCollectionData(COLLECTIONS.CONTACT_MESSAGES),
-      getCollectionData(COLLECTIONS.SERVICE_REQUESTS, [{ field: 'status', operator: '==', value: 'pending' }])
+      db.collection(COLLECTIONS.USERS).get(),
+      db.collection(COLLECTIONS.COURSES).where('is_active', '==', true).get(),
+      db.collection(COLLECTIONS.ENROLLMENTS).get(),
+      db.collection(COLLECTIONS.CONTACT_MESSAGES).get(),
+      db.collection(COLLECTIONS.SERVICE_REQUESTS).where('status', '==', 'pending').get()
     ]);
 
     // Calculate revenue (mock calculation based on enrollments)
-    const revenue = totalEnrollments.length * 100; // Assuming ₹100 per enrollment
+    const revenue = enrollmentsSnapshot.size * 100; // Assuming ₹100 per enrollment
 
     res.json({
-      totalUsers: totalUsers.length,
-      totalCourses: totalCourses.length,
-      totalEnrollments: totalEnrollments.length,
+      totalUsers: usersSnapshot.size,
+      totalCourses: coursesSnapshot.size,
+      totalEnrollments: enrollmentsSnapshot.size,
       totalRevenue: revenue,
-      pendingContacts: contactMessages.filter(msg => msg.status === 'pending').length,
-      pendingServiceRequests: serviceRequests.length
+      pendingContacts: contactMessagesSnapshot.docs.filter(doc => doc.data().status === 'pending').length,
+      pendingServiceRequests: serviceRequestsSnapshot.size
     });
   } catch (error) {
     console.error('Error fetching admin stats:', error);
@@ -1524,29 +1410,29 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
     const status = req.query.status;
     const search = req.query.search;
 
-    let usersQuery = collection(db, COLLECTIONS.USERS);
+    let usersQuery = db.collection(COLLECTIONS.USERS);
     
     // Apply filters
     if (accountType && accountType !== 'all') {
-      usersQuery = query(usersQuery, where('account_type', '==', accountType));
+      usersQuery = usersQuery.where('account_type', '==', accountType);
     }
 
     if (status && status !== 'all') {
       const isActive = status === 'active';
-      usersQuery = query(usersQuery, where('is_active', '==', isActive));
+      usersQuery = usersQuery.where('is_active', '==', isActive);
     }
 
-    // Get all users first (Firestore doesn't have easy counting with filters)
-    const usersSnapshot = await getDocs(usersQuery);
+    // Get all users
+    const usersSnapshot = await usersQuery.get();
     let allUsers = usersSnapshot.docs.map(firestoreToObject);
 
     // Apply search filter
     if (search) {
       const searchLower = search.toLowerCase();
       allUsers = allUsers.filter(user => 
-        user.first_name.toLowerCase().includes(searchLower) ||
-        user.last_name.toLowerCase().includes(searchLower) ||
-        user.email.toLowerCase().includes(searchLower)
+        user.first_name?.toLowerCase().includes(searchLower) ||
+        user.last_name?.toLowerCase().includes(searchLower) ||
+        user.email?.toLowerCase().includes(searchLower)
       );
     }
 
@@ -1580,7 +1466,7 @@ app.get('/api/health', (req, res) => {
     status: 'OK',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    database: 'Firebase Firestore'
+    database: 'Firebase Firestore (Admin SDK)'
   });
 });
 
@@ -1590,7 +1476,7 @@ app.get('/api/info', (req, res) => {
     name: 'Padak Dashboard API',
     version: '1.0.0',
     environment: process.env.NODE_ENV || 'development',
-    database: 'Firebase Firestore',
+    database: 'Firebase Firestore (Admin SDK)',
     timestamp: new Date().toISOString()
   });
 });
@@ -1630,7 +1516,7 @@ app.use((err, req, res, next) => {
 app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🗄️  Database: Firebase Firestore`);
+  console.log(`🗄️  Database: Firebase Firestore (Admin SDK)`);
 });
 
 module.exports = app;
