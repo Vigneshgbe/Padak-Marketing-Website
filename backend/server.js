@@ -13,7 +13,7 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 // ==================== FIREBASE ADMIN INITIALIZATION ====================
-const admin = require('firebase-admin');
+const admin = require('firebase-admin'); 
 
 // Load service account key (you'll generate this from Firebase Console)
 const serviceAccount = require('./service-account-key.json'); // <-- YOU MUST CREATE THIS FILE
