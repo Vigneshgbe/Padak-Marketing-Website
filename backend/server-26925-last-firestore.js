@@ -12,20 +12,20 @@ const app = express();
 const port = process.env.PORT; // || 5000;
 
 // Firebase Admin SDK
-const admin = require('firebase-admin');
-const serviceAccount = {
-  "type": "service_account",
-  "project_id": "startup-dbs-1",
-  "private_key_id": "de0be163e99c7d6764ff42073fb0833e7ac9996f",
-  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCwbrTolOT3y0Rz\n85iSR69OD5iWsgdXVkUBDzvtipt3bsTiOgthOrcn2aNON5/liSACR6tkHcjiJw3W\nOSEA3Efx0vVd17s8ptKBiZWVdtfD5A0bA7jTnAeY7R4yiVZpkKzHr+ObO8mN4sdT\nKAR9aoSY+otCEiZdxrQV2eNJNSJIomj/Ez3D3kzY5Jx4GtjwprwxTNNO7YEYaI/T\n5nFFYjMzkSdXg4nLrlLocST/nZC0rcbXrra7+Gb4E9bFPRh8zgNN9ki/KVyJDdA8\nYPNUe36K3DmjoUko1bIBJLkIg32snVUXV9/b42p65V3UDNO+Pxe0KlQNF2c2u2DS\nviJJh2wVAgMBAAECggEAHKTcmiYSRmip5GlYC+e3fmTp0Q12Q6et7E4c3KP0OZ+y\nN0hVMKPnuICNEtXVD98DY1tfaBGt24mbpXwA77LTu18Ulve/Xkl3Q7CiqHFy9krA\nFfK0vyZF1X4puOqzLNBgPMtBmKJMRszar5V/pRz2CiAjG8b2k6L++c02KVyHBGOU\noalAQWOuN2QtJcpgK1+00nUVmVWQ5KwT8GQUW7UQ/NKiMsg3wWqu2GlgF28WRRdT\npGDh7J4/mc6hOHvhX7sWzBRpZUP3iDYBcDYwwtLoZfAqIe2xnJL9VFXbFKgNDTVY\nScoobVgIBBEvVKWPUgFvxLbcVryhjwALwILqptZIwQKBgQDipRbn4gZCrtfn3tu1\nN/0UTCabnzhlMnlmFLwa7Q8sSGDRwTM51xS5GNh/EEhmGwISBkPcjoOwax2Is7+n\nZbuV78IdhojjiYv54XUIHSTlmOvi6/oReUv7ZnnVFZmmXBImH5fqiSk3k3Vsvh3m\n2UE/iny4R0TIE4Ml6cWW8VICGwKBgQDHSLacdZMkE0d+2Vq2o34mfuVZmeGEvyA7\nJ66mbB2YxiUxp8V46iW4iJC+jZJuQM1fda/+bJXpK/6CQIZxlKeitIz2oiuFaKlB\nnC5+cJwBcSfFiUT3iO5VzWfrx7jo5XdrCvBpBC8ZNJflZYC7DWT4vJMFT2xoMWy2\nFaiWqKStjwKBgQDTQzHbyhst007cCydff6X/YpBmZX8rDWaN2ewRaUHIdFsTinSW\niL7/XoKHxoTF8Iz4gjCFia6FJwOrpmmSv0ihFZEq9nnpJxB8R0VQ3+HBxs6ygmZi\nHV/PIpGUJ4NGx/H+6VoxO9NYw7IkP/8dbQveD9f76iraGR4ZnBQbhCx+WwKBgFVP\n850XWF5hQoIzWnpFk4O3X0f0cG77wziPzFzCfAkjClkvkYIp+uv8yrpIsR8x7rmn\nECjDI4omo1XveZ62HO2yjYYn9qmuHIdR7TWDz8VuQ7B1C2lM3Xst7AcsASTy1ySk\nEjdi6ybHNR+nTGzHVyqE0Au97JLOVdO9gea9W4JRAoGBALmqd+vUrR/Y4qYEpkYf\nfLG9zCJTdhEuOc7GG2/9Yb6RMKLaY/bfSFOiCGNiExpMickR8A/7xLlq/M220vZL\n00IzzxwbbeNXdTTb3Zj0HeirgE9e2Nv4u3yoV/d9UKkv1YllzHi01zfSC/OuPMmu\nuKyQiQipXroHcGcbIdIsqQhH\n-----END PRIVATE KEY-----\n",
-  "client_email": "firebase-adminsdk-fbsvc@startup-dbs-1.iam.gserviceaccount.com",
-  "client_id": "110678261411363611678",
-  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-  "token_uri": "https://oauth2.googleapis.com/token",
-  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40startup-dbs-1.iam.gserviceaccount.com",
-  "universe_domain": "googleapis.com"
-}
+// const admin = require('firebase-admin');
+// const serviceAccount = {
+//   "type": "service_account",
+//   "project_id": "startup-dbs-1",
+//   "private_key_id": "de0be163e99c7d6764ff42073fb0833e7ac9996f",
+//   "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCwbrTolOT3y0Rz\n85iSR69OD5iWsgdXVkUBDzvtipt3bsTiOgthOrcn2aNON5/liSACR6tkHcjiJw3W\nOSEA3Efx0vVd17s8ptKBiZWVdtfD5A0bA7jTnAeY7R4yiVZpkKzHr+ObO8mN4sdT\nKAR9aoSY+otCEiZdxrQV2eNJNSJIomj/Ez3D3kzY5Jx4GtjwprwxTNNO7YEYaI/T\n5nFFYjMzkSdXg4nLrlLocST/nZC0rcbXrra7+Gb4E9bFPRh8zgNN9ki/KVyJDdA8\nYPNUe36K3DmjoUko1bIBJLkIg32snVUXV9/b42p65V3UDNO+Pxe0KlQNF2c2u2DS\nviJJh2wVAgMBAAECggEAHKTcmiYSRmip5GlYC+e3fmTp0Q12Q6et7E4c3KP0OZ+y\nN0hVMKPnuICNEtXVD98DY1tfaBGt24mbpXwA77LTu18Ulve/Xkl3Q7CiqHFy9krA\nFfK0vyZF1X4puOqzLNBgPMtBmKJMRszar5V/pRz2CiAjG8b2k6L++c02KVyHBGOU\noalAQWOuN2QtJcpgK1+00nUVmVWQ5KwT8GQUW7UQ/NKiMsg3wWqu2GlgF28WRRdT\npGDh7J4/mc6hOHvhX7sWzBRpZUP3iDYBcDYwwtLoZfAqIe2xnJL9VFXbFKgNDTVY\nScoobVgIBBEvVKWPUgFvxLbcVryhjwALwILqptZIwQKBgQDipRbn4gZCrtfn3tu1\nN/0UTCabnzhlMnlmFLwa7Q8sSGDRwTM51xS5GNh/EEhmGwISBkPcjoOwax2Is7+n\nZbuV78IdhojjiYv54XUIHSTlmOvi6/oReUv7ZnnVFZmmXBImH5fqiSk3k3Vsvh3m\n2UE/iny4R0TIE4Ml6cWW8VICGwKBgQDHSLacdZMkE0d+2Vq2o34mfuVZmeGEvyA7\nJ66mbB2YxiUxp8V46iW4iJC+jZJuQM1fda/+bJXpK/6CQIZxlKeitIz2oiuFaKlB\nnC5+cJwBcSfFiUT3iO5VzWfrx7jo5XdrCvBpBC8ZNJflZYC7DWT4vJMFT2xoMWy2\nFaiWqKStjwKBgQDTQzHbyhst007cCydff6X/YpBmZX8rDWaN2ewRaUHIdFsTinSW\niL7/XoKHxoTF8Iz4gjCFia6FJwOrpmmSv0ihFZEq9nnpJxB8R0VQ3+HBxs6ygmZi\nHV/PIpGUJ4NGx/H+6VoxO9NYw7IkP/8dbQveD9f76iraGR4ZnBQbhCx+WwKBgFVP\n850XWF5hQoIzWnpFk4O3X0f0cG77wziPzFzCfAkjClkvkYIp+uv8yrpIsR8x7rmn\nECjDI4omo1XveZ62HO2yjYYn9qmuHIdR7TWDz8VuQ7B1C2lM3Xst7AcsASTy1ySk\nEjdi6ybHNR+nTGzHVyqE0Au97JLOVdO9gea9W4JRAoGBALmqd+vUrR/Y4qYEpkYf\nfLG9zCJTdhEuOc7GG2/9Yb6RMKLaY/bfSFOiCGNiExpMickR8A/7xLlq/M220vZL\n00IzzxwbbeNXdTTb3Zj0HeirgE9e2Nv4u3yoV/d9UKkv1YllzHi01zfSC/OuPMmu\nuKyQiQipXroHcGcbIdIsqQhH\n-----END PRIVATE KEY-----\n",
+//   "client_email": "firebase-adminsdk-fbsvc@startup-dbs-1.iam.gserviceaccount.com",
+//   "client_id": "110678261411363611678",
+//   "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+//   "token_uri": "https://oauth2.googleapis.com/token",
+//   "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+//   "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40startup-dbs-1.iam.gserviceaccount.com",
+//   "universe_domain": "googleapis.com"
+// }
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
