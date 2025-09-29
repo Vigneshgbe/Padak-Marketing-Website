@@ -3322,9 +3322,6 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
     const userId = req.params.id;
     const { firstName, lastName, email, phone, accountType, isActive, company, website, bio } = req.body;
 
-    console.log('Updating user:', userId);
-    console.log('Update data:', req.body);
-
     const userDoc = await db.collection('users').doc(userId).get();
     if (!userDoc.exists) {
       return res.status(404).json({ error: 'User not found' });
@@ -3384,8 +3381,6 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
     const userId = req.params.id;
     const adminId = req.user.id || req.user.userId;
 
-    console.log('Deleting user:', userId, 'by admin:', adminId);
-
     if (userId === adminId) {
       return res.status(400).json({ error: 'You cannot delete your own account' });
     }
@@ -3415,8 +3410,6 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
   try {
     const userId = req.params.id;
     const { password } = req.body;
-
-    console.log('Resetting password for user:', userId);
 
     if (!password) {
       return res.status(400).json({ error: 'Password is required' });

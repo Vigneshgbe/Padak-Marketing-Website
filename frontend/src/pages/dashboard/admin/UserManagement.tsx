@@ -1,4 +1,3 @@
-// src/pages/dashboard/admin/UserManagement.tsx
 import React, { useState, useEffect } from 'react';
 import { Edit, Trash2, Plus, Search, Filter, Key } from 'lucide-react';
 import DataTable from '../../../components/admin/DataTable';
@@ -153,17 +152,29 @@ const UserManagement: React.FC = () => {
     return errors;
   };
 
-  const getPasswordStrength = (password: string): { strength: string; color: string } => {
-    if (password.length === 0) return { strength: "", color: "" };
+  const getPasswordStrength = (password: string): { strength: string; color: string; feedback: string[] } => {
+    if (password.length === 0) return { strength: "", color: "", feedback: [] };
     
     const errors = validatePassword(password);
     
     if (errors.length === 0) {
-      return { strength: "Strong", color: "text-green-600 dark:text-green-400" };
+      return { 
+        strength: "Strong", 
+        color: "text-green-600 dark:text-green-400",
+        feedback: ["Password meets all requirements"]
+      };
     } else if (errors.length <= 2) {
-      return { strength: "Medium", color: "text-yellow-600 dark:text-yellow-400" };
+      return { 
+        strength: "Medium", 
+        color: "text-yellow-600 dark:text-yellow-400",
+        feedback: errors
+      };
     } else {
-      return { strength: "Weak", color: "text-red-600 dark:text-red-400" };
+      return { 
+        strength: "Weak", 
+        color: "text-red-600 dark:text-red-400",
+        feedback: errors
+      };
     }
   };
 
@@ -311,8 +322,6 @@ const UserManagement: React.FC = () => {
       }
 
       console.log('Making request to:', url);
-      console.log('Request method:', method);
-      console.log('Request body:', body);
 
       const response = await fetch(url, {
         method,
@@ -330,7 +339,6 @@ const UserManagement: React.FC = () => {
         if (contentType && contentType.includes('application/json')) {
           const errorData = await response.json();
           errorMessage = errorData.error || errorMessage;
-          console.error('JSON error response:', errorData);
         } else {
           const textError = await response.text();
           console.error('Non-JSON error response:', textError);
@@ -387,7 +395,6 @@ const UserManagement: React.FC = () => {
         if (contentType && contentType.includes('application/json')) {
           const errorData = await response.json();
           errorMessage = errorData.error || errorMessage;
-          console.error('JSON error response:', errorData);
         } else {
           const textError = await response.text();
           console.error('Non-JSON error response:', textError);
@@ -691,6 +698,13 @@ const UserManagement: React.FC = () => {
               {formData.password && passwordStrength.strength && (
                 <div className={`text-sm mt-1 ${passwordStrength.color}`}>
                   Password strength: {passwordStrength.strength}
+                  {passwordStrength.feedback.length > 0 && passwordStrength.strength !== "Strong" && (
+                    <ul className="mt-1 ml-4 text-xs list-disc">
+                      {passwordStrength.feedback.map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               )}
               {formErrors.password && (
@@ -835,10 +849,18 @@ const UserManagement: React.FC = () => {
               }`}
               placeholder="Must include uppercase, lowercase, number, special character"
               disabled={isSubmitting}
+              autoFocus
             />
             {formData.password && passwordStrength.strength && (
               <div className={`text-sm mt-1 ${passwordStrength.color}`}>
                 Password strength: {passwordStrength.strength}
+                {passwordStrength.feedback.length > 0 && passwordStrength.strength !== "Strong" && (
+                  <ul className="mt-1 ml-4 text-xs list-disc">
+                    {passwordStrength.feedback.map((item, index) => (
+                      <li key={index}>{item}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
             {formErrors.password && (
