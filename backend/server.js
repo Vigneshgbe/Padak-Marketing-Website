@@ -1,3 +1,4 @@
+// server.js - Firebase Client SDK Version
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -7,47 +8,68 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const app = express();
-const port = process.env.PORT; // || 5000;
 
-// For Firebase JS SDK
+// Firebase Client SDK
 const { initializeApp } = require('firebase/app');
-const { getFirestore, collection, addDoc, getDocs, doc, setDoc, updateDoc, deleteDoc, getDoc, query, where, orderBy, limit: fsLimit, startAfter, arrayUnion, arrayRemove, increment, Timestamp } = require('firebase/firestore');
+const { 
+  getFirestore, 
+  collection, 
+  doc, 
+  getDoc, 
+  getDocs, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  orderBy, 
+  limit, 
+  startAfter,
+  Timestamp,
+  increment,
+  arrayUnion,
+  paymentScreenshotUpload,
+  arrayRemove 
+} = require('firebase/firestore');
 
+const app = express();
+const port = process.env.PORT || 5000;
+
+// Firebase Configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyA4uHspTDS-8kIT2HsmPFGL9JNNBvI6NI4",
-  authDomain: "startup-dbs-1.firebaseapp.com",
-  databaseURL: "https://startup-dbs-1-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "startup-dbs-1",
-  storageBucket: "startup-dbs-1.firebasestorage.app",
-  messagingSenderId: "70939047801",
-  appId: "1:70939047801:web:08a6a9d17f6b63af9261a8",
-  measurementId: "G-KQ59313LSD"
+  apiKey: process.env.FIREBASE_API_KEY,
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.FIREBASE_PROJECT_ID,
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.FIREBASE_APP_ID
 };
 
+// Initialize Firebase
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 
-// JWT Secret
+// JWT Secret with longer expiration
 const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-secret-key';
+const JWT_EXPIRY = '7d'; // 7 days default
+const JWT_REFRESH_EXPIRY = '30d'; // 30 days for refresh token
 
 // Create necessary directories
-const assignmentsDir = path.join(__dirname, 'uploads', 'assignments');
-if (!fs.existsSync(assignmentsDir)) fs.mkdirSync(assignmentsDir, { recursive: true });
+const createDir = (dirPath) => {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+};
 
-const avatarsDir = path.join(__dirname, 'uploads', 'avatars');
-if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
+createDir(path.join(__dirname, 'uploads', 'assignments'));
+createDir(path.join(__dirname, 'uploads', 'avatars'));
+createDir(path.join(__dirname, 'uploads', 'payments'));
+createDir(path.join(__dirname, 'public', 'uploads', 'social'));
 
-//Newly added after new resourse payment proof function multer
-const paymentsDir = path.join(__dirname, 'uploads', 'payments');
-if (!fs.existsSync(paymentsDir)) fs.mkdirSync(paymentsDir, { recursive: true });
-
-// ===== AVATAR MULTER CONFIGURATION  =====
+// ===== MULTER CONFIGURATIONS =====
 const avatarStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, avatarsDir);
-  },
-  filename: function (req, file, cb) {
+  destination: (req, file, cb) => cb(null, path.join(__dirname, 'uploads', 'avatars')),
+  filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, 'avatar-' + uniqueSuffix + path.extname(file.originalname));
   }
@@ -55,8 +77,8 @@ const avatarStorage = multer.diskStorage({
 
 const avatarUpload = multer({
   storage: avatarStorage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-  fileFilter: function (req, file, cb) {
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);
     } else {
@@ -65,16 +87,9 @@ const avatarUpload = multer({
   }
 });
 
-// ===== ASSIGNMENT MULTER CONFIGURATION =====
 const assignmentStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, 'uploads', 'assignments');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
+  destination: (req, file, cb) => cb(null, path.join(__dirname, 'uploads', 'assignments')),
+  filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, `assignment-${uniqueSuffix}${path.extname(file.originalname)}`);
   }
@@ -82,65 +97,29 @@ const assignmentStorage = multer.diskStorage({
 
 const assignmentUpload = multer({
   storage: assignmentStorage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
-  fileFilter: function (req, file, cb) {
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
     const allowedTypes = ['.pdf', '.doc', '.docx', '.txt', '.zip', '.rar'];
     const fileExt = path.extname(file.originalname).toLowerCase();
     if (allowedTypes.includes(fileExt)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, TXT, ZIP, RAR files are allowed.'));
+      cb(new Error('Invalid file type'));
     }
   }
 });
 
-// ===== PAYMENT SCREENSHOT MULTER CONFIGURATION =====
-const paymentScreenshotStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, 'uploads', 'payments');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
+const paymentStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, path.join(__dirname, 'uploads', 'payments')),
+  filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, `payment-${uniqueSuffix}${path.extname(file.originalname)}`);
   }
 });
 
-const paymentScreenshotUpload = multer({
-  storage: paymentScreenshotStorage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-  fileFilter: function (req, file, cb) {
-    const allowedTypes = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
-    const fileExt = path.extname(file.originalname).toLowerCase();
-    if (allowedTypes.includes(fileExt)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Invalid file type. Only images are allowed.'));
-    }
-  }
-});
-
-// ===== PAYMENT PROOF RESOURCES NEW MULTER CONFIGURATION =====
-const paymentProofStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, 'uploads', 'payments');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, `payment-proof-${uniqueSuffix}${path.extname(file.originalname)}`);
-  }
-});
-
-const paymentProofUpload = multer({
-  storage: paymentProofStorage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+const paymentUpload = multer({
+  storage: paymentStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
       cb(null, true);
@@ -150,11 +129,30 @@ const paymentProofUpload = multer({
   }
 });
 
-// ===== CORS configuration ======
-const allowedOrigins = [process.env.FRONTEND_URL].filter(Boolean);
+const socialStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, path.join(__dirname, 'public', 'uploads', 'social')),
+  filename: (req, file, cb) => {
+    cb(null, `social-${Date.now()}${path.extname(file.originalname)}`);
+  }
+});
 
+const socialUpload = multer({
+  storage: socialStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const filetypes = /jpeg|jpg|png|gif/;
+    const mimetype = filetypes.test(file.mimetype);
+    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+    if (mimetype && extname) {
+      return cb(null, true);
+    }
+    cb(new Error('Only image files allowed'));
+  }
+});
+
+// ===== CORS Configuration =====
 app.use(cors({
-  origin: [process.env.FRONTEND_URL], 
+  origin: process.env.FRONTEND_URL || '*',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -163,48 +161,45 @@ app.use(cors({
 // Middleware
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
-app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/uploads/avatars', express.static(path.join(__dirname, 'uploads', 'avatars')));
+app.use('/uploads/social', express.static(path.join(__dirname, 'public', 'uploads', 'social')));
 
-// ======== AUTHENTICATION MIDDLEWARE ========
-
-// Request logging middleware
+// Request logging
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
 
-// JWT Authentication middleware
+// ===== AUTHENTICATION MIDDLEWARE =====
 const authenticateToken = async (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ error: 'Access token required, Please log in again | New user Create account' });
-  }
-
   try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+      return res.status(401).json({ error: 'Access token required' });
+    }
+
     const decoded = jwt.verify(token, JWT_SECRET);
+    
     const userRef = doc(db, 'users', decoded.userId);
-    const userSnap = await getDoc(userRef);
-
-    if (!userSnap.exists()) {
-      return res.status(401).json({ error: 'Invalid token' });
+    const userDoc = await getDoc(userRef);
+    
+    if (!userDoc.exists() || !userDoc.data().is_active) {
+      return res.status(401).json({ error: 'Invalid or inactive user' });
     }
-
-    const user = userSnap.data();
-    if (!user.is_active) {
-      return res.status(401).json({ error: 'Invalid token' });
-    }
-
-    req.user = { id: userSnap.id, ...user };
+    
+    req.user = { ...userDoc.data(), id: decoded.userId };
     next();
   } catch (error) {
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED' });
+    }
     return res.status(403).json({ error: 'Invalid token' });
   }
 };
 
-// Admin middleware
 const requireAdmin = (req, res, next) => {
   if (req.user.account_type !== 'admin') {
     return res.status(403).json({ error: 'Admin access required' });
@@ -214,42 +209,36 @@ const requireAdmin = (req, res, next) => {
 
 // ==================== AUTH ROUTES ====================
 
-// Register endpoint
+// Register
 app.post('/api/register', async (req, res) => {
-  const { firstName, lastName, email, phone, password, accountType } = req.body;
-
   try {
-    // Validate required fields
+    const { firstName, lastName, email, phone, password, accountType } = req.body;
+
     if (!firstName || !lastName || !email || !password) {
-      return res.status(400).json({
-        error: 'First name, last name, email, and password are required'
-      });
+      return res.status(400).json({ error: 'All required fields must be provided' });
     }
 
-    // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: 'Please provide a valid email address' });
+      return res.status(400).json({ error: 'Invalid email format' });
     }
 
-    // Validate password strength
     if (password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
-    // Check if email exists
-    const q = query(collection(db, 'users'), where('email', '==', email));
-    const querySnapshot = await getDocs(q);
-    if (!querySnapshot.empty) {
+    const usersRef = collection(db, 'users');
+    const q = query(usersRef, where('email', '==', email.trim()));
+    const existingUsers = await getDocs(q);
+
+    if (!existingUsers.empty) {
       return res.status(400).json({ error: 'Email already exists' });
     }
 
-    // Hash password
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-    // Insert new user
-    const userRef = await addDoc(collection(db, 'users'), {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const userRef = doc(collection(db, 'users'));
+    
+    await setDoc(userRef, {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       email: email.trim(),
@@ -258,19 +247,12 @@ app.post('/api/register', async (req, res) => {
       account_type: accountType || 'student',
       is_active: true,
       email_verified: false,
-      profile_image: null,
-      company: null,
-      website: null,
-      bio: null,
       created_at: Timestamp.now(),
       updated_at: Timestamp.now()
     });
 
-    const userId = userRef.id;
-
-    // Create user stats entry
-    await addDoc(collection(db, 'user_stats'), {
-      user_id: userId,
+    const statsRef = doc(db, 'user_stats', userRef.id);
+    await setDoc(statsRef, {
       courses_enrolled: 0,
       courses_completed: 0,
       certificates_earned: 0,
@@ -278,52 +260,47 @@ app.post('/api/register', async (req, res) => {
       last_activity: Timestamp.now()
     });
 
-    console.log('User registered successfully:', { userId, email });
     res.status(201).json({
       message: 'User registered successfully',
-      userId
+      userId: userRef.id
     });
-
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Login endpoint
+// Login with extended token expiry
 app.post('/api/login', async (req, res) => {
-  const { email, password, rememberMe } = req.body;
-
   try {
-    // Validate input
+    const { email, password, rememberMe } = req.body;
+
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    // Check if user exists
-    const q = query(collection(db, 'users'), where('email', '==', email), where('is_active', '==', true));
-    const querySnapshot = await getDocs(q);
+    const usersRef = collection(db, 'users');
+    const q = query(usersRef, where('email', '==', email), where('is_active', '==', true));
+    const usersSnap = await getDocs(q);
 
-    if (querySnapshot.empty) {
-      return res.status(404).json({ error: 'No account found with this email' });
+    if (usersSnap.empty) {
+      return res.status(404).json({ error: 'No account found' });
     }
 
-    const userDoc = querySnapshot.docs[0];
+    const userDoc = usersSnap.docs[0];
     const user = userDoc.data();
-    user.id = userDoc.id;
+    const userId = userDoc.id;
 
-    // Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
 
     if (!isPasswordValid) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // Generate JWT token
-    const tokenExpiry = rememberMe ? '30d' : '1d';
+    const tokenExpiry = rememberMe ? JWT_REFRESH_EXPIRY : JWT_EXPIRY;
     const token = jwt.sign(
       {
-        userId: user.id,
+        userId: userId,
         email: user.email,
         accountType: user.account_type
       },
@@ -331,19 +308,17 @@ app.post('/api/login', async (req, res) => {
       { expiresIn: tokenExpiry }
     );
 
-    // Update last login timestamp
-    await updateDoc(doc(db, 'users', user.id), {
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
       updated_at: Timestamp.now()
     });
 
-    console.log('User logged in successfully:', { userId: user.id, email: user.email });
-
-    // Send success response
     res.status(200).json({
       message: 'Login successful',
       token: token,
+      expiresIn: tokenExpiry,
       user: {
-        id: user.id,
+        id: userId,
         firstName: user.first_name,
         lastName: user.last_name,
         email: user.email,
@@ -354,51 +329,40 @@ app.post('/api/login', async (req, res) => {
         website: user.website,
         bio: user.bio,
         isActive: user.is_active,
-        emailVerified: user.email_verified,
-        createdAt: user.created_at,
-        updatedAt: user.updated_at
+        emailVerified: user.email_verified
       }
     });
-
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Get current user profile
-app.get('/api/auth/me', authenticateToken, async (req, res) => {
-  try {
-    const user = req.user;
-    res.json({
-      id: user.id,
-      firstName: user.first_name,
-      lastName: user.last_name,
-      email: user.email,
-      phone: user.phone,
-      accountType: user.account_type,
-      profileImage: user.profile_image,
-      company: user.company,
-      website: user.website,
-      bio: user.bio,
-      isActive: user.is_active,
-      emailVerified: user.email_verified,
-      createdAt: user.created_at,
-      updatedAt: user.updated_at
-    });
-  } catch (error) {
-    console.error('Get profile error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
+// Get current user
+app.get('/api/auth/me', authenticateToken, (req, res) => {
+  res.json({
+    id: req.user.id,
+    firstName: req.user.first_name,
+    lastName: req.user.last_name,
+    email: req.user.email,
+    phone: req.user.phone,
+    accountType: req.user.account_type,
+    profileImage: req.user.profile_image,
+    company: req.user.company,
+    website: req.user.website,
+    bio: req.user.bio,
+    isActive: req.user.is_active,
+    emailVerified: req.user.email_verified
+  });
 });
 
-// Update user profile
+// Update profile
 app.put('/api/auth/profile', authenticateToken, async (req, res) => {
   try {
     const { firstName, lastName, phone, company, website, bio } = req.body;
-    const userId = req.user.id;
+    const userRef = doc(db, 'users', req.user.id);
 
-    await updateDoc(doc(db, 'users', userId), {
+    await updateDoc(userRef, {
       first_name: firstName,
       last_name: lastName,
       phone: phone,
@@ -408,13 +372,11 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
       updated_at: Timestamp.now()
     });
 
-    // Get updated user data
-    const updatedUserSnap = await getDoc(doc(db, 'users', userId));
-    const user = updatedUserSnap.data();
-    user.id = userId;
+    const updatedDoc = await getDoc(userRef);
+    const user = updatedDoc.data();
 
     res.json({
-      id: user.id,
+      id: req.user.id,
       firstName: user.first_name,
       lastName: user.last_name,
       email: user.email,
@@ -425,72 +387,57 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
       website: user.website,
       bio: user.bio,
       isActive: user.is_active,
-      emailVerified: user.email_verified,
-      createdAt: user.created_at,
-      updatedAt: user.updated_at
+      emailVerified: user.email_verified
     });
-
   } catch (error) {
     console.error('Update profile error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Upload avatar (UNIFIED)
+// Upload avatar
 app.post('/api/auth/avatar', authenticateToken, (req, res, next) => {
-  // Handle multer errors properly
-  avatarUpload.single('avatar')(req, res, (err) => {
+  avatarUpload.single('avatar')(req, res, async (err) => {
     if (err) {
       return res.status(400).json({ error: err.message });
     }
-    next();
-  });
-}, async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
 
-    const userId = req.user.id;
-    const profileImage = `/uploads/avatars/${req.file.filename}`;
-
-    // Delete old avatar if exists
-    if (req.user.profile_image) {
-      const oldFilename = path.basename(req.user.profile_image);
-      const oldPath = path.join(avatarsDir, oldFilename);
-      if (fs.existsSync(oldPath)) {
-        fs.unlinkSync(oldPath);
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
       }
+
+      const profileImage = `/uploads/avatars/${req.file.filename}`;
+      
+      if (req.user.profile_image) {
+        const oldPath = path.join(__dirname, 'uploads', 'avatars', path.basename(req.user.profile_image));
+        if (fs.existsSync(oldPath)) {
+          fs.unlinkSync(oldPath);
+        }
+      }
+
+      const userRef = doc(db, 'users', req.user.id);
+      await updateDoc(userRef, {
+        profile_image: profileImage,
+        updated_at: Timestamp.now()
+      });
+
+      res.status(200).send(profileImage);
+    } catch (error) {
+      console.error('Avatar upload error:', error);
+      res.status(500).json({ error: 'Server error' });
     }
-
-    await updateDoc(doc(db, 'users', userId), {
-      profile_image: profileImage,
-      updated_at: Timestamp.now()
-    });
-
-    // Send success response with plain text
-    res.status(200).send(profileImage);
-
-  } catch (error) {
-    console.error('Avatar upload error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
+  });
 });
 
-// ==================== DASHBOARD ROUTES ====================
-
-// Get user stats
+// Dashboard stats
 app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const statsRef = doc(db, 'user_stats', req.user.id);
+    const statsDoc = await getDoc(statsRef);
 
-    const statsQuery = query(collection(db, 'user_stats'), where('user_id', '==', userId));
-    const statsSnapshot = await getDocs(statsQuery);
-
-    if (statsSnapshot.empty) {
-      // Create default stats if not exists
-      await addDoc(collection(db, 'user_stats'), {
-        user_id: userId,
+    if (!statsDoc.exists()) {
+      await setDoc(statsRef, {
         courses_enrolled: 0,
         courses_completed: 0,
         certificates_earned: 0,
@@ -498,29 +445,61 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
         last_activity: Timestamp.now()
       });
 
-      res.json({
+      return res.json({
         coursesEnrolled: 0,
         coursesCompleted: 0,
         certificatesEarned: 0,
         learningStreak: 0,
         lastActivity: new Date().toISOString()
       });
-    } else {
-      const userStats = statsSnapshot.docs[0].data();
-      res.json({
-        coursesEnrolled: userStats.courses_enrolled,
-        coursesCompleted: userStats.courses_completed,
-        certificatesEarned: userStats.certificates_earned,
-        learningStreak: userStats.learning_streak,
-        lastActivity: userStats.last_activity.toDate().toISOString()
-      });
     }
 
+    const stats = statsDoc.data();
+    res.json({
+      coursesEnrolled: stats.courses_enrolled,
+      coursesCompleted: stats.courses_completed,
+      certificatesEarned: stats.certificates_earned,
+      learningStreak: stats.learning_streak,
+      lastActivity: stats.last_activity
+    });
   } catch (error) {
     console.error('Get stats error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
+
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    error: 'Endpoint not found',
+    path: req.path,
+    method: req.method
+  });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ error: 'File upload error: ' + err.message });
+  }
+
+  res.status(500).json({
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+  });
+});
+
 
 // =================================================================
 // ============== ENHANCED SOCIAL FEED FUNCTIONALITY ===============
@@ -532,28 +511,28 @@ if (!fs.existsSync(socialUploadDir)) {
   fs.mkdirSync(socialUploadDir, { recursive: true });
 }
 
-const socialStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, socialUploadDir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, `social-${Date.now()}${path.extname(file.originalname)}`);
-  },
-});
+// const socialStorage = multer.diskStorage({
+//   destination: (req, file, cb) => {
+//     cb(null, socialUploadDir);
+//   },
+//   filename: (req, file, cb) => {
+//     cb(null, `social-${Date.now()}${path.extname(file.originalname)}`);
+//   },
+// });
 
-const socialUpload = multer({
-  storage: socialStorage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-  fileFilter: (req, file, cb) => {
-    const filetypes = /jpeg|jpg|png|gif/;
-    const mimetype = filetypes.test(file.mimetype);
-    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-    if (mimetype && extname) {
-      return cb(null, true);
-    }
-    cb(new Error('Error: File upload only supports the following filetypes - ' + filetypes));
-  },
-}).single('image');
+// const socialUpload = multer({
+//   storage: socialStorage,
+//   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+//   fileFilter: (req, file, cb) => {
+//     const filetypes = /jpeg|jpg|png|gif/;
+//     const mimetype = filetypes.test(file.mimetype);
+//     const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+//     if (mimetype && extname) {
+//       return cb(null, true);
+//     }
+//     cb(new Error('Error: File upload only supports the following filetypes - ' + filetypes));
+//   },
+// }).single('image');
 
 // Helper function to get full URL for images (SIMPLIFIED)
 const getFullImageUrl = (req, imagePath) => {
@@ -1841,71 +1820,71 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   }
 });
 
-// ==================== COURSE ENROLLMENT REQUESTS ====================
-app.post('/api/enroll-request', 
-  authenticateToken, 
-  paymentScreenshotUpload.single('paymentScreenshot'), 
-  async (req, res) => {
-    try {
-      const userId = req.user ? req.user.id : null;
-      const {
-        courseId,
-        fullName,
-        email,
-        phone,
-        address,
-        city,
-        state,
-        pincode,
-        paymentMethod,
-        transactionId
-      } = req.body;
+// // ==================== COURSE ENROLLMENT REQUESTS ====================
+// app.post('/api/enroll-request', 
+//   authenticateToken, 
+//   paymentScreenshotUpload.single('paymentScreenshot'), 
+//   async (req, res) => {
+//     try {
+//       const userId = req.user ? req.user.id : null;
+//       const {
+//         courseId,
+//         fullName,
+//         email,
+//         phone,
+//         address,
+//         city,
+//         state,
+//         pincode,
+//         paymentMethod,
+//         transactionId
+//       } = req.body;
 
-      // Validate required fields
-      const requiredFields = ['courseId', 'fullName', 'email', 'phone', 'address', 
-                             'city', 'state', 'pincode', 'paymentMethod', 'transactionId'];
+//       // Validate required fields
+//       const requiredFields = ['courseId', 'fullName', 'email', 'phone', 'address', 
+//                              'city', 'state', 'pincode', 'paymentMethod', 'transactionId'];
       
-      const missingFields = requiredFields.filter(field => !req.body[field]);
+//       const missingFields = requiredFields.filter(field => !req.body[field]);
       
-      if (missingFields.length > 0) {
-        return res.status(400).json({ 
-          error: `Missing required fields: ${missingFields.join(', ')}`,
-          missingFields
-        });
-      }
+//       if (missingFields.length > 0) {
+//         return res.status(400).json({ 
+//           error: `Missing required fields: ${missingFields.join(', ')}`,
+//           missingFields
+//         });
+//       }
 
-      if (!req.file) {
-        return res.status(400).json({ error: 'Payment screenshot is required' });
-      }
+//       if (!req.file) {
+//         return res.status(400).json({ error: 'Payment screenshot is required' });
+//       }
 
-      // Insert into database
-      const requestRef = await addDoc(collection(db, 'course_enroll_requests'), {
-        user_id: userId,
-        course_id: courseId,
-        full_name: fullName,
-        email: email,
-        phone: phone,
-        address: address,
-        city: city,
-        state: state,
-        pincode: pincode,
-        payment_method: paymentMethod,
-        transaction_id: transactionId,
-        payment_screenshot: `/uploads/payments/${req.file.filename}`,
-        created_at: Timestamp.now()
-      });
+//       // Insert into database
+//       const requestRef = await addDoc(collection(db, 'course_enroll_requests'), {
+//         user_id: userId,
+//         course_id: courseId,
+//         full_name: fullName,
+//         email: email,
+//         phone: phone,
+//         address: address,
+//         city: city,
+//         state: state,
+//         pincode: pincode,
+//         payment_method: paymentMethod,
+//         transaction_id: transactionId,
+//         payment_screenshot: `/uploads/payments/${req.file.filename}`,
+//         created_at: Timestamp.now()
+//       });
 
-      res.status(201).json({
-        message: 'Enrollment request submitted successfully',
-        requestId: requestRef.id
-      });
+//       res.status(201).json({
+//         message: 'Enrollment request submitted successfully',
+//         requestId: requestRef.id
+//       });
 
-    } catch (error) {
-      console.error('Enrollment request error:', error);
-      res.status(500).json({ error: 'Server error', details: error.message }); 
-    }
-  }
-);
+//     } catch (error) {
+//       console.error('Enrollment request error:', error);
+//       res.status(500).json({ error: 'Server error', details: error.message }); 
+//     }
+//   }
+// );
 
 // ==================== COURSES ROUTES ====================
 
