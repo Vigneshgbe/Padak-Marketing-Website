@@ -1,4 +1,3 @@
-// server.js
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -9,54 +8,68 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const app = express();
-const port = process.env.PORT || 5000;
+const port = process.env.PORT; // || 5000;
 
-// Firebase Client SDK Imports
+// Firebase Client SDK - Modular imports
 const { initializeApp } = require('firebase/app');
-const { getFirestore, Timestamp, FieldValue } = require('firebase/firestore');
-const { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit: firebaseLimit, startAfter } = require('firebase/firestore');
+const { getAuth, signInWithEmailAndPassword, onAuthStateChanged } = require('firebase/auth');
+const { getFirestore, Timestamp, increment, FieldPath } = require('firebase/firestore');
 
-// Firebase Configuration (from .env or config file)
 const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY,
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.FIREBASE_PROJECT_ID,
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.FIREBASE_APP_ID,
-  measurementId: process.env.FIREBASE_MEASUREMENT_ID
+  apiKey: "AIzaSyA4uHspTDS-8kIT2HsmPFGL9JNNBvI6NI4",
+  authDomain: "startup-dbs-1.firebaseapp.com",
+  databaseURL: "https://startup-dbs-1-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "startup-dbs-1",
+  storageBucket: "startup-dbs-1.firebasestorage.app",
+  messagingSenderId: "70939047801",
+  appId: "1:70939047801:web:08a6a9d17f6b63af9261a8",
+  measurementId: "G-KQ59313LSD"
 };
 
-// Initialize Firebase Client SDK
 const firebaseApp = initializeApp(firebaseConfig);
+const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
+
+// Sign in as admin user for privileged access (handles token refresh automatically)
+const adminEmail = process.env.ADMIN_EMAIL;
+const adminPassword = process.env.ADMIN_PASSWORD;
+
+signInWithEmailAndPassword(auth, adminEmail, adminPassword)
+  .then((userCredential) => {
+    console.log('Signed in as admin user for server operations');
+  })
+  .catch((error) => {
+    console.error('Error signing in admin user:', error);
+    process.exit(1); // Exit if admin sign-in fails
+  });
+
+// Handle token refresh and expiration gracefully
+onAuthStateChanged(auth, (user) => {
+  if (user) {
+    console.log('Admin user authenticated');
+  } else {
+    console.log('Admin session expired, re-authenticating...');
+    signInWithEmailAndPassword(auth, adminEmail, adminPassword)
+      .catch((error) => {
+        console.error('Failed to re-authenticate admin:', error);
+      });
+  }
+});
 
 // JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-secret-key';
 
 // Create necessary directories
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-
-const avatarsDir = path.join(uploadsDir, 'avatars');
-if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
-
-const assignmentsDir = path.join(uploadsDir, 'assignments');
+const assignmentsDir = path.join(__dirname, 'uploads', 'assignments');
 if (!fs.existsSync(assignmentsDir)) fs.mkdirSync(assignmentsDir, { recursive: true });
 
-const paymentsDir = path.join(uploadsDir, 'payments');
+const avatarsDir = path.join(__dirname, 'uploads', 'avatars');
+if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
+
+const paymentsDir = path.join(__dirname, 'uploads', 'payments');
 if (!fs.existsSync(paymentsDir)) fs.mkdirSync(paymentsDir, { recursive: true });
 
-const socialUploadDir = path.join(uploadsDir, 'social');
-if (!fs.existsSync(socialUploadDir)) fs.mkdirSync(socialUploadDir, { recursive: true });
-
-const courseThumbnailsDir = path.join(uploadsDir, 'courses'); // New directory for course thumbnails
-if (!fs.existsSync(courseThumbnailsDir)) fs.mkdirSync(courseThumbnailsDir, { recursive: true });
-
-
-// ===== MULTER CONFIGURATIONS =====
-
-// AVATAR MULTER CONFIGURATION
+// ===== AVATAR MULTER CONFIGURATION  =====
 const avatarStorage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, avatarsDir);
@@ -79,10 +92,14 @@ const avatarUpload = multer({
   }
 });
 
-// ASSIGNMENT MULTER CONFIGURATION
+// ===== ASSIGNMENT MULTER CONFIGURATION =====
 const assignmentStorage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, assignmentsDir);
+    const uploadDir = path.join(__dirname, 'uploads', 'assignments');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -104,10 +121,14 @@ const assignmentUpload = multer({
   }
 });
 
-// PAYMENT SCREENSHOT MULTER CONFIGURATION
+// ===== PAYMENT SCREENSHOT MULTER CONFIGURATION =====
 const paymentScreenshotStorage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, paymentsDir);
+    const uploadDir = path.join(__dirname, 'uploads', 'payments');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -129,10 +150,14 @@ const paymentScreenshotUpload = multer({
   }
 });
 
-// PAYMENT PROOF RESOURCES NEW MULTER CONFIGURATION (Same as paymentScreenshot for simplicity if they use same dir)
+// ===== PAYMENT PROOF RESOURCES NEW MULTER CONFIGURATION =====
 const paymentProofStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, paymentsDir);
+    const uploadDir = path.join(__dirname, 'uploads', 'payments');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -152,58 +177,11 @@ const paymentProofUpload = multer({
   }
 });
 
-// SOCIAL POST IMAGE MULTER CONFIGURATION
-const socialStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, socialUploadDir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, `social-${Date.now()}${path.extname(file.originalname)}`);
-  },
-});
-
-const socialUpload = multer({
-  storage: socialStorage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-  fileFilter: (req, file, cb) => {
-    const filetypes = /jpeg|jpg|png|gif/;
-    const mimetype = filetypes.test(file.mimetype);
-    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-    if (mimetype && extname) {
-      return cb(null, true);
-    }
-    cb(new Error('Error: File upload only supports the following filetypes - ' + filetypes));
-  },
-}).single('image');
-
-// Course Thumbnail Multer Configuration
-const courseThumbnailStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, courseThumbnailsDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'course-thumbnail-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-const courseThumbnailUpload = multer({
-  storage: courseThumbnailStorage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-  fileFilter: function (req, file, cb) {
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed for course thumbnails'));
-    }
-  }
-});
-
-
 // ===== CORS configuration =====
 const allowedOrigins = [process.env.FRONTEND_URL].filter(Boolean);
 
 app.use(cors({
-  origin: allowedOrigins.length > 0 ? allowedOrigins : '*', // Use specific origins if available, otherwise allow all (for testing)
+  origin: [process.env.FRONTEND_URL], 
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -212,13 +190,8 @@ app.use(cors({
 // Middleware
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
-app.use('/uploads', express.static(path.join(__dirname, 'public/uploads'))); // Original, if public/uploads exists
-app.use('/uploads/avatars', express.static(avatarsDir)); // Directly serve from our new structure
-app.use('/uploads/social', express.static(socialUploadDir)); // Serve social images
-app.use('/uploads/assignments', express.static(assignmentsDir)); // Serve assignments
-app.use('/uploads/payments', express.static(paymentsDir)); // Serve payments
-app.use('/uploads/courses', express.static(courseThumbnailsDir)); // Serve course thumbnails
-
+app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
+app.use('/uploads/avatars', express.static(path.join(__dirname, 'uploads', 'avatars')));
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -237,18 +210,14 @@ const authenticateToken = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    // Use Client SDK Firestore methods
-    const userDocRef = doc(db, 'users', decoded.userId);
-    const userDoc = await getDoc(userDocRef);
-
-    if (!userDoc.exists() || !userDoc.data().is_active) {
+    const userDoc = await db.collection('users').doc(decoded.userId).get();
+    if (!userDoc.exists || !userDoc.data().is_active) {
       return res.status(401).json({ error: 'Invalid token' });
     }
     req.user = userDoc.data();
     req.user.id = decoded.userId;
     next();
   } catch (error) {
-    console.error('Authentication Error:', error);
     return res.status(403).json({ error: 'Invalid token' });
   }
 };
@@ -260,23 +229,6 @@ const requireAdmin = (req, res, next) => {
   }
   next();
 };
-
-// Helper function to get full URL for images
-const getFullImageUrl = (req, imagePath) => {
-  if (!imagePath) {
-    return null;
-  }
-  if (imagePath.startsWith('http')) {
-    return imagePath;
-  }
-  let cleanPath = imagePath.replace(/^\/uploads\//, ''); // Adjust path if it stored with `/uploads/` prefix
-  if (!cleanPath.startsWith('/')) { // Ensure it has leading slash for static serving if not already
-    cleanPath = '/' + cleanPath;
-  }
-  // This assumes your static middleware correctly serves '/uploads'
-  return `${req.protocol}://${req.get('host')}/uploads${cleanPath}`;
-}
-
 
 // ==================== AUTH ROUTES ====================
 
@@ -304,9 +256,7 @@ app.post('/api/register', async (req, res) => {
     }
 
     // Check if email exists
-    const usersCollection = collection(db, 'users');
-    const existingUsersQuery = query(usersCollection, where('email', '==', email));
-    const existingUsers = await getDocs(existingUsersQuery);
+    const existingUsers = await db.collection('users').where('email', '==', email).get();
 
     if (!existingUsers.empty) {
       return res.status(400).json({ error: 'Email already exists' });
@@ -317,8 +267,8 @@ app.post('/api/register', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     // Insert new user
-    const userRef = doc(usersCollection); // Client SDK generates ID automatically here
-    await setDoc(userRef, {
+    const userRef = db.collection('users').doc();
+    await userRef.set({
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       email: email.trim(),
@@ -327,18 +277,17 @@ app.post('/api/register', async (req, res) => {
       account_type: accountType || 'student',
       is_active: true,
       email_verified: false,
-      created_at: Timestamp.now(), // Client SDK Timestamp
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      created_at: Timestamp.now(),
+      updated_at: Timestamp.now()
     });
 
     // Create user stats entry
-    const userStatsRef = doc(db, 'user_stats', userRef.id);
-    await setDoc(userStatsRef, {
+    await db.collection('user_stats').doc(userRef.id).set({
       courses_enrolled: 0,
       courses_completed: 0,
       certificates_earned: 0,
       learning_streak: 0,
-      last_activity: Timestamp.now() // Client SDK Timestamp
+      last_activity: Timestamp.now()
     });
 
     console.log('User registered successfully:', { userId: userRef.id, email });
@@ -364,16 +313,14 @@ app.post('/api/login', async (req, res) => {
     }
 
     // Check if user exists
-    const usersCollection = collection(db, 'users');
-    const usersQuery = query(usersCollection, where('email', '==', email), where('is_active', '==', true));
-    const usersSnap = await getDocs(usersQuery);
+    const users = await db.collection('users').where('email', '==', email).where('is_active', '==', true).get();
 
-    if (usersSnap.empty) {
+    if (users.empty) {
       return res.status(404).json({ error: 'No account found with this email' });
     }
 
-    const user = usersSnap.docs[0].data();
-    const userId = usersSnap.docs[0].id;
+    const user = users.docs[0].data();
+    const userId = users.docs[0].id;
 
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
@@ -395,9 +342,8 @@ app.post('/api/login', async (req, res) => {
     );
 
     // Update last login timestamp
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, {
-      updated_at: Timestamp.now() // Client SDK Timestamp
+    await db.collection('users').doc(userId).update({
+      updated_at: Timestamp.now()
     });
 
     console.log('User logged in successfully:', { userId, email: user.email });
@@ -430,7 +376,7 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// Get current user profile (used for dashboard info)
+// Get current user profile
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
     res.json({
@@ -461,19 +407,18 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
     const { firstName, lastName, phone, company, website, bio } = req.body;
     const userId = req.user.id;
 
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, {
+    await db.collection('users').doc(userId).update({
       first_name: firstName,
       last_name: lastName,
       phone: phone,
       company: company,
       website: website,
       bio: bio,
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      updated_at: Timestamp.now()
     });
 
-    const updatedUserDoc = await getDoc(userRef);
-    const user = updatedUserDoc.data();
+    const updatedUser = await db.collection('users').doc(userId).get();
+    const user = updatedUser.data();
 
     res.json({
       id: userId,
@@ -525,10 +470,9 @@ app.post('/api/auth/avatar', authenticateToken, (req, res, next) => {
       }
     }
 
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, {
+    await db.collection('users').doc(userId).update({
       profile_image: profileImage,
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      updated_at: Timestamp.now()
     });
 
     // Send success response with plain text
@@ -540,22 +484,21 @@ app.post('/api/auth/avatar', authenticateToken, (req, res, next) => {
   }
 });
 
-// Get user stats (dashboard)
+// Get user stats
 app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const statsRef = doc(db, 'user_stats', userId);
-    const stats = await getDoc(statsRef);
+    const stats = await db.collection('user_stats').doc(userId).get();
 
-    if (!stats.exists()) {
+    if (!stats.exists) {
       // Create default stats if not exists
-      await setDoc(statsRef, {
+      await db.collection('user_stats').doc(userId).set({
         courses_enrolled: 0,
         courses_completed: 0,
         certificates_earned: 0,
         learning_streak: 0,
-        last_activity: Timestamp.now() // Client SDK Timestamp
+        last_activity: Timestamp.now()
       });
 
       res.json({
@@ -563,7 +506,7 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
         coursesCompleted: 0,
         certificatesEarned: 0,
         learningStreak: 0,
-        lastActivity: Timestamp.now() // Client SDK Timestamp
+        lastActivity: Timestamp.now()
       });
     } else {
       const userStats = stats.data();
@@ -586,72 +529,101 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
 // ============== ENHANCED SOCIAL FEED FUNCTIONALITY ===============
 // =================================================================
 
+// --- Multer Configuration for Social Post Images ---
+const socialUploadDir = 'public/uploads/social';
+if (!fs.existsSync(socialUploadDir)) {
+  fs.mkdirSync(socialUploadDir, { recursive: true });
+}
+
+const socialStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, socialUploadDir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `social-${Date.now()}${path.extname(file.originalname)}`);
+  },
+});
+
+const socialUpload = multer({
+  storage: socialStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    const filetypes = /jpeg|jpg|png|gif/;
+    const mimetype = filetypes.test(file.mimetype);
+    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+    if (mimetype && extname) {
+      return cb(null, true);
+    }
+    cb(new Error('Error: File upload only supports the following filetypes - ' + filetypes));
+  },
+}).single('image');
+
+// Helper function to get full URL for images (SIMPLIFIED)
+const getFullImageUrl = (req, imagePath) => {
+  if (!imagePath) {
+    return null;
+  }
+  if (imagePath.startsWith('http')) {
+    return imagePath;
+  }
+  let cleanPath = imagePath.replace(/^public\//, '');
+  if (!cleanPath.startsWith('/')) {
+    cleanPath = '/' + cleanPath;
+  }
+  return `${req.protocol}://${req.get('host')}${cleanPath}`;
+}
+
 // --- GET All Posts (with Pagination, Likes, Comments, etc.) ---
 app.get('/api/posts', authenticateToken, async (req, res) => {
   const userId = req.user.id;
   const page = parseInt(req.query.page, 10) || 1;
-  const limitCount = parseInt(req.query.limit, 10) || 10; // Renamed to avoid conflict with `limit` from firestore query
-  const offset = (page - 1) * limitCount;
+  const limit = parseInt(req.query.limit, 10) || 10;
+  const offset = (page - 1) * limit;
 
   try {
-    const socialActivitiesCollection = collection(db, 'social_activities');
-    const usersCollection = collection(db, 'users');
-    const userConnectionsCollection = collection(db, 'user_connections');
+    // Step 1: Get total count
+    // In Firestore, we can't do complex conditional counts easily, so fetch all and filter
+    const allPostsSnap = await db.collection('social_activities').where('activity_type', '==', 'post').get();
+    let totalPosts = 0;
+    const postIds = [];
 
-    // Fetch all posts (initial filter for visibility)
-    const allPostsQuery = query(socialActivitiesCollection, where('activity_type', '==', 'post'), orderBy('created_at', 'desc'));
-    const allPostsSnap = await getDocs(allPostsQuery);
+    const connections1 = await db.collection('user_connections').where('user_id_1', '==', userId).where('status', '==', 'accepted').get();
+    const connections2 = await db.collection('user_connections').where('user_id_2', '==', userId).where('status', '==', 'accepted').get();
+    const connections = [...connections1.docs.map(d => d.data().user_id_2), ...connections2.docs.map(d => d.data().user_id_1)];
 
-    const connections1Query = query(userConnectionsCollection, where('user_id_1', '==', userId), where('status', '==', 'accepted'));
-    const connections1Snap = await getDocs(connections1Query);
-    const connections2Query = query(userConnectionsCollection, where('user_id_2', '==', userId), where('status', '==', 'accepted'));
-    const connections2Snap = await getDocs(connections2Query);
-    const connections = [
-      ...connections1Snap.docs.map(d => d.data().user_id_2),
-      ...connections2Snap.docs.map(d => d.data().user_id_1)
-    ];
-
-    const visiblePosts = [];
-    allPostsSnap.docs.forEach(docSnapshot => {
-      const p = docSnapshot.data();
+    allPostsSnap.docs.forEach(doc => {
+      const p = doc.data();
       if (
         p.visibility === 'public' ||
         (p.visibility === 'private' && p.user_id === userId) ||
         (p.visibility === 'connections' && (p.user_id === userId || connections.includes(p.user_id)))
       ) {
-        visiblePosts.push({ id: docSnapshot.id, ...p });
+        totalPosts++;
+        postIds.push(doc.id);
       }
     });
 
-    const totalPosts = visiblePosts.length;
-    const totalPages = Math.ceil(totalPosts / limitCount);
+    const totalPages = Math.ceil(totalPosts / limit);
 
-    // Manual pagination of filtered posts
-    const paginatedPosts = visiblePosts.slice(offset, offset + limitCount);
-
+    // Step 2: Fetch paginated posts (manual pagination since conditional)
     const posts = [];
-    for (const postDoc of paginatedPosts) {
-      const post = { ...postDoc }; // Create a mutable copy
+    const start = offset;
+    const end = offset + limit;
+    for (let i = start; i < Math.min(end, postIds.length); i++) {
+      const postDoc = await db.collection('social_activities').doc(postIds[i]).get();
+      const post = postDoc.data();
+      post.id = postIds[i];
 
-      const userDocRef = doc(usersCollection, post.user_id);
-      const userDoc = await getDoc(userDocRef);
+      const userDoc = await db.collection('users').doc(post.user_id).get();
       const u = userDoc.data();
 
-      const likesQuery = query(socialActivitiesCollection, where('activity_type', '==', 'like'), where('target_id', '==', post.id));
-      const likesSnap = await getDocs(likesQuery);
-      post.likes = likesSnap.size;
+      post.likes = (await db.collection('social_activities').where('activity_type', '==', 'like').where('target_id', '==', post.id).get()).size;
 
-      const commentsQuery = query(socialActivitiesCollection, where('activity_type', '==', 'comment'), where('target_id', '==', post.id));
-      const commentsSnap = await getDocs(commentsQuery);
-      post.comment_count = commentsSnap.size;
+      post.comment_count = (await db.collection('social_activities').where('activity_type', '==', 'comment').where('target_id', '==', post.id).get()).size;
 
-      const userLikeQuery = query(socialActivitiesCollection, where('activity_type', '==', 'like'), where('target_id', '==', post.id), where('user_id', '==', userId));
-      const userLikeSnap = await getDocs(userLikeQuery);
-      post.has_liked = !userLikeSnap.empty;
+      post.has_liked = !(await db.collection('social_activities').where('activity_type', '==', 'like').where('target_id', '==', post.id).where('user_id', '==', userId).get()).empty;
 
-      const userBookmarkQuery = query(socialActivitiesCollection, where('activity_type', '==', 'bookmark'), where('target_id', '==', post.id), where('user_id', '==', userId));
-      const userBookmarkSnap = await getDocs(userBookmarkQuery);
-      post.has_bookmarked = !userBookmarkSnap.empty;
+      post.has_bookmarked = !(await db.collection('social_activities').where('activity_type', '==', 'bookmark').where('target_id', '==', post.id).where('user_id', '==', userId).get()).empty;
 
       post.image_url = getFullImageUrl(req, post.image_url);
 
@@ -663,14 +635,14 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
         account_type: u.account_type
       };
 
-      const commentsForPostQuery = query(socialActivitiesCollection, where('activity_type', '==', 'comment'), where('target_id', '==', post.id), orderBy('created_at'));
-      const commentsForPostSnap = await getDocs(commentsForPostQuery);
+      const commentsSnap = await db.collection('social_activities').where('activity_type', '==', 'comment').where('target_id', '==', post.id).orderBy('created_at').get();
 
       post.comments = [];
-      for (const commentDoc of commentsForPostSnap.docs) {
-        const c = { id: commentDoc.id, ...commentDoc.data() };
-        const commentUserDocRef = doc(usersCollection, c.user_id);
-        const commentUserDoc = await getDoc(commentUserDocRef);
+      for (const commentDoc of commentsSnap.docs) {
+        const c = commentDoc.data();
+        c.id = commentDoc.id;
+
+        const commentUserDoc = await db.collection('users').doc(c.user_id).get();
         const commentUser = commentUserDoc.data();
 
         c.user = {
@@ -680,6 +652,7 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
           profile_image: getFullImageUrl(req, commentUser.profile_image),
           account_type: commentUser.account_type
         };
+
         post.comments.push(c);
       }
 
@@ -696,7 +669,6 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch posts.' });
   }
 });
-
 
 // --- POST a new post ---
 app.post('/api/posts', authenticateToken, (req, res) => {
@@ -715,29 +687,28 @@ app.post('/api/posts', authenticateToken, (req, res) => {
       }
 
       const imageUrl = req.file ? `/uploads/social/${req.file.filename}` : null;
+
       const isAchievement = achievement === 'true';
 
-      const socialActivitiesCollection = collection(db, 'social_activities');
-      const postRef = doc(socialActivitiesCollection);
-      await setDoc(postRef, {
+      const postRef = db.collection('social_activities').doc();
+      await postRef.set({
         user_id: userId,
         activity_type: 'post',
         content: content || '',
         image_url: imageUrl,
         achievement: isAchievement,
         visibility: visibility,
-        created_at: Timestamp.now(), // Client SDK Timestamp
-        updated_at: Timestamp.now(), // Client SDK Timestamp
+        created_at: Timestamp.now(),
+        updated_at: Timestamp.now(),
         share_count: 0
       });
 
       const postId = postRef.id;
 
-      const newPostDoc = await getDoc(postRef);
+      const newPostDoc = await postRef.get();
       const newPost = newPostDoc.data();
 
-      const userDocRef = doc(db, 'users', userId);
-      const userDoc = await getDoc(userDocRef);
+      const userDoc = await db.collection('users').doc(userId).get();
       const u = userDoc.data();
 
       res.status(201).json({
@@ -775,10 +746,9 @@ app.put('/api/posts/:id', authenticateToken, async (req, res) => {
   }
 
   try {
-    const postRef = doc(db, 'social_activities', id);
-    const postDoc = await getDoc(postRef);
+    const postDoc = await db.collection('social_activities').doc(id).get();
 
-    if (!postDoc.exists()) {
+    if (!postDoc.exists) {
       return res.status(404).json({ error: 'Post not found.' });
     }
 
@@ -788,9 +758,9 @@ app.put('/api/posts/:id', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'You are not authorized to edit this post.' });
     }
 
-    await updateDoc(postRef, {
+    await db.collection('social_activities').doc(id).update({
       content: content,
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      updated_at: Timestamp.now()
     });
 
     res.json({ message: 'Post updated successfully.' });
@@ -806,10 +776,9 @@ app.delete('/api/posts/:id', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const postRef = doc(db, 'social_activities', id);
-    const postDoc = await getDoc(postRef);
+    const postDoc = await db.collection('social_activities').doc(id).get();
 
-    if (!postDoc.exists()) {
+    if (!postDoc.exists) {
       return res.status(404).json({ error: 'Post not found.' });
     }
 
@@ -820,7 +789,7 @@ app.delete('/api/posts/:id', authenticateToken, async (req, res) => {
     }
 
     // Delete the post record
-    await deleteDoc(postRef);
+    await db.collection('social_activities').doc(id).delete();
 
     // If there was an image, delete it from the filesystem
     if (post.image_url) {
@@ -847,24 +816,22 @@ app.post('/api/posts/:id/comment', authenticateToken, async (req, res) => {
   }
 
   try {
-    const socialActivitiesCollection = collection(db, 'social_activities');
-    const commentRef = doc(socialActivitiesCollection);
-    await setDoc(commentRef, {
+    const commentRef = db.collection('social_activities').doc();
+    await commentRef.set({
       user_id: userId,
       activity_type: 'comment',
       content: content,
       target_id: targetId,
-      created_at: Timestamp.now() // Client SDK Timestamp
+      created_at: Timestamp.now()
     });
 
     const commentId = commentRef.id;
 
     // Fetch the new comment with user info to return
-    const newCommentDoc = await getDoc(commentRef);
+    const newCommentDoc = await commentRef.get();
     const newComment = newCommentDoc.data();
 
-    const userDocRef = doc(db, 'users', userId);
-    const userDoc = await getDoc(userDocRef);
+    const userDoc = await db.collection('users').doc(userId).get();
     const u = userDoc.data();
 
     res.status(201).json({
@@ -889,20 +856,13 @@ app.post('/api/posts/:id/like', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const socialActivitiesCollection = collection(db, 'social_activities');
-    const likeQuery = query(socialActivitiesCollection, where('user_id', '==', userId), where('activity_type', '==', 'like'), where('target_id', '==', targetId));
-    const likeSnap = await getDocs(likeQuery);
-
-    if (!likeSnap.empty) {
-      return res.status(400).json({ error: 'Post already liked.' });
-    }
-
-    const likeRef = doc(socialActivitiesCollection);
-    await setDoc(likeRef, {
+    // Use INSERT IGNORE to prevent duplicates
+    const likeRef = db.collection('social_activities').doc();
+    await likeRef.set({
       user_id: userId,
       activity_type: 'like',
       target_id: targetId,
-      created_at: Timestamp.now() // Client SDK Timestamp
+      created_at: Timestamp.now()
     });
     res.status(201).json({ message: 'Post liked.' });
   } catch (error) {
@@ -917,15 +877,13 @@ app.delete('/api/posts/:id/like', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const socialActivitiesCollection = collection(db, 'social_activities');
-    const likeQuery = query(socialActivitiesCollection, where('user_id', '==', userId), where('activity_type', '==', 'like'), where('target_id', '==', targetId));
-    const likeSnap = await getDocs(likeQuery);
+    const likeSnap = await db.collection('social_activities').where('user_id', '==', userId).where('activity_type', '==', 'like').where('target_id', '==', targetId).get();
 
     if (likeSnap.empty) {
       return res.status(404).json({ error: 'Like not found' });
     }
 
-    await deleteDoc(likeSnap.docs[0].ref); // Delete the document found
+    await likeSnap.docs[0].ref.delete();
 
     res.json({ message: 'Post unliked.' });
   } catch (error) {
@@ -940,20 +898,12 @@ app.post('/api/posts/:id/bookmark', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const socialActivitiesCollection = collection(db, 'social_activities');
-    const bookmarkQuery = query(socialActivitiesCollection, where('user_id', '==', userId), where('activity_type', '==', 'bookmark'), where('target_id', '==', targetId));
-    const bookmarkSnap = await getDocs(bookmarkQuery);
-
-    if (!bookmarkSnap.empty) {
-      return res.status(400).json({ error: 'Post already bookmarked.' });
-    }
-
-    const bookmarkRef = doc(socialActivitiesCollection);
-    await setDoc(bookmarkRef, {
+    const bookmarkRef = db.collection('social_activities').doc();
+    await bookmarkRef.set({
       user_id: userId,
       activity_type: 'bookmark',
       target_id: targetId,
-      created_at: Timestamp.now() // Client SDK Timestamp
+      created_at: Timestamp.now()
     });
     res.status(201).json({ message: 'Post bookmarked.' });
   } catch (error) {
@@ -968,15 +918,13 @@ app.delete('/api/posts/:id/bookmark', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const socialActivitiesCollection = collection(db, 'social_activities');
-    const bookmarkQuery = query(socialActivitiesCollection, where('user_id', '==', userId), where('activity_type', '==', 'bookmark'), where('target_id', '==', targetId));
-    const bookmarkSnap = await getDocs(bookmarkQuery);
+    const bookmarkSnap = await db.collection('social_activities').where('user_id', '==', userId).where('activity_type', '==', 'bookmark').where('target_id', '==', targetId).get();
 
     if (bookmarkSnap.empty) {
       return res.status(404).json({ error: 'Bookmark not found' });
     }
 
-    await deleteDoc(bookmarkSnap.docs[0].ref); // Delete the document found
+    await bookmarkSnap.docs[0].ref.delete();
 
     res.json({ message: 'Post unbookmarked.' });
   } catch (error) {
@@ -990,9 +938,8 @@ app.post('/api/posts/:id/share', authenticateToken, async (req, res) => {
   const postId = req.params.id;
 
   try {
-    const postRef = doc(db, 'social_activities', postId);
-    await updateDoc(postRef, {
-      share_count: FieldValue.increment(1) // Client SDK FieldValue
+    await db.collection('social_activities').doc(postId).update({
+      share_count: increment(1)
     });
     res.json({ message: 'Share tracked.' });
   } catch (error) {
@@ -1008,25 +955,20 @@ app.get('/api/users/:userId/enrollments', authenticateToken, async (req, res) =>
   const userId = req.user.id; // User ID is from the authenticated token
 
   // Security check: Ensure the user requesting data matches the user ID in the URL parameter
-  if (req.params.userId !== userId) { // userId is string from Firebase, so no parseInt
+  if (parseInt(req.params.userId, 10) !== userId) {
     return res.status(403).json({ message: 'Forbidden: You can only access your own enrollment data.' });
   }
 
   try {
-    const enrollmentsCollection = collection(db, 'enrollments');
-    const coursesCollection = collection(db, 'courses');
-
-    const enrollmentsQuery = query(enrollmentsCollection, where('user_id', '==', userId), orderBy('enrollment_date', 'desc'));
-    const enrollmentsSnap = await getDocs(enrollmentsQuery);
+    const enrollmentsSnap = await db.collection('enrollments').where('user_id', '==', userId).orderBy('enrollment_date', 'desc').get();
 
     const enrollments = [];
-    for (const docSnapshot of enrollmentsSnap.docs) {
-      const e = docSnapshot.data();
-      const courseDocRef = doc(coursesCollection, e.course_id);
-      const course = await getDoc(courseDocRef);
-      const c = course.data();
+    for (const doc of enrollmentsSnap.docs) {
+      const e = doc.data();
+      const courseDoc = await db.collection('courses').doc(e.course_id).get();
+      const c = courseDoc.data();
       enrollments.push({
-        id: docSnapshot.id,
+        id: doc.id,
         progress: e.progress,
         status: e.status,
         enrollment_date: e.enrollment_date,
@@ -1049,25 +991,20 @@ app.get('/api/users/:userId/enrollments', authenticateToken, async (req, res) =>
 app.get('/api/users/:userId/internship-submissions', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
-  if (req.params.userId !== userId) { // userId is string from Firebase, so no parseInt
+  if (parseInt(req.params.userId, 10) !== userId) {
     return res.status(403).json({ message: 'Forbidden: You can only access your own internship submissions.' });
   }
 
   try {
-    const internshipSubmissionsCollection = collection(db, 'internship_submissions');
-    const internshipsCollection = collection(db, 'internships');
-
-    const submissionsQuery = query(internshipSubmissionsCollection, where('user_id', '==', userId), orderBy('submitted_at', 'desc'));
-    const submissionsSnap = await getDocs(submissionsQuery);
+    const submissionsSnap = await db.collection('internship_submissions').where('user_id', '==', userId).orderBy('submitted_at', 'desc').get();
 
     const applications = [];
-    for (const docSnapshot of submissionsSnap.docs) {
-      const sub = docSnapshot.data();
-      const internshipDocRef = doc(internshipsCollection, sub.internship_id);
-      const internship = await getDoc(internshipDocRef);
-      const i = internship.data();
+    for (const doc of submissionsSnap.docs) {
+      const sub = doc.data();
+      const internshipDoc = await db.collection('internships').doc(sub.internship_id).get();
+      const i = internshipDoc.data();
       applications.push({
-        id: docSnapshot.id,
+        id: doc.id,
         internship_id: sub.internship_id,
         status: sub.status,
         submitted_at: sub.submitted_at,
@@ -1088,18 +1025,14 @@ app.get('/api/users/:userId/internship-submissions', authenticateToken, async (r
 // Assumes a 'services' table with detailed service info, joined with 'service_categories'
 app.get('/api/services', authenticateToken, async (req, res) => {
   try {
-    const servicesCollection = collection(db, 'services');
-    const serviceCategoriesCollection = collection(db, 'service_categories');
-
-    const servicesSnap = await getDocs(servicesCollection);
+    const servicesSnap = await db.collection('services').get();
     const services = [];
-    for (const docSnapshot of servicesSnap.docs) {
-      const s = docSnapshot.data();
-      const categoryDocRef = doc(serviceCategoriesCollection, s.category_id);
-      const categoryDoc = await getDoc(categoryDocRef);
-      if (categoryDoc.exists() && categoryDoc.data().is_active) {
+    for (const doc of servicesSnap.docs) {
+      const s = doc.data();
+      const categoryDoc = await db.collection('service_categories').doc(s.category_id).get();
+      if (categoryDoc.exists && categoryDoc.data().is_active) {
         services.push({
-          id: docSnapshot.id,
+          id: doc.id,
           name: s.name,
           category_id: s.category_id,
           categoryName: categoryDoc.data().name,
@@ -1127,31 +1060,24 @@ app.get('/api/services', authenticateToken, async (req, res) => {
 app.get('/api/users/:userId/service-requests', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
-  if (req.params.userId !== userId) { // userId is string from Firebase, so no parseInt
+  if (parseInt(req.params.userId, 10) !== userId) {
     return res.status(403).json({ message: 'Forbidden: You can only access your own service requests.' });
   }
 
   try {
-    const serviceRequestsCollection = collection(db, 'service_requests');
-    const serviceSubcategoriesCollection = collection(db, 'service_subcategories');
-    const serviceCategoriesCollection = collection(db, 'service_categories');
-
-    const requestsQuery = query(serviceRequestsCollection, where('user_id', '==', userId), orderBy('created_at', 'desc'));
-    const requestsSnap = await getDocs(requestsQuery);
+    const requestsSnap = await db.collection('service_requests').where('user_id', '==', userId).orderBy('created_at', 'desc').get();
 
     const requests = [];
-    for (const docSnapshot of requestsSnap.docs) {
-      const sr = docSnapshot.data();
-      const subcategoryDocRef = doc(serviceSubcategoriesCollection, sr.subcategory_id);
-      const subcategoryDoc = await getDoc(subcategoryDocRef);
+    for (const doc of requestsSnap.docs) {
+      const sr = doc.data();
+      const subcategoryDoc = await db.collection('service_subcategories').doc(sr.subcategory_id).get();
       const sc = subcategoryDoc.data();
-      const categoryDocRef = doc(serviceCategoriesCollection, sc.category_id);
-      const categoryDoc = await getDoc(categoryDocRef);
+      const categoryDoc = await db.collection('service_categories').doc(sc.category_id).get();
       const category = categoryDoc.data();
       requests.push({
-        id: docSnapshot.id,
+        id: doc.id,
         userId: sr.user_id,
-        subcategory_id: sr.subcategory_id, // Renamed from categoryId for clarity
+        categoryId: sr.subcategory_id,
         categoryName: category.name,
         full_name: sr.full_name,
         email: sr.email,
@@ -1199,9 +1125,8 @@ app.post('/api/service-requests', authenticateToken, async (req, res) => {
   }
 
   try {
-    const serviceRequestsCollection = collection(db, 'service_requests');
-    const requestRef = doc(serviceRequestsCollection);
-    await setDoc(requestRef, {
+    const requestRef = db.collection('service_requests').doc();
+    await requestRef.set({
       user_id: userId,
       subcategory_id,
       full_name,
@@ -1215,8 +1140,8 @@ app.post('/api/service-requests', authenticateToken, async (req, res) => {
       contact_method,
       additional_requirements: additional_requirements || null,
       status: 'pending',
-      created_at: Timestamp.now(), // Client SDK Timestamp
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      created_at: Timestamp.now(),
+      updated_at: Timestamp.now()
     });
 
     // Return the ID of the newly created request
@@ -1227,36 +1152,28 @@ app.post('/api/service-requests', authenticateToken, async (req, res) => {
   }
 });
 
-// ==================== CALENDAR EVENTS ROUTES ====================
+// ==================== CALENDER EVENTS ROUTES ====================
 
 // GET /api/calendar/events - Get all calendar events for current user
 app.get('/api/calendar/events', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const enrollmentsCollection = collection(db, 'enrollments');
-    const coursesCollection = collection(db, 'courses');
-    const assignmentsCollection = collection(db, 'assignments');
-    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
-    const customCalendarEventsCollection = collection(db, 'custom_calendar_events');
-
     // Get course start/end dates for enrolled courses
-    const enrollmentsQuery = query(enrollmentsCollection, where('user_id', '==', userId), where('status', '==', 'active'));
-    const enrollmentsSnap = await getDocs(enrollmentsQuery);
+    const enrollments = await db.collection('enrollments').where('user_id', '==', userId).where('status', '==', 'active').get();
 
     const courseEvents = [];
-    for (const docSnapshot of enrollmentsSnap.docs) {
-      const e = docSnapshot.data();
-      const courseDocRef = doc(coursesCollection, e.course_id);
-      const course = await getDoc(courseDocRef);
+    for (const doc of enrollments.docs) {
+      const e = doc.data();
+      const course = await db.collection('courses').doc(e.course_id).get();
       const c = course.data();
       courseEvents.push({
-        id: course.id,
+        id: c.id,
         title: c.title,
         description: c.description,
         date: c.created_at,
         type: 'course_start',
-        course_id: course.id,
+        course_id: c.id,
         course_title: c.title,
         course_category: c.category
       });
@@ -1264,22 +1181,19 @@ app.get('/api/calendar/events', authenticateToken, async (req, res) => {
 
     // Get assignment deadlines
     const assignmentEvents = [];
-    for (const docSnapshot of enrollmentsSnap.docs) {
-      const e = docSnapshot.data();
-      const assignmentsQuery = query(assignmentsCollection, where('course_id', '==', e.course_id));
-      const assignmentsSnap = await getDocs(assignmentsQuery);
-      for (const aDoc of assignmentsSnap.docs) {
+    for (const doc of enrollments.docs) {
+      const e = doc.data();
+      const assignments = await db.collection('assignments').where('course_id', '==', e.course_id).get();
+      for (const aDoc of assignments.docs) {
         const a = aDoc.data();
-        const submissionQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', aDoc.id), where('user_id', '==', userId));
-        const submissionSnap = await getDocs(submissionQuery);
+        const submission = await db.collection('assignment_submissions').where('assignment_id', '==', aDoc.id).where('user_id', '==', userId).get();
         let status = 'pending';
-        if (!submissionSnap.empty) {
-          if (submissionSnap.docs[0].data().status === 'graded') status = 'completed';
+        if (!submission.empty) {
+          if (submission.docs[0].data().status === 'graded') status = 'completed';
         } else if (a.due_date.toDate() < new Date()) {
           status = 'overdue';
         }
-        const courseDocRef = doc(coursesCollection, e.course_id);
-        const course = await getDoc(courseDocRef);
+        const course = await db.collection('courses').doc(e.course_id).get();
         const c = course.data();
         assignmentEvents.push({
           id: aDoc.id,
@@ -1295,15 +1209,15 @@ app.get('/api/calendar/events', authenticateToken, async (req, res) => {
       }
     }
 
-    // Get custom calendar events
-    const thirtyDaysAgo = new Date(new Date().getTime() - 30 * 24 * 60 * 60 * 1000);
-    const customEventsQuery = query(customCalendarEventsCollection, where('user_id', '==', userId), where('event_date', '>=', Timestamp.fromDate(thirtyDaysAgo)), orderBy('event_date'));
-    const customEventsSnap = await getDocs(customEventsQuery);
+    // Get custom calendar events if the table exists
+    const customEventsQuery = db.collection('custom_calendar_events').where('user_id', '==', userId).where('event_date', '>=', new Date(new Date().getTime() - 30 * 24 * 60 * 60 * 1000)).orderBy('event_date');
 
-    const customEvents = customEventsSnap.docs.map(docSnapshot => {
-      const event = docSnapshot.data();
+    const customEventsResult = await customEventsQuery.get();
+
+    const customEvents = customEventsResult.docs.map(doc => {
+      const event = doc.data();
       return {
-        id: docSnapshot.id,
+        id: doc.id,
         title: event.title,
         description: event.description,
         date: event.event_date,
@@ -1336,51 +1250,37 @@ app.get('/api/calendar/events/date/:date', authenticateToken, async (req, res) =
     }
 
     const targetDate = new Date(date);
-    // For Firestore queries, we need to define the start and end of the day
-    const startOfDay = new Date(targetDate.setHours(0, 0, 0, 0));
-    const endOfDay = new Date(targetDate.setHours(23, 59, 59, 999));
 
-    const enrollmentsCollection = collection(db, 'enrollments');
-    const coursesCollection = collection(db, 'courses');
-    const assignmentsCollection = collection(db, 'assignments');
-    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
-    const customCalendarEventsCollection = collection(db, 'custom_calendar_events');
-
-    const enrollmentsQuery = query(enrollmentsCollection, where('user_id', '==', userId), where('status', '==', 'active'));
-    const enrollmentsSnap = await getDocs(enrollmentsQuery);
+    const enrollments = await db.collection('enrollments').where('user_id', '==', userId).where('status', '==', 'active').get();
 
     const eventsResult = [];
-    for (const docSnapshot of enrollmentsSnap.docs) {
-      const e = docSnapshot.data();
-      const courseDocRef = doc(coursesCollection, e.course_id);
-      const course = await getDoc(courseDocRef);
+    for (const doc of enrollments.docs) {
+      const e = doc.data();
+      const course = await db.collection('courses').doc(e.course_id).get();
       const c = course.data();
-
       if (c.created_at.toDate().toISOString().split('T')[0] === date) {
         eventsResult.push({
           event_type: 'course_start',
-          id: course.id,
+          id: c.id,
           title: `Course: ${c.title}`,
           description: c.description,
           date: c.created_at,
           time: null,
-          course_id: course.id,
+          course_id: c.id,
           course_title: c.title,
           course_category: c.category,
           status: 'active'
         });
       }
 
-      const assignmentsQuery = query(assignmentsCollection, where('course_id', '==', e.course_id));
-      const assignmentsSnap = await getDocs(assignmentsQuery);
-      for (const aDoc of assignmentsSnap.docs) {
+      const assignments = await db.collection('assignments').where('course_id', '==', e.course_id).get();
+      for (const aDoc of assignments.docs) {
         const a = aDoc.data();
         if (a.due_date.toDate().toISOString().split('T')[0] === date) {
-          const submissionQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', aDoc.id), where('user_id', '==', userId));
-          const submissionSnap = await getDocs(submissionQuery);
+          const submission = await db.collection('assignment_submissions').where('assignment_id', '==', aDoc.id).where('user_id', '==', userId).get();
           let status = 'pending';
-          if (!submissionSnap.empty) {
-            if (submissionSnap.docs[0].data().status === 'graded') status = 'completed';
+          if (!submission.empty) {
+            if (submission.docs[0].data().status === 'graded') status = 'completed';
           } else if (a.due_date.toDate() < new Date()) {
             status = 'overdue';
           }
@@ -1401,14 +1301,15 @@ app.get('/api/calendar/events/date/:date', authenticateToken, async (req, res) =
     }
 
     // Custom events
-    const customQuery = query(customCalendarEventsCollection, where('user_id', '==', userId), where('event_date', '>=', Timestamp.fromDate(startOfDay)), where('event_date', '<=', Timestamp.fromDate(endOfDay)));
-    const customResult = await getDocs(customQuery);
+    const customQuery = db.collection('custom_calendar_events').where('user_id', '==', userId).where('event_date', '==', targetDate);
 
-    const customEvents = customResult.docs.map(docSnapshot => {
-      const event = docSnapshot.data();
+    const customResult = await customQuery.get();
+
+    const customEvents = customResult.docs.map(doc => {
+      const event = doc.data();
       return {
         event_type: 'custom',
-        id: docSnapshot.id,
+        id: doc.id,
         title: event.title,
         description: event.description,
         date: event.event_date,
@@ -1454,31 +1355,20 @@ app.get('/api/calendar/upcoming', authenticateToken, async (req, res) => {
 
     const upcomingEvents = [];
 
-    const enrollmentsCollection = collection(db, 'enrollments');
-    const coursesCollection = collection(db, 'courses');
-    const assignmentsCollection = collection(db, 'assignments');
-    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
-    const customCalendarEventsCollection = collection(db, 'custom_calendar_events');
+    const enrollments = await db.collection('enrollments').where('user_id', '==', userId).where('status', '==', 'active').get();
 
-
-    const enrollmentsQuery = query(enrollmentsCollection, where('user_id', '==', userId), where('status', '==', 'active'));
-    const enrollmentsSnap = await getDocs(enrollmentsQuery);
-
-    for (const docSnapshot of enrollmentsSnap.docs) {
-      const e = docSnapshot.data();
-      const assignmentsQuery = query(assignmentsCollection, where('course_id', '==', e.course_id), where('due_date', '>=', Timestamp.fromDate(now)), where('due_date', '<=', Timestamp.fromDate(sevenDaysLater)), orderBy('due_date'), firebaseLimit(10));
-      const assignmentsSnap = await getDocs(assignmentsQuery);
-      for (const aDoc of assignmentsSnap.docs) {
+    for (const doc of enrollments.docs) {
+      const e = doc.data();
+      const assignments = await db.collection('assignments').where('course_id', '==', e.course_id).where('due_date', '>=', now).where('due_date', '<=', sevenDaysLater).orderBy('due_date').limit(10).get();
+      for (const aDoc of assignments.docs) {
         const a = aDoc.data();
-        const courseDocRef = doc(coursesCollection, e.course_id);
-        const course = await getDoc(courseDocRef);
+        const course = await db.collection('courses').doc(e.course_id).get();
         const c = course.data();
-        const submissionQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', aDoc.id), where('user_id', '==', userId));
-        const submissionSnap = await getDocs(submissionQuery);
+        const submission = await db.collection('assignment_submissions').where('assignment_id', '==', aDoc.id).where('user_id', '==', userId).get();
         let status = 'pending';
-        if (!submissionSnap.empty) {
-          if (submissionSnap.docs[0].data().status === 'graded') status = 'completed';
-        } else if (a.due_date.toDate() < new Date()) { // Compare with current date
+        if (!submission.empty) {
+          if (submission.docs[0].data().status === 'graded') status = 'completed';
+        } else if (a.due_date.toDate() < new Date()) {
           status = 'overdue';
         }
         upcomingEvents.push({
@@ -1499,13 +1389,12 @@ app.get('/api/calendar/upcoming', authenticateToken, async (req, res) => {
     }
 
     // Custom events
-    const customQuery = query(customCalendarEventsCollection, where('user_id', '==', userId), where('event_date', '>=', Timestamp.fromDate(now)), where('event_date', '<=', Timestamp.fromDate(sevenDaysLater)), orderBy('event_date'), firebaseLimit(5));
-    const customSnap = await getDocs(customQuery);
+    const custom = await db.collection('custom_calendar_events').where('user_id', '==', userId).where('event_date', '>=', now).where('event_date', '<=', sevenDaysLater).orderBy('event_date').limit(5).get();
 
-    customSnap.docs.forEach(docSnapshot => {
-      const event = docSnapshot.data();
+    custom.docs.forEach(doc => {
+      const event = doc.data();
       upcomingEvents.push({
-        id: docSnapshot.id,
+        id: doc.id,
         title: event.title,
         description: event.description,
         date: event.event_date,
@@ -1527,12 +1416,7 @@ app.get('/api/calendar/stats', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const enrollmentsCollection = collection(db, 'enrollments');
-    const assignmentsCollection = collection(db, 'assignments');
-    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
-
-    const enrollmentsQuery = query(enrollmentsCollection, where('user_id', '==', userId));
-    const enrollmentsSnap = await getDocs(enrollmentsQuery);
+    const enrollments = await db.collection('enrollments').where('user_id', '==', userId).get();
 
     let totalAssignments = 0;
     let pendingAssignments = 0;
@@ -1541,20 +1425,18 @@ app.get('/api/calendar/stats', authenticateToken, async (req, res) => {
     let activeCourses = 0;
     let completedCourses = 0;
 
-    for (const docSnapshot of enrollmentsSnap.docs) {
-      const e = docSnapshot.data();
+    for (const doc of enrollments.docs) {
+      const e = doc.data();
       if (e.status === 'active') activeCourses++;
       if (e.status === 'completed') completedCourses++;
 
-      const assignmentsQuery = query(assignmentsCollection, where('course_id', '==', e.course_id));
-      const assignmentsSnap = await getDocs(assignmentsQuery);
-      for (const aDoc of assignmentsSnap.docs) {
+      const assignments = await db.collection('assignments').where('course_id', '==', e.course_id).get();
+      for (const aDoc of assignments.docs) {
         totalAssignments++;
         const a = aDoc.data();
-        const submissionQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', aDoc.id), where('user_id', '==', userId));
-        const submissionSnap = await getDocs(submissionQuery);
-        if (!submissionSnap.empty) {
-          if (submissionSnap.docs[0].data().status === 'graded') completedAssignments++;
+        const submission = await db.collection('assignment_submissions').where('assignment_id', '==', aDoc.id).where('user_id', '==', userId).get();
+        if (!submission.empty) {
+          if (submission.docs[0].data().status === 'graded') completedAssignments++;
         } else {
           if (a.due_date.toDate() >= new Date()) pendingAssignments++;
           else overdueAssignments++;
@@ -1581,29 +1463,20 @@ app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) =
   try {
     const userId = req.user.id;
 
-    const enrollmentsCollection = collection(db, 'enrollments');
-    const assignmentsCollection = collection(db, 'assignments');
-    const coursesCollection = collection(db, 'courses');
-    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
-
-    const enrollmentsQuery = query(enrollmentsCollection, where('user_id', '==', userId), where('status', '==', 'active'));
-    const enrollmentsSnap = await getDocs(enrollmentsQuery);
+    const enrollments = await db.collection('enrollments').where('user_id', '==', userId).where('status', '==', 'active').get();
 
     const assignments = [];
-    for (const docSnapshot of enrollmentsSnap.docs) {
-      const e = docSnapshot.data();
-      const assignmentsQuery = query(assignmentsCollection, where('course_id', '==', e.course_id), orderBy('due_date'));
-      const assignmentsSnap = await getDocs(assignmentsQuery);
-      for (const aDoc of assignmentsSnap.docs) {
+    for (const doc of enrollments.docs) {
+      const e = doc.data();
+      const ass = await db.collection('assignments').where('course_id', '==', e.course_id).orderBy('due_date').get();
+      for (const aDoc of ass.docs) {
         const a = aDoc.data();
-        const courseDocRef = doc(coursesCollection, e.course_id);
-        const course = await getDoc(courseDocRef);
+        const course = await db.collection('courses').doc(e.course_id).get();
         const c = course.data();
-        const submissionQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', aDoc.id), where('user_id', '==', userId));
-        const submissionSnap = await getDocs(submissionQuery);
+        const sub = await db.collection('assignment_submissions').where('assignment_id', '==', aDoc.id).where('user_id', '==', userId).get();
         let submission = null;
-        if (!submissionSnap.empty) {
-          submission = submissionSnap.docs[0].data();
+        if (!sub.empty) {
+          submission = sub.docs[0].data();
         }
         assignments.push({
           id: aDoc.id,
@@ -1647,17 +1520,16 @@ app.post('/api/calendar/events', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
     }
 
-    const customCalendarEventsCollection = collection(db, 'custom_calendar_events');
-    const eventRef = doc(customCalendarEventsCollection);
-    await setDoc(eventRef, {
+    const eventRef = db.collection('custom_calendar_events').doc();
+    await eventRef.set({
       user_id: userId,
       title,
       description,
-      event_date: new Date(date), // Store as Date object
+      event_date: new Date(date),
       event_time: time,
       event_type: type,
-      created_at: Timestamp.now(), // Client SDK Timestamp
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      created_at: Timestamp.now(),
+      updated_at: Timestamp.now()
     });
 
     res.status(201).json({
@@ -1682,20 +1554,20 @@ app.put('/api/calendar/events/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { title, description, date, time, type } = req.body;
 
-    const eventRef = doc(db, 'custom_calendar_events', id);
-    const eventDoc = await getDoc(eventRef);
+    // Check if event exists and belongs to user
+    const eventDoc = await db.collection('custom_calendar_events').doc(id).get();
 
-    if (!eventDoc.exists() || eventDoc.data().user_id !== userId) {
+    if (!eventDoc.exists || eventDoc.data().user_id !== userId) {
       return res.status(404).json({ error: 'Calendar event not found or unauthorized' });
     }
 
-    await updateDoc(eventRef, {
+    await db.collection('custom_calendar_events').doc(id).update({
       title,
       description,
-      event_date: new Date(date), // Store as Date object
+      event_date: new Date(date),
       event_time: time,
       event_type: type,
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      updated_at: Timestamp.now()
     });
 
     res.json({ message: 'Calendar event updated successfully' });
@@ -1711,14 +1583,13 @@ app.delete('/api/calendar/events/:id', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const { id } = req.params;
 
-    const eventRef = doc(db, 'custom_calendar_events', id);
-    const eventDoc = await getDoc(eventRef);
+    const eventDoc = await db.collection('custom_calendar_events').doc(id).get();
 
-    if (!eventDoc.exists() || eventDoc.data().user_id !== userId) {
+    if (!eventDoc.exists || eventDoc.data().user_id !== userId) {
       return res.status(404).json({ error: 'Calendar event not found or unauthorized' });
     }
 
-    await deleteDoc(eventRef);
+    await db.collection('custom_calendar_events').doc(id).delete();
 
     res.json({ message: 'Calendar event deleted successfully' });
   } catch (error) {
@@ -1727,11 +1598,20 @@ app.delete('/api/calendar/events/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/auth/me - Get current user info (for calendar frontend)
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  try {
+    res.json(req.user);
+  } catch (error) {
+    console.error('Error fetching user info:', error);
+    res.status(500).json({ error: 'Failed to fetch user information' });
+  }
+});
 
 // ==================== COURSE ENROLLMENT REQUESTS ====================
-app.post('/api/enroll-request',
-  authenticateToken,
-  paymentScreenshotUpload.single('paymentScreenshot'),
+app.post('/api/enroll-request', 
+  authenticateToken, 
+  paymentScreenshotUpload.single('paymentScreenshot'), 
   async (req, res) => {
     try {
       const userId = req.user ? req.user.id : null;
@@ -1746,17 +1626,17 @@ app.post('/api/enroll-request',
         pincode,
         paymentMethod,
         transactionId
-       } = req.body;
+      } = req.body;
 
       // Validate required fields
-      const requiredFields = ['courseId', 'fullName', 'email', 'phone', 'address',
+      const requiredFields = ['courseId', 'fullName', 'email', 'phone', 'address', 
                              'city', 'state', 'pincode', 'paymentMethod', 'transactionId'];
-
+      
       const missingFields = requiredFields.filter(field => !req.body[field]);
-
+      
       if (missingFields.length > 0) {
-        return res.status(400).json({
-          error: `Missing required fields: ${missingFields.join(', ')}`,
+        return res.status(400).json({ 
+          error: `Missing required fields: ${missingFields.join(', ')}`, 
           missingFields
         });
       }
@@ -1765,9 +1645,8 @@ app.post('/api/enroll-request',
         return res.status(400).json({ error: 'Payment screenshot is required' });
       }
 
-      const courseEnrollRequestsCollection = collection(db, 'course_enroll_requests');
-      const requestRef = doc(courseEnrollRequestsCollection);
-      await setDoc(requestRef, {
+      const requestRef = db.collection('course_enroll_requests').doc();
+      await requestRef.set({
         user_id: userId,
         course_id: courseId,
         full_name: fullName,
@@ -1779,9 +1658,7 @@ app.post('/api/enroll-request',
         pincode,
         payment_method: paymentMethod,
         transaction_id: transactionId,
-        payment_screenshot: `/uploads/payments/${req.file.filename}`,
-        created_at: Timestamp.now(), // Client SDK Timestamp
-        status: 'pending' // Initial status
+        payment_screenshot: `/uploads/payments/${req.file.filename}`
       });
 
       res.status(201).json({
@@ -1791,7 +1668,7 @@ app.post('/api/enroll-request',
 
     } catch (error) {
       console.error('Enrollment request error:', error);
-      res.status(500).json({ error: 'Server error', details: error.message });
+      res.status(500).json({ error: 'Server error', details: error.message }); 
     }
   }
 );
@@ -1801,14 +1678,12 @@ app.post('/api/enroll-request',
 // Replace the existing /api/courses endpoint
 app.get('/api/courses', async (req, res) => {
   try {
-    const coursesCollection = collection(db, 'courses');
-    const coursesQuery = query(coursesCollection, where('is_active', '==', true), orderBy('created_at', 'desc'));
-    const coursesSnap = await getDocs(coursesQuery);
+    const coursesSnap = await db.collection('courses').where('is_active', '==', true).orderBy('created_at', 'desc').get();
 
-    const formattedCourses = coursesSnap.docs.map(docSnapshot => {
-      const course = docSnapshot.data();
+    const formattedCourses = coursesSnap.docs.map(doc => {
+      const course = doc.data();
       return {
-        id: docSnapshot.id,
+        id: doc.id,
         title: course.title,
         description: course.description,
         instructorName: course.instructor_name,
@@ -1825,32 +1700,27 @@ app.get('/api/courses', async (req, res) => {
 
   } catch (error) {
     console.error('Get courses error:', error);
-    res.status(500).json({
+    res.status(500).json({ 
       error: 'Server error',
       details: error.message
     });
   }
 });
 
-// Get user's enrolled courses (duplicate from above, but kept if clients use this path)
+// Get user's enrolled courses
 app.get('/api/enrollments/my-courses', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const enrollmentsCollection = collection(db, 'enrollments');
-    const coursesCollection = collection(db, 'courses');
-
-    const enrollmentsQuery = query(enrollmentsCollection, where('user_id', '==', userId), where('status', '==', 'active'), orderBy('enrollment_date', 'desc'));
-    const enrollmentsSnap = await getDocs(enrollmentsQuery);
+    const enrollmentsSnap = await db.collection('enrollments').where('user_id', '==', userId).where('status', '==', 'active').orderBy('enrollment_date', 'desc').get();
 
     const myCourses = [];
-    for (const docSnapshot of enrollmentsSnap.docs) {
-      const e = docSnapshot.data();
-      const courseDocRef = doc(coursesCollection, e.course_id);
-      const course = await getDoc(courseDocRef);
+    for (const doc of enrollmentsSnap.docs) {
+      const e = doc.data();
+      const course = await db.collection('courses').doc(e.course_id).get();
       const c = course.data();
       myCourses.push({
-        id: docSnapshot.id,
+        id: doc.id,
         userId: e.user_id,
         courseId: e.course_id,
         progress: e.progress,
@@ -1886,40 +1756,33 @@ app.post('/api/courses/enroll', authenticateToken, async (req, res) => {
     const { courseId } = req.body;
     const userId = req.user.id;
 
-    const enrollmentsCollection = collection(db, 'enrollments');
-    const coursesCollection = collection(db, 'courses');
-    const userStatsCollection = collection(db, 'user_stats');
-
     // Check if already enrolled
-    const existingEnrollmentQuery = query(enrollmentsCollection, where('user_id', '==', userId), where('course_id', '==', courseId));
-    const existingEnrollmentSnap = await getDocs(existingEnrollmentQuery);
+    const existing = await db.collection('enrollments').where('user_id', '==', userId).where('course_id', '==', courseId).get();
 
-    if (!existingEnrollmentSnap.empty) {
+    if (!existing.empty) {
       return res.status(400).json({ error: 'Already enrolled in this course' });
     }
 
     // Check if course exists
-    const courseDocRef = doc(coursesCollection, courseId);
-    const course = await getDoc(courseDocRef);
+    const course = await db.collection('courses').doc(courseId).get();
 
-    if (!course.exists() || !course.data().is_active) {
+    if (!course.exists || !course.data().is_active) {
       return res.status(404).json({ error: 'Course not found' });
     }
 
     // Create enrollment
-    const enrollmentRef = doc(enrollmentsCollection);
-    await setDoc(enrollmentRef, {
+    const enrollmentRef = db.collection('enrollments').doc();
+    await enrollmentRef.set({
       user_id: userId,
       course_id: courseId,
-      enrollment_date: Timestamp.now(), // Client SDK Timestamp
+      enrollment_date: Timestamp.now(),
       progress: 0,
       status: 'active'
     });
 
     // Update user stats
-    const userStatsRef = doc(userStatsCollection, userId);
-    await updateDoc(userStatsRef, {
-      courses_enrolled: FieldValue.increment(1) // Client SDK FieldValue
+    await db.collection('user_stats').doc(userId).update({
+      courses_enrolled: increment(1)
     });
 
     res.status(201).json({ message: 'Successfully enrolled in course' });
@@ -1930,75 +1793,33 @@ app.post('/api/courses/enroll', authenticateToken, async (req, res) => {
   }
 });
 
-// Get enrolled courses (dedicated for dashboard, consistent with original structure)
-app.get('/api/courses/enrolled', authenticateToken, async (req, res) => {
-  try {
-    const enrollmentsCollection = collection(db, 'enrollments');
-    const coursesCollection = collection(db, 'courses');
-
-    const enrollmentsQuery = query(
-      enrollmentsCollection,
-      where('user_id', '==', req.user.id),
-      where('status', '==', 'active'),
-      orderBy('enrollment_date', 'desc')
-    );
-    const enrollmentsSnap = await getDocs(enrollmentsQuery);
-
-    const courses = [];
-    for (const docSnapshot of enrollmentsSnap.docs) {
-      const e = docSnapshot.data();
-      const courseDocRef = doc(coursesCollection, e.course_id);
-      const course = await getDoc(courseDocRef);
-      const c = course.data();
-      courses.push({
-        id: e.course_id,
-        title: c.title,
-        category: c.category,
-        difficulty_level: c.difficulty_level,
-        progress: e.progress,
-        isEnrolled: true
-      });
-    }
-
-    res.json(courses);
-  } catch (error) {
-    console.error('Error fetching enrolled courses:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-
 // ==================== ASSIGNMENTS ROUTES ====================
+
+// GET /auth/me - Get current user info
+app.get('/auth/me', authenticateToken, (req, res) => {
+  res.json(req.user);
+});
 
 // GET /assignments/my-assignments - Get user's assignments
 app.get('/assignments/my-assignments', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const enrollmentsCollection = collection(db, 'enrollments');
-    const coursesCollection = collection(db, 'courses');
-    const assignmentsCollection = collection(db, 'assignments');
-    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
-
-    const enrollmentsQuery = query(enrollmentsCollection, where('user_id', '==', userId));
-    const enrollmentsSnap = await getDocs(enrollmentsQuery);
+    const enrollments = await db.collection('enrollments').where('user_id', '==', userId).get();
 
     const results = [];
-    for (const docSnapshot of enrollmentsSnap.docs) {
-      const e = docSnapshot.data();
-      const courseDocRef = doc(coursesCollection, e.course_id);
-      const course = await getDoc(courseDocRef);
+    for (const doc of enrollments.docs) {
+      const e = doc.data();
+      const course = await db.collection('courses').doc(e.course_id).get();
       const c = course.data();
-      if (c && c.is_active) { // Check if course exists and is active
-        const assignmentsQuery = query(assignmentsCollection, where('course_id', '==', e.course_id), orderBy('due_date'));
-        const assignmentsSnap = await getDocs(assignmentsQuery);
-        for (const aDoc of assignmentsSnap.docs) {
+      if (c.is_active) {
+        const assignments = await db.collection('assignments').where('course_id', '==', e.course_id).orderBy('due_date').get();
+        for (const aDoc of assignments.docs) {
           const a = aDoc.data();
-          const submissionQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', aDoc.id), where('user_id', '==', userId));
-          const submissionSnap = await getDocs(submissionQuery);
+          const submission = await db.collection('assignment_submissions').where('assignment_id', '==', aDoc.id).where('user_id', '==', userId).get();
           let sub = null;
-          if (!submissionSnap.empty) {
-            sub = submissionSnap.docs[0].data();
+          if (!submission.empty) {
+            sub = submission.docs[0].data();
           }
           results.push({
             id: aDoc.id,
@@ -2010,7 +1831,7 @@ app.get('/assignments/my-assignments', authenticateToken, async (req, res) => {
             created_at: a.created_at,
             course_title: c.title,
             course_category: c.category,
-            submission_id: sub ? submissionSnap.docs[0].id : null,
+            submission_id: sub ? submission.docs[0].id : null,
             submission_content: sub ? sub.content : null,
             submission_file_path: sub ? sub.file_path : null,
             submitted_at: sub ? sub.submitted_at : null,
@@ -2055,25 +1876,23 @@ app.get('/assignments/my-assignments', authenticateToken, async (req, res) => {
 });
 
 // GET /assignments/all - Get all assignments (admin only)
-app.get('/assignments/all', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const assignmentsCollection = collection(db, 'assignments');
-    const coursesCollection = collection(db, 'courses');
-    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
+app.get('/assignments/all', authenticateToken, (req, res) => {
+  if (req.user.account_type !== 'admin') {
+    return res.status(403).json({ error: 'Access denied. Admin only.' });
+  }
 
-    const assignmentsSnap = await getDocs(assignmentsCollection);
+  // Fetch all assignments
+  db.collection('assignments').get().then(assignmentsSnap => {
     const results = [];
     const promises = assignmentsSnap.docs.map(async (aDoc) => {
       const a = aDoc.data();
-      const courseDocRef = doc(coursesCollection, a.course_id);
-      const course = await getDoc(courseDocRef);
+      const course = await db.collection('courses').doc(a.course_id).get();
       const c = course.data();
-      if (c && c.is_active) {
-        const submissionsQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', aDoc.id));
-        const submissionsSnap = await getDocs(submissionsQuery);
-        let submission_count = submissionsSnap.size;
+      if (c.is_active) {
+        const submissions = await db.collection('assignment_submissions').where('assignment_id', '==', aDoc.id).get();
+        let submission_count = submissions.size;
         let graded_count = 0;
-        submissionsSnap.docs.forEach(s => {
+        submissions.docs.forEach(s => {
           if (s.data().status === 'graded') graded_count++;
         });
         results.push({
@@ -2092,16 +1911,17 @@ app.get('/assignments/all', authenticateToken, requireAdmin, async (req, res) =>
       }
     });
 
-    await Promise.all(promises);
-    res.json(results);
-  } catch (err) {
+    Promise.all(promises).then(() => {
+      res.json(results);
+    });
+  }).catch(err => {
     console.error('Database error:', err);
     res.status(500).json({ error: 'Database error' });
-  }
+  });
 });
 
 // POST /assignments/submit - Submit assignment
-app.post('/assignments/submit', authenticateToken, assignmentUpload.single('file'), async (req, res) => {
+app.post('/assignments/submit', authenticateToken, assignmentUpload.single('file'), (req, res) => {
   const { assignment_id, content } = req.body;
   const file_path = req.file ? req.file.filename : null;
 
@@ -2113,184 +1933,163 @@ app.post('/assignments/submit', authenticateToken, assignmentUpload.single('file
     return res.status(400).json({ error: 'Either content or file is required' });
   }
 
-  try {
-    const assignmentsCollection = collection(db, 'assignments');
-    const enrollmentsCollection = collection(db, 'enrollments');
-    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
-
-    // Check if assignment exists and user is enrolled
-    const assignmentDocRef = doc(assignmentsCollection, assignment_id);
-    const aDoc = await getDoc(assignmentDocRef);
-
-    if (!aDoc.exists()) {
-      return res.status(404).json({ error: 'Assignment not found' });
+  // Check if assignment exists and user is enrolled
+  db.collection('assignments').doc(assignment_id).get().then(aDoc => {
+    if (!aDoc.exists) {
+      return res.status(404).json({ error: 'Assignment not found or not enrolled' });
     }
 
     const course_id = aDoc.data().course_id;
 
-    const enrollmentQuery = query(enrollmentsCollection, where('course_id', '==', course_id), where('user_id', '==', req.user.id));
-    const enrollmentSnap = await getDocs(enrollmentQuery);
+    db.collection('enrollments').where('course_id', '==', course_id).where('user_id', '==', req.user.id).get().then(enrollmentSnap => {
+      if (enrollmentSnap.empty) {
+        return res.status(404).json({ error: 'Assignment not found or not enrolled' });
+      }
 
-    if (enrollmentSnap.empty) {
-      return res.status(403).json({ error: 'User not enrolled in this course' });
-    }
+      db.collection('assignment_submissions').where('assignment_id', '==', assignment_id).where('user_id', '==', req.user.id).get().then(existingSnap => {
+        if (!existingSnap.empty) {
+          return res.status(400).json({ error: 'Assignment already submitted' });
+        }
 
-    const existingSubmissionQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', assignment_id), where('user_id', '==', req.user.id));
-    const existingSubmissionSnap = await getDocs(existingSubmissionQuery);
-
-    if (!existingSubmissionSnap.empty) {
-      return res.status(400).json({ error: 'Assignment already submitted' });
-    }
-
-    const submissionRef = doc(assignmentSubmissionsCollection);
-    await setDoc(submissionRef, {
-      assignment_id,
-      user_id: req.user.id,
-      content: content || '',
-      file_path,
-      submitted_at: Timestamp.now(), // Client SDK Timestamp
-      status: 'submitted'
+        const submissionRef = db.collection('assignment_submissions').doc();
+        submissionRef.set({
+          assignment_id,
+          user_id: req.user.id,
+          content: content || '',
+          file_path,
+          submitted_at: Timestamp.now(),
+          status: 'submitted'
+        }).then(() => {
+          res.json({
+            success: true,
+            message: 'Assignment submitted successfully',
+            submission_id: submissionRef.id
+          });
+        });
+      });
     });
-
-    res.json({
-      success: true,
-      message: 'Assignment submitted successfully',
-      submission_id: submissionRef.id
-    });
-  } catch (err) {
+  }).catch(err => {
     console.error('Database error:', err);
     res.status(500).json({ error: 'Database error' });
-  }
+  });
 });
 
 // GET /assignments/download-submission/:id - Download submission file
-app.get('/assignments/download-submission/:id', authenticateToken, async (req, res) => {
+app.get('/assignments/download-submission/:id', authenticateToken, (req, res) => {
   const submissionId = req.params.id;
 
-  try {
-    const submissionDocRef = doc(db, 'assignment_submissions', submissionId);
-    const sDoc = await getDoc(submissionDocRef);
-
-    if (!sDoc.exists()) {
+  db.collection('assignment_submissions').doc(submissionId).get().then(sDoc => {
+    if (!sDoc.exists) {
       return res.status(404).json({ error: 'Submission not found' });
     }
 
     const s = sDoc.data();
 
-    const assignmentDocRef = doc(db, 'assignments', s.assignment_id);
-    await getDoc(assignmentDocRef); // Ensure assignment exists, though not used further
+    db.collection('assignments').doc(s.assignment_id).get().then(aDoc => {
+      const a = aDoc.data();
 
-    if (s.user_id !== req.user.id && req.user.account_type !== 'admin') {
-      return res.status(403).json({ error: 'Access denied' });
-    }
+      if (s.user_id !== req.user.id && req.user.account_type !== 'admin') {
+        return res.status(403).json({ error: 'Access denied' });
+      }
 
-    if (!s.file_path) {
-      return res.status(404).json({ error: 'No file attached to this submission' });
-    }
+      if (!s.file_path) {
+        return res.status(404).json({ error: 'No file attached to this submission' });
+      }
 
-    const filePath = path.join(assignmentsDir, s.file_path); // Use the correct local directory
+      const filePath = path.join(__dirname, 'uploads', 'assignments', s.file_path);
 
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'File not found' });
-    }
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'File not found' });
+      }
 
-    res.setHeader('Content-Disposition', `attachment; filename="${s.file_path}"`);
-    res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${s.file_path}"`);
+      res.setHeader('Content-Type', 'application/octet-stream');
 
-    const fileStream = fs.createReadStream(filePath);
-    fileStream.pipe(res);
-  } catch (err) {
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
+    });
+  }).catch(err => {
     console.error('Database error:', err);
     res.status(500).json({ error: 'Database error' });
-  }
+  });
 });
 
 // GET /assignments/course/:courseId - Get assignments for a specific course
-app.get('/assignments/course/:courseId', authenticateToken, async (req, res) => {
+app.get('/assignments/course/:courseId', authenticateToken, (req, res) => {
   const courseId = req.params.courseId;
 
-  try {
-    const enrollmentsCollection = collection(db, 'enrollments');
-    const assignmentsCollection = collection(db, 'assignments');
-    const coursesCollection = collection(db, 'courses');
-    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
-
-    const enrollmentQuery = query(enrollmentsCollection, where('course_id', '==', courseId), where('user_id', '==', req.user.id));
-    const enrollmentSnap = await getDocs(enrollmentQuery);
-
+  db.collection('enrollments').where('course_id', '==', courseId).where('user_id', '==', req.user.id).get().then(enrollmentSnap => {
     if (enrollmentSnap.empty && req.user.account_type !== 'admin') {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const assignmentsQuery = query(assignmentsCollection, where('course_id', '==', courseId), orderBy('due_date'));
-    const assignmentsSnap = await getDocs(assignmentsQuery);
+    db.collection('assignments').where('course_id', '==', courseId).orderBy('due_date').get().then(assignmentsSnap => {
+      const results = [];
+      const promises = assignmentsSnap.docs.map(async (aDoc) => {
+        const a = aDoc.data();
+        const submission = await db.collection('assignment_submissions').where('assignment_id', '==', aDoc.id).where('user_id', '==', req.user.id).get();
+        let sub = null;
+        if (!submission.empty) {
+          sub = submission.docs[0].data();
+        }
+        const course = await db.collection('courses').doc(courseId).get();
+        const c = course.data();
+        results.push({
+          id: aDoc.id,
+          course_id: courseId,
+          title: a.title,
+          description: a.description,
+          due_date: a.due_date,
+          max_points: a.max_points,
+          created_at: a.created_at,
+          course_title: c.title,
+          course_category: c.category,
+          submission_id: sub ? submission.docs[0].id : null,
+          submission_content: sub ? sub.content : null,
+          submission_file_path: sub ? sub.file_path : null,
+          submitted_at: sub ? sub.submitted_at : null,
+          grade: sub ? sub.grade : null,
+          feedback: sub ? sub.feedback : null,
+          submission_status: sub ? sub.status : null
+        });
+      });
 
-    const results = [];
-    const promises = assignmentsSnap.docs.map(async (aDoc) => {
-      const a = aDoc.data();
-      const submissionQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', aDoc.id), where('user_id', '==', req.user.id));
-      const submissionSnap = await getDocs(submissionQuery);
-      let sub = null;
-      if (!submissionSnap.empty) {
-        sub = submissionSnap.docs[0].data();
-      }
-      const courseDocRef = doc(coursesCollection, courseId);
-      const course = await getDoc(courseDocRef);
-      const c = course.data();
-      results.push({
-        id: aDoc.id,
-        course_id: courseId,
-        title: a.title,
-        description: a.description,
-        due_date: a.due_date,
-        max_points: a.max_points,
-        created_at: a.created_at,
-        course_title: c.title,
-        course_category: c.category,
-        submission_id: sub ? submissionSnap.docs[0].id : null,
-        submission_content: sub ? sub.content : null,
-        submission_file_path: sub ? sub.file_path : null,
-        submitted_at: sub ? sub.submitted_at : null,
-        grade: sub ? sub.grade : null,
-        feedback: sub ? sub.feedback : null,
-        submission_status: sub ? sub.status : null
+      Promise.all(promises).then(() => {
+        const assignments = results.map(row => ({
+          id: row.id,
+          course_id: row.course_id,
+          title: row.title,
+          description: row.description,
+          due_date: row.due_date,
+          max_points: row.max_points,
+          created_at: row.created_at,
+          course: {
+            id: row.course_id,
+            title: row.course_title,
+            category: row.course_category
+          },
+          submission: row.submission_id ? {
+            id: row.submission_id,
+            content: row.submission_content,
+            file_path: row.submission_file_path,
+            submitted_at: row.submitted_at,
+            grade: row.grade,
+            feedback: row.feedback,
+            status: row.submission_status
+          } : null
+        }));
+
+        res.json(assignments);
       });
     });
-
-    await Promise.all(promises);
-    const assignments = results.map(row => ({
-      id: row.id,
-      course_id: row.course_id,
-      title: row.title,
-      description: row.description,
-      due_date: row.due_date,
-      max_points: row.max_points,
-      created_at: row.created_at,
-      course: {
-        id: row.course_id,
-        title: row.course_title,
-        category: row.course_category
-      },
-      submission: row.submission_id ? {
-        id: row.submission_id,
-        content: row.submission_content,
-        file_path: row.submission_file_path,
-        submitted_at: row.submitted_at,
-        grade: row.grade,
-        feedback: row.feedback,
-        status: row.submission_status
-      } : null
-    }));
-
-    res.json(assignments);
-  } catch (err) {
+  }).catch(err => {
     console.error('Database error:', err);
     res.status(500).json({ error: 'Database error' });
-  }
+  });
 });
 
-// PUT /assignments/grade/:submissionId - Grade assignment (admin/instructor only)
-app.put('/assignments/grade/:submissionId', authenticateToken, requireAdmin, async (req, res) => {
+// PUT /api/assignments/grade/:submissionId - Grade assignment (admin/instructor only)
+app.put('/api/assignments/grade/:submissionId', authenticateToken, requireAdmin, (req, res) => {
   const submissionId = req.params.submissionId;
   const { grade, feedback } = req.body;
 
@@ -2299,327 +2098,89 @@ app.put('/assignments/grade/:submissionId', authenticateToken, requireAdmin, asy
     return res.status(400).json({ error: 'Grade must be between 0 and 100' });
   }
 
-  try {
-    const submissionRef = doc(db, 'assignment_submissions', submissionId);
-    await updateDoc(submissionRef, {
-      grade,
-      feedback: feedback || '',
-      status: 'graded'
-    });
+  db.collection('assignment_submissions').doc(submissionId).update({
+    grade,
+    feedback: feedback || '',
+    status: 'graded'
+  }).then(() => {
     res.json({
       success: true,
       message: 'Assignment graded successfully'
     });
-  } catch (err) {
+  }).catch(err => {
     console.error('Database error:', err);
     res.status(500).json({ error: 'Database error' });
+  });
+});
+
+// Error handling middleware for multer
+app.use((error, req, res, next) => {
+  if (error instanceof multer.MulterError) {
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'File too large. Maximum size is 10MB.' });
+    }
+  }
+  if (error.message.includes('Invalid file type')) {
+    return res.status(400).json({ error: error.message });
+  }
+  next(error);
+});
+
+// ==================== RESOURCES ROUTES ======================
+// GET resources for current user
+app.get('/api/resources', authenticateToken, async (req, res) => {
+  try {
+    const accountType = req.user.account_type;
+
+    const resources = await db.collection('resources').get();
+    const filtered = resources.docs.map(doc => doc.data()).filter(r => r.allowed_account_types.includes(accountType));
+
+    res.json(filtered);
+  } catch (error) {
+    console.error('Error fetching resources:', error);
+    res.status(500).json({ error: 'Failed to fetch resources' });
   }
 });
 
-// ==================== INTERNSHIPS SECTION ROUTES ====================
-
-// GET /api/internships - Fetch all internships
-app.get('/api/internships', async (req, res) => {
+// GET resource download
+app.get('/api/resources/:id/download', authenticateToken, async (req, res) => {
   try {
-    const internshipsCollection = collection(db, 'internships');
-    const internshipsQuery = query(internshipsCollection, orderBy('posted_at', 'desc'));
-    const internshipsSnap = await getDocs(internshipsQuery);
+    const { id } = req.params;
 
-    const data = internshipsSnap.docs.map(docSnapshot => {
-      const i = docSnapshot.data();
-      return {
-        id: docSnapshot.id,
-        title: i.title,
-        company: i.company,
-        location: i.location,
-        duration: i.duration,
-        type: i.type,
-        level: i.level,
-        description: i.description,
-        requirements: i.requirements,
-        benefits: i.benefits,
-        posted_at: i.posted_at,
-        applications_count: i.applications_count,
-        spots_available: i.spots_available
-      };
-    });
+    const resource = await db.collection('resources').doc(id).get();
 
-    res.json(data);
+    if (!resource.exists) {
+      return res.status(404).json({ error: 'Resource not found or access denied' });
+    }
+
+    const r = resource.data();
+
+    if (!r.allowed_account_types.includes(req.user.account_type)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (r.is_premium && !['professional', 'business', 'agency', 'admin'].includes(req.user.account_type)) {
+      return res.status(403).json({ error: 'Premium resource requires upgraded account' });
+    }
+
+    // For demo purposes, we'll return a simple text file
+    res.setHeader('Content-Disposition', `attachment; filename="${r.title}.txt"`);
+    res.setHeader('Content-Type', 'text/plain');
+
+    const fileContent = `
+      Resource: ${r.title}
+      Description: ${r.description}
+      Type: ${r.type}
+      Category: ${r.category}
+      Access Level: ${r.is_premium ? 'Premium' : 'Free'}
+      
+      This is a demo download. In a real application, this would be the actual resource file.
+    `;
+
+    res.send(fileContent);
   } catch (error) {
-    console.error('Error fetching internships:', error);
-    res.status(500).json({ message: 'Internal server error while fetching internships.' });
-  }
-});
-
-// GET /api/user/internship-applications - Fetch applications for the authenticated user
-app.get('/api/user/internship-applications', authenticateToken, async (req, res) => {
-  const userId = req.user.id;
-
-  if (!userId) {
-    return res.status(400).json({ message: 'User ID not found in token.' });
-  }
-
-  try {
-    const internshipSubmissionsCollection = collection(db, 'internship_submissions');
-    const internshipsCollection = collection(db, 'internships');
-
-    const applicationsQuery = query(internshipSubmissionsCollection, where('user_id', '==', userId), orderBy('submitted_at', 'desc'));
-    const applicationsSnap = await getDocs(applicationsQuery);
-
-    const parsedApplications = [];
-    for (const docSnapshot of applicationsSnap.docs) {
-      const app = docSnapshot.data();
-      const internshipDocRef = doc(internshipsCollection, app.internship_id);
-      const internship = await getDoc(internshipDocRef);
-      const i = internship.data();
-      parsedApplications.push({
-        id: docSnapshot.id,
-        internship_id: app.internship_id,
-        status: app.status,
-        submitted_at: app.submitted_at,
-        resume_url: app.resume_url,
-        cover_letter: app.cover_letter,
-        title: i.title,
-        company: i.company,
-        location: i.location,
-        duration: i.duration,
-        type: i.type,
-        level: i.level,
-        description: i.description,
-        requirements: i.requirements || '[]',
-        benefits: i.benefits || '[]',
-        applications_count: i.applications_count,
-        spots_available: i.spots_available,
-        internship_posted_at: i.posted_at
-      });
-    }
-
-    res.json(parsedApplications);
-  } catch (error) {
-    console.error('Error fetching user internship applications:', error);
-    res.status(500).json({ message: 'Internal server error while fetching your applications.' });
-  }
-});
-
-// POST /api/internships/:id/apply - Apply for an internship
-app.post('/api/internships/:id/apply', authenticateToken, async (req, res) => {
-  const { id: internshipId } = req.params;
-  const { full_name, email, phone, resume_url, cover_letter } = req.body;
-  const userId = req.user.id;
-
-  if (!full_name || !email || !resume_url) {
-    return res.status(400).json({ message: 'Full name, email, and resume link are required.' });
-  }
-
-  try {
-    const internshipsCollection = collection(db, 'internships');
-    const internshipSubmissionsCollection = collection(db, 'internship_submissions');
-
-    const internshipDocRef = doc(internshipsCollection, internshipId);
-    const internship = await getDoc(internshipDocRef);
-
-    if (!internship.exists()) {
-      return res.status(404).json({ message: 'Internship not found.' });
-    }
-
-    const i = internship.data();
-
-    if (i.spots_available <= 0) {
-      return res.status(400).json({ message: 'No available spots left for this internship.' });
-    }
-
-    const existingApplicationQuery = query(internshipSubmissionsCollection, where('internship_id', '==', internshipId), where('user_id', '==', userId));
-    const existingApplicationSnap = await getDocs(existingApplicationQuery);
-
-    if (!existingApplicationSnap.empty) {
-      return res.status(409).json({ message: 'You have already applied for this internship.' });
-    }
-
-    const newSubmissionRef = doc(internshipSubmissionsCollection); // Auto-generate ID
-    await setDoc(newSubmissionRef, {
-      internship_id: internshipId,
-      user_id: userId,
-      full_name,
-      email,
-      phone: phone || null,
-      resume_url,
-      cover_letter: cover_letter || null,
-      submitted_at: Timestamp.now(), // Client SDK Timestamp
-      status: 'pending'
-    });
-
-    await updateDoc(internshipDocRef, {
-      spots_available: FieldValue.increment(-1), // Client SDK FieldValue
-      applications_count: FieldValue.increment(1) // Client SDK FieldValue
-    });
-
-    res.status(201).json({ message: 'Internship application submitted successfully!' });
-
-  } catch (error) {
-    console.error('Error submitting internship application:', error);
-    res.status(500).json({ message: 'Internal server error during application submission.' });
-  }
-});
-
-// ==================== SERVICES ROUTES ====================
-
-// Get service categories
-app.get('/api/services/categories', async (req, res) => {
-  try {
-    const serviceCategoriesCollection = collection(db, 'service_categories');
-    const serviceSubcategoriesCollection = collection(db, 'service_subcategories');
-
-    const categoriesQuery = query(serviceCategoriesCollection, where('is_active', '==', true), orderBy('name'));
-    const categoriesSnap = await getDocs(categoriesQuery);
-
-    const categoriesWithSubs = [];
-    for (const docSnapshot of categoriesSnap.docs) {
-      const category = docSnapshot.data();
-      const subsQuery = query(serviceSubcategoriesCollection, where('category_id', '==', docSnapshot.id), where('is_active', '==', true), orderBy('name'));
-      const subsSnap = await getDocs(subsQuery);
-      categoriesWithSubs.push({
-        id: docSnapshot.id,
-        name: category.name,
-        description: category.description,
-        icon: category.icon,
-        subcategories: subsSnap.docs.map(sDoc => ({
-          id: sDoc.id,
-          categoryId: sDoc.data().category_id,
-          name: sDoc.data().name,
-          description: sDoc.data().description,
-          basePrice: sDoc.data().base_price
-        }))
-      });
-    }
-
-    res.json(categoriesWithSubs);
-
-  } catch (error) {
-    console.error('Get service categories error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Submit service request
-app.post('/api/services/requests', authenticateToken, async (req, res) => {
-  try {
-    const {
-      subcategoryId, fullName, email, phone, company, website,
-      projectDetails, budgetRange, timeline, contactMethod, additionalRequirements
-    } = req.body;
-    const userId = req.user.id;
-
-    // Validate required fields
-    if (!subcategoryId || !fullName || !email || !phone || !projectDetails || !budgetRange || !timeline || !contactMethod) {
-      return res.status(400).json({ error: 'All required fields must be provided' });
-    }
-
-    // Check if subcategory exists
-    const subcategoryDocRef = doc(db, 'service_subcategories', subcategoryId);
-    const subcategory = await getDoc(subcategoryDocRef);
-
-    if (!subcategory.exists() || !subcategory.data().is_active) {
-      return res.status(404).json({ error: 'Service subcategory not found' });
-    }
-
-    // Create service request
-    const serviceRequestsCollection = collection(db, 'service_requests');
-    const requestRef = doc(serviceRequestsCollection);
-    await setDoc(requestRef, {
-      user_id: userId,
-      subcategory_id: subcategoryId,
-      full_name: fullName,
-      email,
-      phone,
-      company,
-      website,
-      project_details: projectDetails,
-      budget_range: budgetRange,
-      timeline,
-      contact_method: contactMethod,
-      additional_requirements: additionalRequirements,
-      created_at: Timestamp.now(), // Client SDK Timestamp
-      status: 'pending'
-    });
-
-    res.status(201).json({
-      message: 'Service request submitted successfully',
-      requestId: requestRef.id
-    });
-
-  } catch (error) {
-    console.error('Service request error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Get user's service requests
-app.get('/api/services/my-requests', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.id;
-
-    const serviceRequestsCollection = collection(db, 'service_requests');
-    const serviceSubcategoriesCollection = collection(db, 'service_subcategories');
-    const serviceCategoriesCollection = collection(db, 'service_categories');
-
-    const requestsQuery = query(serviceRequestsCollection, where('user_id', '==', userId), orderBy('created_at', 'desc'));
-    const requestsSnap = await getDocs(requestsQuery);
-
-    const formattedRequests = [];
-    for (const docSnapshot of requestsSnap.docs) {
-      const r = docSnapshot.data();
-      const subcategoryDocRef = doc(serviceSubcategoriesCollection, r.subcategory_id);
-      const subcategory = await getDoc(subcategoryDocRef);
-      const ss = subcategory.data();
-      const categoryDocRef = doc(serviceCategoriesCollection, ss.category_id);
-      const category = await getDoc(categoryDocRef);
-      const sc = category.data();
-      formattedRequests.push({
-        id: docSnapshot.id,
-        user_id: r.user_id,
-        subcategory_id: r.subcategory_id,
-        full_name: r.full_name,
-        email: r.email,
-        phone: r.phone,
-        company: r.company,
-        website: r.website,
-        project_details: r.project_details,
-        budget_range: r.budget_range,
-        timeline: r.timeline,
-        contact_method: r.contact_method,
-        additional_requirements: r.additional_requirements,
-        status: r.status,
-        created_at: r.created_at,
-        updated_at: r.updated_at,
-        category_name: sc.name,
-        subcategory_name: ss.name
-      });
-    }
-
-    res.json(formattedRequests.map(request => ({
-      id: request.id,
-      userId: request.user_id,
-      subcategoryId: request.subcategory_id,
-      fullName: request.full_name,
-      email: request.email,
-      phone: request.phone,
-      company: request.company,
-      website: request.website,
-      projectDetails: request.project_details,
-      budgetRange: request.budget_range,
-      timeline: request.timeline,
-      contactMethod: request.contact_method,
-      additionalRequirements: request.additional_requirements,
-      status: request.status,
-      createdAt: request.created_at,
-      updatedAt: request.updated_at,
-      categoryName: request.category_name,
-      subcategoryName: request.subcategory_name
-    })));
-
-  } catch (error) {
-    console.error('Get service requests error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('Error downloading resource:', error);
+    res.status(500).json({ error: 'Failed to download resource' });
   }
 });
 
@@ -2630,39 +2191,27 @@ app.get('/api/certificates/my-certificates', authenticateToken, async (req, res)
   try {
     const userId = req.user.id;
 
-    const certificatesCollection = collection(db, 'certificates');
-    const coursesCollection = collection(db, 'courses');
-    const enrollmentsCollection = collection(db, 'enrollments');
-    const assignmentsCollection = collection(db, 'assignments');
-    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
-
-    const certificatesQuery = query(certificatesCollection, where('user_id', '==', userId), orderBy('issued_date', 'desc'));
-    const certificatesSnap = await getDocs(certificatesQuery);
+    const certificates = await db.collection('certificates').where('user_id', '==', userId).orderBy('issued_date', 'desc').get();
 
     const formattedCertificates = [];
-    for (const docSnapshot of certificatesSnap.docs) {
-      const c = docSnapshot.data();
-      const courseDocRef = doc(coursesCollection, c.course_id);
-      const course = await getDoc(courseDocRef);
+    for (const doc of certificates.docs) {
+      const c = doc.data();
+      const course = await db.collection('courses').doc(c.course_id).get();
       const co = course.data();
-      const enrollmentQuery = query(enrollmentsCollection, where('user_id', '==', userId), where('course_id', '==', c.course_id));
-      const enrollmentSnap = await getDocs(enrollmentQuery);
-      const e = enrollmentSnap.docs[0].data(); // Assuming one enrollment per user/course
-
-      const assignmentsQuery = query(assignmentsCollection, where('course_id', '==', c.course_id));
-      const assignmentsSnap = await getDocs(assignmentsQuery);
+      const enrollment = await db.collection('enrollments').where('user_id', '==', userId).where('course_id', '==', c.course_id).get();
+      const e = enrollment.docs[0].data();
+      const assignments = await db.collection('assignments').where('course_id', '==', c.course_id).get();
       let avgGrade = 0;
       let count = 0;
-      for (const aDoc of assignmentsSnap.docs) {
-        const submissionQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', aDoc.id), where('user_id', '==', userId));
-        const submissionSnap = await getDocs(submissionQuery);
-        if (!submissionSnap.empty) {
-          avgGrade += submissionSnap.docs[0].data().grade || 0;
+      for (const a of assignments.docs) {
+        const sub = await db.collection('assignment_submissions').where('assignment_id', '==', a.id).where('user_id', '==', userId).get();
+        if (!sub.empty) {
+          avgGrade += sub.docs[0].data().grade || 0;
           count++;
         }
       }
       formattedCertificates.push({
-        id: docSnapshot.id,
+        id: doc.id,
         userId: c.user_id,
         courseId: c.course_id,
         certificateUrl: c.certificate_url,
@@ -2697,21 +2246,18 @@ app.get('/api/certificates/:certificateId/download', authenticateToken, async (r
     const userId = req.user.id;
 
     // Verify the certificate belongs to the user
-    const certificateDocRef = doc(db, 'certificates', certificateId);
-    const certificate = await getDoc(certificateDocRef);
+    const certificate = await db.collection('certificates').doc(certificateId).get();
 
-    if (!certificate.exists() || certificate.data().user_id !== userId) {
+    if (!certificate.exists || certificate.data().user_id !== userId) {
       return res.status(404).json({ error: 'Certificate not found' });
     }
 
     const cert = certificate.data();
 
-    const courseDocRef = doc(db, 'courses', cert.course_id);
-    const course = await getDoc(courseDocRef);
+    const course = await db.collection('courses').doc(cert.course_id).get();
     const co = course.data();
 
-    const userDocRef = doc(db, 'users', userId);
-    const user = await getDoc(userDocRef);
+    const user = await db.collection('users').doc(userId).get();
     const u = user.data();
 
     // If certificate_url exists, redirect to it
@@ -2720,6 +2266,7 @@ app.get('/api/certificates/:certificateId/download', authenticateToken, async (r
     }
 
     // Otherwise, generate a simple PDF certificate
+    // For now, we'll return a JSON response - you can implement PDF generation later
     const certificateData = {
       recipientName: `${u.first_name} ${u.last_name}`,
       courseName: co.title,
@@ -2740,30 +2287,26 @@ app.get('/api/certificates/:certificateId/download', authenticateToken, async (r
 });
 
 // Get all certificates (admin only)
-app.get('/api/certificates', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/certificates', authenticateToken, async (req, res) => {
   try {
-    const certificatesCollection = collection(db, 'certificates');
-    const coursesCollection = collection(db, 'courses');
-    const usersCollection = collection(db, 'users');
-    const enrollmentsCollection = collection(db, 'enrollments');
+    // Check if user is admin
+    if (req.user.account_type !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
 
-    const certificatesQuery = query(certificatesCollection, orderBy('issued_date', 'desc'));
-    const certificatesSnap = await getDocs(certificatesQuery);
+    const certificates = await db.collection('certificates').orderBy('issued_date', 'desc').get();
 
     const formattedCertificates = [];
-    for (const docSnapshot of certificatesSnap.docs) {
-      const c = docSnapshot.data();
-      const courseDocRef = doc(coursesCollection, c.course_id);
-      const course = await getDoc(courseDocRef);
+    for (const doc of certificates.docs) {
+      const c = doc.data();
+      const course = await db.collection('courses').doc(c.course_id).get();
       const co = course.data();
-      const userDocRef = doc(usersCollection, c.user_id);
-      const user = await getDoc(userDocRef);
+      const user = await db.collection('users').doc(c.user_id).get();
       const u = user.data();
-      const enrollmentQuery = query(enrollmentsCollection, where('user_id', '==', c.user_id), where('course_id', '==', c.course_id));
-      const enrollmentSnap = await getDocs(enrollmentQuery);
-      const e = enrollmentSnap.docs[0].data();
+      const enrollment = await db.collection('enrollments').where('user_id', '==', c.user_id).where('course_id', '==', c.course_id).get();
+      const e = enrollment.docs[0].data();
       formattedCertificates.push({
-        id: docSnapshot.id,
+        id: doc.id,
         userId: c.user_id,
         courseId: c.course_id,
         certificateUrl: c.certificate_url,
@@ -2794,47 +2337,45 @@ app.get('/api/certificates', authenticateToken, requireAdmin, async (req, res) =
 });
 
 // Issue new certificate (admin only)
-app.post('/api/certificates', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/certificates', authenticateToken, async (req, res) => {
   try {
+    // Check if user is admin
+    if (req.user.account_type !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
     const { userId, courseId, certificateUrl } = req.body;
 
     if (!userId || !courseId) {
       return res.status(400).json({ error: 'User ID and Course ID are required' });
     }
 
-    const enrollmentsCollection = collection(db, 'enrollments');
-    const certificatesCollection = collection(db, 'certificates');
-    const userStatsCollection = collection(db, 'user_stats');
-
     // Check if user has completed the course
-    const enrollmentsQuery = query(enrollmentsCollection, where('user_id', '==', userId), where('course_id', '==', courseId), where('status', '==', 'completed'));
-    const enrollmentsSnap = await getDocs(enrollmentsQuery);
+    const enrollments = await db.collection('enrollments').where('user_id', '==', userId).where('course_id', '==', courseId).where('status', '==', 'completed').get();
 
-    if (enrollmentsSnap.empty) {
+    if (enrollments.empty) {
       return res.status(400).json({ error: 'User has not completed this course' });
     }
 
     // Check if certificate already exists
-    const existingCertificatesQuery = query(certificatesCollection, where('user_id', '==', userId), where('course_id', '==', courseId));
-    const existingCertificatesSnap = await getDocs(existingCertificatesQuery);
+    const existingCertificates = await db.collection('certificates').where('user_id', '==', userId).where('course_id', '==', courseId).get();
 
-    if (!existingCertificatesSnap.empty) {
+    if (!existingCertificates.empty) {
       return res.status(400).json({ error: 'Certificate already exists for this user and course' });
     }
 
     // Create new certificate
-    const certRef = doc(certificatesCollection);
-    await setDoc(certRef, {
+    const certRef = db.collection('certificates').doc();
+    await certRef.set({
       user_id: userId,
       course_id: courseId,
       certificate_url: certificateUrl || null,
-      issued_date: Timestamp.now() // Client SDK Timestamp
+      issued_date: Timestamp.now()
     });
 
     // Update user stats
-    const userStatsRef = doc(userStatsCollection, userId);
-    await updateDoc(userStatsRef, {
-      certificates_earned: FieldValue.increment(1) // Client SDK FieldValue
+    await db.collection('user_stats').doc(userId).update({
+      certificates_earned: increment(1)
     });
 
     res.status(201).json({
@@ -2848,15 +2389,19 @@ app.post('/api/certificates', authenticateToken, requireAdmin, async (req, res) 
 });
 
 // Update certificate
-app.put('/api/certificates/:certificateId', authenticateToken, requireAdmin, async (req, res) => {
+app.put('/api/certificates/:certificateId', authenticateToken, async (req, res) => {
   try {
+    // Check if user is admin
+    if (req.user.account_type !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
     const { certificateId } = req.params;
     const { certificateUrl } = req.body;
 
-    const certificateRef = doc(db, 'certificates', certificateId);
-    await updateDoc(certificateRef, {
+    await db.collection('certificates').doc(certificateId).update({
       certificate_url: certificateUrl,
-      issued_date: Timestamp.now() // Client SDK Timestamp
+      issued_date: Timestamp.now()
     });
 
     res.json({ message: 'Certificate updated successfully' });
@@ -2867,30 +2412,30 @@ app.put('/api/certificates/:certificateId', authenticateToken, requireAdmin, asy
 });
 
 // Delete certificate (admin only)
-app.delete('/api/certificates/:certificateId', authenticateToken, requireAdmin, async (req, res) => {
+app.delete('/api/certificates/:certificateId', authenticateToken, async (req, res) => {
   try {
+    // Check if user is admin
+    if (req.user.account_type !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
     const { certificateId } = req.params;
 
-    const certificatesCollection = collection(db, 'certificates');
-    const userStatsCollection = collection(db, 'user_stats');
-
     // Get certificate details before deletion
-    const certificateRef = doc(certificatesCollection, certificateId);
-    const certificate = await getDoc(certificateRef);
+    const certificate = await db.collection('certificates').doc(certificateId).get();
 
-    if (!certificate.exists()) {
+    if (!certificate.exists) {
       return res.status(404).json({ error: 'Certificate not found' });
     }
 
     const cert = certificate.data();
 
     // Delete certificate
-    await deleteDoc(certificateRef);
+    await db.collection('certificates').doc(certificateId).delete();
 
     // Update user stats
-    const userStatsRef = doc(userStatsCollection, cert.user_id);
-    await updateDoc(userStatsRef, {
-      certificates_earned: FieldValue.increment(-1) // Client SDK FieldValue
+    await db.collection('user_stats').doc(cert.user_id).update({
+      certificates_earned: increment(-1)
     });
 
     res.json({ message: 'Certificate deleted successfully' });
@@ -3030,7 +2575,49 @@ const getDefaultResources = (accountType) => {
   );
 };
 
-// Get resources for current user
+// Get user profile
+app.get('/api/user/profile', authenticateToken, async (req, res) => {
+  try {
+    res.json(req.user);
+  } catch (error) {
+    console.error('Error fetching user profile:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get user stats
+app.get('/api/user/stats', authenticateToken, async (req, res) => {
+  try {
+    const stats = await db.collection('user_stats').doc(req.user.id).get();
+
+    let statsData;
+    if (!stats.exists) {
+      await db.collection('user_stats').doc(req.user.id).set({
+        coursesEnrolled: 0,
+        coursesCompleted: 0,
+        certificatesEarned: 0,
+        learningStreak: 0,
+        lastActivity: new Date().toISOString()
+      });
+      statsData = {
+        coursesEnrolled: 0,
+        coursesCompleted: 0,
+        certificatesEarned: 0,
+        learningStreak: 0,
+        lastActivity: new Date().toISOString()
+      };
+    } else {
+      statsData = stats.data();
+    }
+
+    res.json(statsData);
+  } catch (error) {
+    console.error('Error fetching user stats:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get resources
 app.get('/api/resources', authenticateToken, async (req, res) => {
   try {
     const resources = getDefaultResources(req.user.account_type);
@@ -3057,12 +2644,10 @@ app.get('/api/resources/:id/download', authenticateToken, async (req, res) => {
     }
 
     // Log the download
-    const downloadLogsCollection = collection(db, 'download_logs');
-    await setDoc(doc(downloadLogsCollection), { // Auto-ID document
+    await db.collection('download_logs').add({
       user_id: req.user.id,
       resource_id: resourceId,
-      resource_name: resource.title,
-      downloaded_at: Timestamp.now()
+      resource_name: resource.title
     });
 
     // Create a mock file buffer for download
@@ -3084,47 +2669,342 @@ app.get('/api/resources/:id/download', authenticateToken, async (req, res) => {
   }
 });
 
+// Get enrolled courses
+app.get('/api/courses/enrolled', authenticateToken, async (req, res) => {
+  try {
+    const enrollments = await db.collection('enrollments').where('user_id', '==', req.user.id).where('status', '==', 'active').orderBy('enrollment_date', 'desc').get();
+
+    const courses = [];
+    for (const doc of enrollments.docs) {
+      const e = doc.data();
+      const course = await db.collection('courses').doc(e.course_id).get();
+      const c = course.data();
+      courses.push({
+        id: e.course_id,
+        title: c.title,
+        category: c.category,
+        difficulty_level: c.difficulty_level,
+        progress: e.progress,
+        isEnrolled: true
+      });
+    }
+
+    res.json(courses);
+  } catch (error) {
+    console.error('Error fetching enrolled courses:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ==================== INTERNSHIPS SECTION ROUTES ====================
+
+// GET /api/internships - Fetch all internships
+app.get('/api/internships', async (req, res) => {
+  try {
+    const internships = await db.collection('internships').orderBy('posted_at', 'desc').get();
+
+    const data = internships.docs.map(doc => {
+      const i = doc.data();
+      return {
+        id: doc.id,
+        title: i.title,
+        company: i.company,
+        location: i.location,
+        duration: i.duration,
+        type: i.type,
+        level: i.level,
+        description: i.description,
+        requirements: i.requirements,
+        benefits: i.benefits,
+        posted_at: i.posted_at,
+        applications_count: i.applications_count,
+        spots_available: i.spots_available
+      };
+    });
+
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching internships:', error);
+    res.status(500).json({ message: 'Internal server error while fetching internships.' });
+  }
+});
+
+// GET /api/user/internship-applications - Fetch applications for the authenticated user
+app.get('/api/user/internship-applications', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+
+  if (!userId) {
+    return res.status(400).json({ message: 'User ID not found in token.' });
+  }
+
+  try {
+    const applications = await db.collection('internship_submissions').where('user_id', '==', userId).orderBy('submitted_at', 'desc').get();
+
+    const parsedApplications = [];
+    for (const doc of applications.docs) {
+      const app = doc.data();
+      const internship = await db.collection('internships').doc(app.internship_id).get();
+      const i = internship.data();
+      parsedApplications.push({
+        id: doc.id,
+        internship_id: app.internship_id,
+        status: app.status,
+        submitted_at: app.submitted_at,
+        resume_url: app.resume_url,
+        cover_letter: app.cover_letter,
+        title: i.title,
+        company: i.company,
+        location: i.location,
+        duration: i.duration,
+        type: i.type,
+        level: i.level,
+        description: i.description,
+        requirements: i.requirements || '[]',
+        benefits: i.benefits || '[]',
+        applications_count: i.applications_count,
+        spots_available: i.spots_available,
+        internship_posted_at: i.posted_at
+      });
+    }
+
+    res.json(parsedApplications);
+  } catch (error) {
+    console.error('Error fetching user internship applications:', error);
+    res.status(500).json({ message: 'Internal server error while fetching your applications.' });
+  }
+});
+
+// POST /api/internships/:id/apply - Apply for an internship
+app.post('/api/internships/:id/apply', authenticateToken, async (req, res) => {
+  const { id: internshipId } = req.params;
+  const { full_name, email, phone, resume_url, cover_letter } = req.body;
+  const userId = req.user.id;
+
+  if (!full_name || !email || !resume_url) {
+    return res.status(400).json({ message: 'Full name, email, and resume link are required.' });
+  }
+
+  try {
+    const internship = await db.collection('internships').doc(internshipId).get();
+
+    if (!internship.exists) {
+      return res.status(404).json({ message: 'Internship not found.' });
+    }
+
+    const i = internship.data();
+
+    if (i.spots_available <= 0) {
+      return res.status(400).json({ message: 'No available spots left for this internship.' });
+    }
+
+    const existing = await db.collection('internship_submissions').where('internship_id', '==', internshipId).where('user_id', '==', userId).get();
+
+    if (!existing.empty) {
+      return res.status(409).json({ message: 'You have already applied for this internship.' });
+    }
+
+    await db.collection('internship_submissions').add({
+      internship_id: internshipId,
+      user_id: userId,
+      full_name,
+      email,
+      phone: phone || null,
+      resume_url,
+      cover_letter: cover_letter || null,
+      submitted_at: Timestamp.now(),
+      status: 'pending'
+    });
+
+    await db.collection('internships').doc(internshipId).update({
+      spots_available: increment(-1),
+      applications_count: increment(1)
+    });
+
+    res.status(201).json({ message: 'Internship application submitted successfully!' });
+
+  } catch (error) {
+    console.error('Error submitting internship application:', error);
+    res.status(500).json({ message: 'Internal server error during application submission.' });
+  }
+});
+
+// ==================== SERVICES ROUTES ====================
+
+// Get service categories
+app.get('/api/services/categories', async (req, res) => {
+  try {
+    const categories = await db.collection('service_categories').where('is_active', '==', true).orderBy('name').get();
+
+    const categoriesWithSubs = [];
+    for (const doc of categories.docs) {
+      const category = doc.data();
+      const subs = await db.collection('service_subcategories').where('category_id', '==', doc.id).where('is_active', '==', true).orderBy('name').get();
+      categoriesWithSubs.push({
+        id: doc.id,
+        name: category.name,
+        description: category.description,
+        icon: category.icon,
+        subcategories: subs.docs.map(s => ({
+          id: s.id,
+          categoryId: s.data().category_id,
+          name: s.data().name,
+          description: s.data().description,
+          basePrice: s.data().base_price
+        }))
+      });
+    }
+
+    res.json(categoriesWithSubs);
+
+  } catch (error) {
+    console.error('Get service categories error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Submit service request
+app.post('/api/services/requests', authenticateToken, async (req, res) => {
+  try {
+    const {
+      subcategoryId, fullName, email, phone, company, website,
+      projectDetails, budgetRange, timeline, contactMethod, additionalRequirements
+    } = req.body;
+    const userId = req.user.id;
+
+    // Validate required fields
+    if (!subcategoryId || !fullName || !email || !phone || !projectDetails || !budgetRange || !timeline || !contactMethod) {
+      return res.status(400).json({ error: 'All required fields must be provided' });
+    }
+
+    // Check if subcategory exists
+    const subcategory = await db.collection('service_subcategories').doc(subcategoryId).get();
+
+    if (!subcategory.exists || !subcategory.data().is_active) {
+      return res.status(404).json({ error: 'Service subcategory not found' });
+    }
+
+    // Create service request
+    const requestRef = db.collection('service_requests').doc();
+    await requestRef.set({
+      user_id: userId,
+      subcategory_id: subcategoryId,
+      full_name: fullName,
+      email,
+      phone,
+      company,
+      website,
+      project_details: projectDetails,
+      budget_range: budgetRange,
+      timeline,
+      contact_method: contactMethod,
+      additional_requirements: additionalRequirements,
+      created_at: Timestamp.now(),
+      status: 'pending'
+    });
+
+    res.status(201).json({
+      message: 'Service request submitted successfully',
+      requestId: requestRef.id
+    });
+
+  } catch (error) {
+    console.error('Service request error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get user's service requests
+app.get('/api/services/my-requests', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const requests = await db.collection('service_requests').where('user_id', '==', userId).orderBy('created_at', 'desc').get();
+
+    const formattedRequests = [];
+    for (const doc of requests.docs) {
+      const r = doc.data();
+      const subcategory = await db.collection('service_subcategories').doc(r.subcategory_id).get();
+      const ss = subcategory.data();
+      const category = await db.collection('service_categories').doc(ss.category_id).get();
+      const sc = category.data();
+      formattedRequests.push({
+        id: doc.id,
+        user_id: r.user_id,
+        subcategory_id: r.subcategory_id,
+        full_name: r.full_name,
+        email: r.email,
+        phone: r.phone,
+        company: r.company,
+        website: r.website,
+        project_details: r.project_details,
+        budget_range: r.budget_range,
+        timeline: r.timeline,
+        contact_method: r.contact_method,
+        additional_requirements: r.additional_requirements,
+        status: r.status,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+        category_name: sc.name,
+        subcategory_name: ss.name
+      });
+    }
+
+    res.json(formattedRequests.map(request => ({
+      id: request.id,
+      userId: request.user_id,
+      subcategoryId: request.subcategory_id,
+      fullName: request.full_name,
+      email: request.email,
+      phone: request.phone,
+      company: request.company,
+      website: request.website,
+      projectDetails: request.project_details,
+      budgetRange: request.budget_range,
+      timeline: request.timeline,
+      contactMethod: request.contact_method,
+      additionalRequirements: request.additional_requirements,
+      status: request.status,
+      createdAt: request.created_at,
+      updatedAt: request.updated_at,
+      categoryName: request.category_name,
+      subcategoryName: request.subcategory_name
+    })));
+
+  } catch (error) {
+    console.error('Get service requests error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 // ==================== ADMIN DASHBOARD ROUTES ====================
 
 // Admin Dashboard Stats
-app.get('/api/admin/dashboard-stats', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/dashboard-stats', authenticateToken, async (req, res) => {
   try {
-    const usersCollection = collection(db, 'users');
-    const coursesCollection = collection(db, 'courses');
-    const enrollmentsCollection = collection(db, 'enrollments');
-    const contactMessagesCollection = collection(db, 'contact_messages');
-    const serviceRequestsCollection = collection(db, 'service_requests');
+    const users = await db.collection('users').where('is_active', '==', true).get();
+    const totalUsers = users.size;
 
-    const usersQuery = query(usersCollection, where('is_active', '==', true));
-    const usersSnap = await getDocs(usersQuery);
-    const totalUsers = usersSnap.size;
+    const courses = await db.collection('courses').where('is_active', '==', true).get();
+    const totalCourses = courses.size;
 
-    const coursesQuery = query(coursesCollection, where('is_active', '==', true));
-    const coursesSnap = await getDocs(coursesQuery);
-    const totalCourses = coursesSnap.size;
-
-    const enrollmentsSnap = await getDocs(enrollmentsCollection);
-    const totalEnrollments = enrollmentsSnap.size;
+    const enrollments = await db.collection('enrollments').get();
+    const totalEnrollments = enrollments.size;
 
     let totalRevenue = 0;
-    for (const docSnapshot of enrollmentsSnap.docs) {
-      const e = docSnapshot.data();
+    for (const doc of enrollments.docs) {
+      const e = doc.data();
       if (e.status === 'completed') {
-        const courseDocRef = doc(coursesCollection, e.course_id);
-        const course = await getDoc(courseDocRef);
-        totalRevenue += course.data() ? (course.data().price || 0) : 0; // Handle missing course or price
+        const course = await db.collection('courses').doc(e.course_id).get();
+        totalRevenue += course.data().price || 0;
       }
     }
 
     const sevenDaysAgo = new Date(new Date().getTime() - 7 * 24 * 60 * 60 * 1000);
-    const contactsQuery = query(contactMessagesCollection, where('created_at', '>=', Timestamp.fromDate(sevenDaysAgo)));
-    const contactsSnap = await getDocs(contactsQuery);
-    const pendingContacts = contactsSnap.size;
+    const contacts = await db.collection('contact_messages').where('created_at', '>=', sevenDaysAgo).get();
+    const pendingContacts = contacts.size;
 
-    const serviceRequestsQuery = query(serviceRequestsCollection, where('status', '==', 'pending'));
-    const serviceRequestsSnap = await getDocs(serviceRequestsQuery);
-    const pendingServiceRequests = serviceRequestsSnap.size;
+    const serviceRequests = await db.collection('service_requests').where('status', '==', 'pending').get();
+    const pendingServiceRequests = serviceRequests.size;
 
     res.json({
       totalUsers,
@@ -3141,16 +3021,14 @@ app.get('/api/admin/dashboard-stats', authenticateToken, requireAdmin, async (re
 });
 
 // Recent Users
-app.get('/api/admin/recent-users', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/recent-users', authenticateToken, async (req, res) => {
   try {
-    const usersCollection = collection(db, 'users');
-    const usersQuery = query(usersCollection, where('is_active', '==', true), orderBy('created_at', 'desc'), firebaseLimit(5)); // Assuming 'is_active' is boolean
-    const usersSnap = await getDocs(usersQuery);
+    const users = await db.collection('users').where('is_active', '==', 1).orderBy('created_at', 'desc').limit(5).get();
 
-    const recentUsers = usersSnap.docs.map(docSnapshot => {
-      const u = docSnapshot.data();
+    const recentUsers = users.docs.map(doc => {
+      const u = doc.data();
       return {
-        id: docSnapshot.id,
+        id: doc.id,
         first_name: u.first_name,
         last_name: u.last_name,
         email: u.email,
@@ -3167,28 +3045,21 @@ app.get('/api/admin/recent-users', authenticateToken, requireAdmin, async (req, 
 });
 
 // Recent Enrollments
-app.get('/api/admin/recent-enrollments', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/recent-enrollments', authenticateToken, async (req, res) => {
   try {
-    const enrollmentsCollection = collection(db, 'enrollments');
-    const usersCollection = collection(db, 'users');
-    const coursesCollection = collection(db, 'courses');
-
-    const enrollmentsQuery = query(enrollmentsCollection, orderBy('enrollment_date', 'desc'), firebaseLimit(5));
-    const enrollmentsSnap = await getDocs(enrollmentsQuery);
+    const enrollments = await db.collection('enrollments').orderBy('enrollment_date', 'desc').limit(5).get();
 
     const recentEnrollments = [];
-    for (const docSnapshot of enrollmentsSnap.docs) {
-      const e = docSnapshot.data();
-      const userDocRef = doc(usersCollection, e.user_id);
-      const user = await getDoc(userDocRef);
+    for (const doc of enrollments.docs) {
+      const e = doc.data();
+      const user = await db.collection('users').doc(e.user_id).get();
       const u = user.data();
-      const courseDocRef = doc(coursesCollection, e.course_id);
-      const course = await getDoc(courseDocRef);
+      const course = await db.collection('courses').doc(e.course_id).get();
       const c = course.data();
       recentEnrollments.push({
-        id: docSnapshot.id,
-        user_name: u ? `${u.first_name} ${u.last_name}` : 'N/A',
-        course_name: c ? c.title : 'N/A',
+        id: doc.id,
+        user_name: `${u.first_name} ${u.last_name}`,
+        course_name: c.title,
         date: e.enrollment_date.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
         status: e.status
       });
@@ -3222,16 +3093,15 @@ app.post('/api/contact', async (req, res) => {
     }
 
     // Insert contact form data into database
-    const contactMessagesCollection = collection(db, 'contact_messages');
-    const contactRef = doc(contactMessagesCollection); // Auto-generate ID
-    await setDoc(contactRef, {
+    const contactRef = db.collection('contact_messages').doc();
+    await contactRef.set({
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       email: email.trim(),
       phone: phone || null,
       company: company || null,
       message: message.trim(),
-      created_at: Timestamp.now() // Client SDK Timestamp
+      created_at: Timestamp.now()
     });
 
     console.log('Contact message saved successfully:', {
@@ -3259,45 +3129,36 @@ app.get('/api/admin/analytics', authenticateToken, requireAdmin, async (req, res
   try {
     const sixMonthsAgo = new Date(new Date().getTime() - 6 * 30 * 24 * 60 * 60 * 1000);
 
-    const usersCollection = collection(db, 'users');
-    const coursesCollection = collection(db, 'courses');
-    const enrollmentsCollection = collection(db, 'enrollments');
-
     // User growth data (last 6 months)
-    const usersQuery = query(usersCollection, where('created_at', '>=', Timestamp.fromDate(sixMonthsAgo)));
-    const usersSnap = await getDocs(usersQuery);
+    const users = await db.collection('users').where('created_at', '>=', sixMonthsAgo).get();
     const userGrowth = {};
-    usersSnap.docs.forEach(docSnapshot => {
-      const created = docSnapshot.data().created_at.toDate();
+    users.docs.forEach(doc => {
+      const created = doc.data().created_at.toDate();
       const month = created.toISOString().slice(0, 7);
       userGrowth[month] = (userGrowth[month] || 0) + 1;
     });
 
     // Course enrollment data
-    const coursesQuery = query(coursesCollection, where('is_active', '==', true));
-    const coursesSnap = await getDocs(coursesQuery);
+    const courses = await db.collection('courses').where('is_active', '==', true).get();
     const courseEnrollments = [];
-    for (const docSnapshot of coursesSnap.docs) {
-      const enrollmentsQuery = query(enrollmentsCollection, where('course_id', '==', docSnapshot.id));
-      const enrollmentsSnap = await getDocs(enrollmentsQuery);
+    for (const doc of courses.docs) {
+      const enrollments = await db.collection('enrollments').where('course_id', '==', doc.id).get();
       courseEnrollments.push({
-        title: docSnapshot.data().title,
-        enrollments: enrollmentsSnap.size
+        title: doc.data().title,
+        enrollments: enrollments.size
       });
     }
     courseEnrollments.sort((a, b) => b.enrollments - a.enrollments);
     const top10 = courseEnrollments.slice(0, 10);
 
     // Revenue by month
-    const enrollmentsQueryForRevenue = query(enrollmentsCollection, where('enrollment_date', '>=', Timestamp.fromDate(sixMonthsAgo)));
-    const enrollmentsSnapForRevenue = await getDocs(enrollmentsQueryForRevenue);
+    const enrollments = await db.collection('enrollments').where('enrollment_date', '>=', sixMonthsAgo).get();
     const revenueData = {};
-    for (const docSnapshot of enrollmentsSnapForRevenue.docs) {
-      const e = docSnapshot.data();
+    for (const doc of enrollments.docs) {
+      const e = doc.data();
       const month = e.enrollment_date.toDate().toISOString().slice(0, 7);
-      const courseDocRef = doc(coursesCollection, e.course_id);
-      const course = await getDoc(courseDocRef);
-      revenueData[month] = (revenueData[month] || 0) + (course.data() ? course.data().price : 0); // Handle potential missing course data
+      const course = await db.collection('courses').doc(e.course_id).get();
+      revenueData[month] = (revenueData[month] || 0) + course.data().price;
     }
 
     res.json({
@@ -3315,9 +3176,6 @@ app.get('/api/admin/analytics', authenticateToken, requireAdmin, async (req, res
 // ==================== ADMIN USER MANAGEMENT ENDPOINTS ====================
 
 // GET /api/admin/users - Get all users with pagination and filtering
-// For `search`, Firestore doesn't support 'OR' queries across multiple fields directly.
-// The current implementation for 'search' fetches all matching documents for each field and merges.
-// For pagination, `offset` is simulated by fetching `offset + limit` documents and slicing.
 app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -3327,91 +3185,39 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
     const status = req.query.status;
     const search = req.query.search;
 
-    const usersCollection = collection(db, 'users');
-    let baseQuery = query(usersCollection, orderBy('created_at', 'desc'));
-    let totalQuery = query(usersCollection); // For total count
+    let query = db.collection('users').orderBy('created_at', 'desc');
 
     if (accountType && accountType !== 'all') {
-      baseQuery = query(baseQuery, where('account_type', '==', accountType));
-      totalQuery = query(totalQuery, where('account_type', '==', accountType));
+      query = query.where('account_type', '==', accountType);
     }
 
     if (status && status !== 'all') {
       const isActive = status === 'active' ? true : false;
-      baseQuery = query(baseQuery, where('is_active', '==', isActive));
-      totalQuery = query(totalQuery, where('is_active', '==', isActive));
+      query = query.where('is_active', '==', isActive);
     }
 
-    let allUsersDocs = [];
-
     if (search) {
-      // Simulate OR search by fetching and merging results
-      const searchLower = search.toLowerCase();
-
-      // For first_name
-      const firstNameQuery = query(usersCollection, orderBy('first_name'), startAfter(searchLower), firebaseLimit(100)); // Limit to prevent massive fetches
-      const firstNameSnap = await getDocs(firstNameQuery);
-      firstNameSnap.docs.filter(d => d.data().first_name.toLowerCase().startsWith(searchLower)).forEach(doc => allUsersDocs.push(doc));
-
-      // For last_name
-      const lastNameQuery = query(usersCollection, orderBy('last_name'), startAfter(searchLower), firebaseLimit(100));
-      const lastNameSnap = await getDocs(lastNameQuery);
-      lastNameSnap.docs.filter(d => d.data().last_name.toLowerCase().startsWith(searchLower)).forEach(doc => allUsersDocs.push(doc));
-
-      // For email
-      const emailQuery = query(usersCollection, orderBy('email'), startAfter(searchLower), firebaseLimit(100));
-      const emailSnap = await getDocs(emailQuery);
-      emailSnap.docs.filter(d => d.data().email.toLowerCase().startsWith(searchLower)).forEach(doc => allUsersDocs.push(doc));
-
-      // Deduplicate results
-      const uniqueUserMap = new Map();
-      allUsersDocs.forEach(doc => uniqueUserMap.set(doc.id, doc));
-      allUsersDocs = Array.from(uniqueUserMap.values());
-
-      // Apply other filters to the in-memory results
-      allUsersDocs = allUsersDocs.filter(doc => {
-        const u = doc.data();
-        let matches = true;
-        if (accountType && accountType !== 'all' && u.account_type !== accountType) matches = false;
-        if (status && status !== 'all') {
-          const isActive = status === 'active' ? true : false;
-          if (u.is_active !== isActive) matches = false;
-        }
-        return matches;
-      });
-
-      // Sort in memory for search results
-      allUsersDocs.sort((a, b) => {
-        const dateA = a.data().created_at.toDate();
-        const dateB = b.data().created_at.toDate();
-        return dateB.getTime() - dateA.getTime(); // Descending order
-      });
-
-      const total = allUsersDocs.length;
-      const paginatedUsers = allUsersDocs.slice(offset, offset + limit);
-
-      res.json({
-        users: paginatedUsers.map(docSnapshot => ({ id: docSnapshot.id, ...docSnapshot.data() })),
-        pagination: {
-          currentPage: page,
-          totalPages: Math.ceil(total / limit),
-          totalUsers: total,
-          hasNextPage: page < Math.ceil(total / limit),
-          hasPreviousPage: page > 1
-        }
-      });
+      // Simple search on first_name or last_name or email
+      // Firestore doesn't support OR, so separate queries and merge
+      const firstName = await db.collection('users').where('first_name', '>=', search).where('first_name', '<=', search + '\uf8ff').get();
+      const lastName = await db.collection('users').where('last_name', '>=', search).where('last_name', '<=', search + '\uf8ff').get();
+      const email = await db.collection('users').where('email', '>=', search).where('email', '<=', search + '\uf8ff').get();
+      const all = [...firstName.docs, ...lastName.docs, ...email.docs];
+      const unique = [...new Set(all.map(d => d.id))].map(id => all.find(d => d.id === id));
+      const users = unique.map(doc => doc.data());
+      res.json(users);
       return;
     }
 
-    // Normal pagination (without search)
-    const totalSnap = await getDocs(totalQuery);
-    const total = totalSnap.size;
+    const users = await query.limit(limit).offset(offset).get();
 
-    // Simulate offset by fetching more and slicing locally
-    const usersQueryWithOffset = query(baseQuery, firebaseLimit(offset + limit));
-    const usersSnap = await getDocs(usersQueryWithOffset);
+    const data = users.docs.map(doc => {
+      const u = doc.data();
+      u.id = doc.id;
+      return u;
+    });
 
-    const data = usersSnap.docs.slice(offset).map(docSnapshot => ({ id: docSnapshot.id, ...docSnapshot.data() }));
+    const total = (await query.get()).size;
 
     res.json({
       users: data,
@@ -3435,10 +3241,9 @@ app.get('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
   try {
     const { id } = req.params;
 
-    const userDocRef = doc(db, 'users', id);
-    const user = await getDoc(userDocRef);
+    const user = await db.collection('users').doc(id).get();
 
-    if (!user.exists()) {
+    if (!user.exists) {
       return res.status(404).json({ error: 'User not found' });
     }
 
@@ -3476,11 +3281,9 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
     }
 
     // Check if email exists
-    const usersCollection = collection(db, 'users');
-    const existingUserQuery = query(usersCollection, where('email', '==', email));
-    const existingSnap = await getDocs(existingUserQuery);
+    const existing = await db.collection('users').where('email', '==', email).get();
 
-    if (!existingSnap.empty) {
+    if (!existing.empty) {
       return res.status(400).json({ error: 'Email already exists' });
     }
 
@@ -3489,8 +3292,8 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     // Insert new user
-    const userRef = doc(usersCollection); // Auto-generate ID
-    await setDoc(userRef, {
+    const userRef = db.collection('users').doc();
+    await userRef.set({
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       email: email.trim(),
@@ -3502,24 +3305,23 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
       bio: bio || null,
       is_active: isActive !== undefined ? isActive : true,
       email_verified: true,
-      created_at: Timestamp.now(), // Client SDK Timestamp
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      created_at: Timestamp.now(),
+      updated_at: Timestamp.now()
     });
 
     // Create user stats entry
-    const userStatsRef = doc(db, 'user_stats', userRef.id);
-    await setDoc(userStatsRef, {
+    await db.collection('user_stats').doc(userRef.id).set({
       courses_enrolled: 0,
       courses_completed: 0,
       certificates_earned: 0,
       learning_streak: 0,
-      last_activity: Timestamp.now() // Client SDK Timestamp
+      last_activity: Timestamp.now()
     });
 
     console.log('User created successfully by admin:', { userId: userRef.id, email });
-
-    const newUserDoc = await getDoc(userRef);
-    const data = newUserDoc.data();
+    
+    const newUser = await db.collection('users').doc(userRef.id).get();
+    const data = newUser.data();
     data.id = userRef.id;
 
     res.status(201).json({
@@ -3539,10 +3341,9 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
     const { id } = req.params;
     const { firstName, lastName, email, phone, accountType, isActive, company, website, bio } = req.body;
 
-    const userRef = doc(db, 'users', id);
-    const user = await getDoc(userRef);
+    const user = await db.collection('users').doc(id).get();
 
-    if (!user.exists()) {
+    if (!user.exists) {
       return res.status(404).json({ error: 'User not found' });
     }
 
@@ -3554,19 +3355,14 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
         return res.status(400).json({ error: 'Please provide a valid email address' });
       }
 
-      // Check for existing email for other users
-      const usersCollection = collection(db, 'users');
-      const existingEmailQuery = query(usersCollection, where('email', '==', email));
-      const existingEmailSnap = await getDocs(existingEmailQuery);
+      const existing = await db.collection('users').where('email', '==', email).where(FieldPath.documentId(), '!=', id).get();
 
-      for (const docSnapshot of existingEmailSnap.docs) {
-        if (docSnapshot.id !== id) {
-          return res.status(400).json({ error: 'Email already exists for another user' });
-        }
+      if (!existing.empty) {
+        return res.status(400).json({ error: 'Email already exists' });
       }
     }
 
-    await updateDoc(userRef, {
+    await db.collection('users').doc(id).update({
       first_name: firstName || u.first_name,
       last_name: lastName || u.last_name,
       email: email || u.email,
@@ -3576,11 +3372,11 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
       company: company || u.company,
       website: website || u.website,
       bio: bio || u.bio,
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      updated_at: Timestamp.now()
     });
 
-    const updatedDoc = await getDoc(userRef);
-    const data = updatedDoc.data();
+    const updated = await db.collection('users').doc(id).get();
+    const data = updated.data();
     data.id = id;
 
     res.json({
@@ -3594,7 +3390,7 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
   }
 });
 
-// DELETE /api/admin/users/:id - Delete a user (soft delete)
+// DELETE /api/admin/users/:id - Delete a user
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
@@ -3604,19 +3400,18 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
       return res.status(400).json({ error: 'You cannot delete your own account' });
     }
 
-    const userRef = doc(db, 'users', id);
-    const user = await getDoc(userRef);
+    const user = await db.collection('users').doc(id).get();
 
-    if (!user.exists()) {
+    if (!user.exists) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    await updateDoc(userRef, {
+    await db.collection('users').doc(id).update({
       is_active: false,
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      updated_at: Timestamp.now()
     });
 
-    res.json({ message: 'User deactivated successfully' }); // Changed message to reflect soft delete
+    res.json({ message: 'User deleted successfully' });
 
   } catch (error) {
     console.error('Delete user error:', error);
@@ -3638,18 +3433,17 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
       return res.status(400).json({ error: 'Password must be at least 6 characters long' });
     }
 
-    const userRef = doc(db, 'users', id);
-    const user = await getDoc(userRef);
+    const user = await db.collection('users').doc(id).get();
 
-    if (!user.exists()) {
+    if (!user.exists) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    await updateDoc(userRef, {
+    await db.collection('users').doc(id).update({
       password_hash: hashedPassword,
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      updated_at: Timestamp.now()
     });
 
     res.json({ message: 'Password reset successfully' });
@@ -3664,7 +3458,7 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
 
 app.post('/api/payments/upload-proof', authenticateToken, paymentProofUpload.single('proof'), async (req, res) => {
   try {
-    const { transaction_id, payment_method, resource_id, plan, amount, user_id } = req.body; // user_id might be from token or body
+    const { transaction_id, payment_method, resource_id, plan, amount, user_id } = req.body;
 
     if (!req.file) {
       return res.status(400).json({ error: 'Payment proof file is required' });
@@ -3674,27 +3468,22 @@ app.post('/api/payments/upload-proof', authenticateToken, paymentProofUpload.sin
       return res.status(400).json({ error: 'Transaction ID is required' });
     }
 
-    const effectiveUserId = user_id || req.user.id; // Use user from token if not provided in body
-
     // Save payment record to database
-    const paymentsCollection = collection(db, 'payments');
-    const paymentRef = doc(paymentsCollection); // Auto-generate ID
-    await setDoc(paymentRef, {
-      user_id: effectiveUserId,
+    const paymentRef = db.collection('payments').doc();
+    await paymentRef.set({
+      user_id: user_id,
       resource_id: resource_id || null,
       plan,
-      amount: parseFloat(amount) || 0, // Ensure amount is number
+      amount,
       payment_method,
       transaction_id,
       proof_file: req.file.filename,
-      status: 'pending',
-      created_at: Timestamp.now(), // Client SDK Timestamp
-      // No updated_at for payments unless it's changed
+      status: 'pending'
     });
 
-    res.json({
-      message: 'Payment proof uploaded successfully',
-      paymentId: paymentRef.id
+    res.json({ 
+      message: 'Payment proof uploaded successfully', 
+      paymentId: paymentRef.id 
     });
   } catch (error) {
     console.error('Error uploading payment proof:', error);
@@ -3705,33 +3494,24 @@ app.post('/api/payments/upload-proof', authenticateToken, paymentProofUpload.sin
 // Admin payment management endpoint
 app.get('/api/admin/payments', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const paymentsCollection = collection(db, 'payments');
-    const usersCollection = collection(db, 'users');
-    const resourcesCollection = collection(db, 'resources');
-
-    const paymentsQuery = query(paymentsCollection, orderBy('created_at', 'desc'));
-    const paymentsSnap = await getDocs(paymentsQuery);
+    const payments = await db.collection('payments').orderBy('created_at', 'desc').get();
 
     const data = [];
-    for (const docSnapshot of paymentsSnap.docs) {
-      const p = docSnapshot.data();
-      const userDocRef = doc(usersCollection, p.user_id);
-      const user = await getDoc(userDocRef);
+    for (const doc of payments.docs) {
+      const p = doc.data();
+      const user = await db.collection('users').doc(p.user_id).get();
       const u = user.data();
       let rTitle = null;
       if (p.resource_id) {
-        const resourceDocRef = doc(resourcesCollection, p.resource_id);
-        const resource = await getDoc(resourceDocRef);
-        if (resource.exists()) {
-          rTitle = resource.data().title;
-        }
+        const resource = await db.collection('resources').doc(p.resource_id).get();
+        rTitle = resource.data().title;
       }
       data.push({
         ...p,
-        id: docSnapshot.id,
-        first_name: u ? u.first_name : 'N/A', // Handle case where user might be deleted
-        last_name: u ? u.last_name : 'N/A',
-        email: u ? u.email : 'N/A',
+        id: doc.id,
+        first_name: u.first_name,
+        last_name: u.last_name,
+        email: u.email,
         resource_title: rTitle
       });
     }
@@ -3749,31 +3529,26 @@ app.put('/api/admin/payments/:id/verify', authenticateToken, requireAdmin, async
     const { id } = req.params;
     const { status } = req.body;
 
-    const paymentRef = doc(db, 'payments', id);
-    await updateDoc(paymentRef, {
+    await db.collection('payments').doc(id).update({
       status: status,
-      verified_at: Timestamp.now() // Client SDK Timestamp
+      verified_at: Timestamp.now()
     });
 
     // If payment is approved, grant access to the resource
     if (status === 'approved') {
-      const payment = await getDoc(paymentRef);
+      const payment = await db.collection('payments').doc(id).get();
       const p = payment.data();
-
+      
       if (p.plan === 'individual' && p.resource_id) {
         // Grant access to specific resource
-        const userResourcesCollection = collection(db, 'user_resources');
-        await setDoc(doc(userResourcesCollection), { // Auto-generate ID
+        await db.collection('user_resources').add({
           user_id: p.user_id,
-          resource_id: p.resource_id,
-          granted_at: Timestamp.now()
+          resource_id: p.resource_id
         });
       } else if (p.plan === 'premium') {
         // Upgrade user to premium
-        const userRef = doc(db, 'users', p.user_id);
-        await updateDoc(userRef, {
-          subscription_plan: "premium",
-          updated_at: Timestamp.now()
+        await db.collection('users').doc(p.user_id).update({
+          subscription_plan: "premium"
         });
       }
     }
@@ -3790,28 +3565,21 @@ app.put('/api/admin/payments/:id/verify', authenticateToken, requireAdmin, async
 // GET all enrollments (admin only)
 app.get('/api/admin/enrollments', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const enrollmentsCollection = collection(db, 'enrollments');
-    const usersCollection = collection(db, 'users');
-    const coursesCollection = collection(db, 'courses');
-
-    const enrollmentsQuery = query(enrollmentsCollection, orderBy('enrollment_date', 'desc'));
-    const enrollmentsSnap = await getDocs(enrollmentsQuery);
+    const enrollments = await db.collection('enrollments').orderBy('enrollment_date', 'desc').get();
 
     const data = [];
-    for (const docSnapshot of enrollmentsSnap.docs) {
-      const e = docSnapshot.data();
-      const userDocRef = doc(usersCollection, e.user_id);
-      const user = await getDoc(userDocRef);
+    for (const doc of enrollments.docs) {
+      const e = doc.data();
+      const user = await db.collection('users').doc(e.user_id).get();
       const u = user.data();
-      const courseDocRef = doc(coursesCollection, e.course_id);
-      const course = await getDoc(courseDocRef);
+      const course = await db.collection('courses').doc(e.course_id).get();
       const c = course.data();
       data.push({
-        id: docSnapshot.id,
+        id: doc.id,
         user_id: e.user_id,
-        user_name: u ? `${u.first_name} ${u.last_name}` : 'N/A', // Handle potential missing user
+        user_name: `${u.first_name} ${u.last_name}`,
         course_id: e.course_id,
-        course_name: c ? c.title : 'N/A', // Handle potential missing course
+        course_name: c.title,
         progress: e.progress,
         status: e.status,
         enrollment_date: e.enrollment_date,
@@ -3832,11 +3600,10 @@ app.put('/api/admin/enrollments/:id', authenticateToken, requireAdmin, async (re
     const { id } = req.params;
     const { status, progress, completion_date } = req.body;
 
-    const enrollmentRef = doc(db, 'enrollments', id);
-    await updateDoc(enrollmentRef, {
+    await db.collection('enrollments').doc(id).update({
       status: status,
       progress: progress,
-      completion_date: status === 'completed' ? (completion_date || Timestamp.now()) : null // Client SDK Timestamp
+      completion_date: status === 'completed' ? (completion_date || Timestamp.now()) : null
     });
 
     res.json({ message: 'Enrollment updated successfully' });
@@ -3851,8 +3618,7 @@ app.delete('/api/admin/enrollments/:id', authenticateToken, requireAdmin, async 
   try {
     const { id } = req.params;
 
-    const enrollmentRef = doc(db, 'enrollments', id);
-    await deleteDoc(enrollmentRef);
+    await db.collection('enrollments').doc(id).delete();
 
     res.json({ message: 'Enrollment deleted successfully' });
   } catch (error) {
@@ -3866,14 +3632,12 @@ app.delete('/api/admin/enrollments/:id', authenticateToken, requireAdmin, async 
 // GET all courses (admin only)
 app.get('/api/admin/courses', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const coursesCollection = collection(db, 'courses');
-    const coursesQuery = query(coursesCollection, orderBy('created_at', 'desc'));
-    const coursesSnap = await getDocs(coursesQuery);
+    const courses = await db.collection('courses').orderBy('created_at', 'desc').get();
 
-    const data = coursesSnap.docs.map(docSnapshot => {
-      const c = docSnapshot.data();
+    const data = courses.docs.map(doc => {
+      const c = doc.data();
       return {
-        id: docSnapshot.id,
+        id: doc.id,
         title: c.title,
         description: c.description,
         instructor_name: c.instructor_name,
@@ -3913,22 +3677,21 @@ app.post('/api/admin/courses', authenticateToken, requireAdmin, async (req, res)
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const coursesCollection = collection(db, 'courses');
-    const courseRef = doc(coursesCollection); // Auto-generate ID
-    await setDoc(courseRef, {
+    const courseRef = db.collection('courses').doc();
+    await courseRef.set({
       title,
       description,
       instructor_name,
-      duration_weeks: parseInt(duration_weeks), // Ensure numeric type
+      duration_weeks,
       difficulty_level,
       category,
-      price: parseFloat(price), // Ensure numeric type
-      is_active: is_active || true, // Default to true if not provided
-      created_at: Timestamp.now(), // Client SDK Timestamp
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      price,
+      is_active: is_active || 1,
+      created_at: Timestamp.now(),
+      updated_at: Timestamp.now()
     });
 
-    res.status(201).json({
+    res.status(201).json({ 
       message: 'Course created successfully',
       courseId: courseRef.id
     });
@@ -3957,17 +3720,16 @@ app.put('/api/admin/courses/:id', authenticateToken, requireAdmin, async (req, r
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const courseRef = doc(db, 'courses', id);
-    await updateDoc(courseRef, {
+    await db.collection('courses').doc(id).update({
       title,
       description,
       instructor_name,
-      duration_weeks: parseInt(duration_weeks), // Ensure numeric type
+      duration_weeks,
       difficulty_level,
       category,
-      price: parseFloat(price), // Ensure numeric type
+      price,
       is_active,
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      updated_at: Timestamp.now()
     });
 
     res.json({ message: 'Course updated successfully' });
@@ -3982,16 +3744,13 @@ app.delete('/api/admin/courses/:id', authenticateToken, requireAdmin, async (req
   try {
     const { id } = req.params;
 
-    const enrollmentsCollection = collection(db, 'enrollments');
-    const enrollmentsQuery = query(enrollmentsCollection, where('course_id', '==', id));
-    const enrollmentsSnap = await getDocs(enrollmentsQuery);
+    const enrollments = await db.collection('enrollments').where('course_id', '==', id).get();
 
-    if (!enrollmentsSnap.empty) {
+    if (!enrollments.empty) {
       return res.status(400).json({ error: 'Cannot delete course with active enrollments' });
     }
 
-    const courseRef = doc(db, 'courses', id);
-    await deleteDoc(courseRef);
+    await db.collection('courses').doc(id).delete();
 
     res.json({ message: 'Course deleted successfully' });
   } catch (error) {
@@ -4001,20 +3760,19 @@ app.delete('/api/admin/courses/:id', authenticateToken, requireAdmin, async (req
 });
 
 // Upload course thumbnail
-app.post('/api/admin/courses/:id/thumbnail', authenticateToken, requireAdmin, courseThumbnailUpload.single('thumbnail'), async (req, res) => {
+app.post('/api/admin/courses/:id/thumbnail', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-
+    
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
     const thumbnailPath = `/uploads/courses/${req.file.filename}`;
 
-    const courseRef = doc(db, 'courses', id);
-    await updateDoc(courseRef, {
+    await db.collection('courses').doc(id).update({
       thumbnail: thumbnailPath,
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      updated_at: Timestamp.now()
     });
 
     res.json({ message: 'Thumbnail uploaded successfully', thumbnail: thumbnailPath });
@@ -4029,14 +3787,12 @@ app.post('/api/admin/courses/:id/thumbnail', authenticateToken, requireAdmin, co
 // GET all resources (admin only)
 app.get('/api/admin/resources', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const resourcesCollection = collection(db, 'resources');
-    const resourcesQuery = query(resourcesCollection, orderBy('created_at', 'desc'));
-    const resourcesSnap = await getDocs(resourcesQuery);
+    const resources = await db.collection('resources').orderBy('created_at', 'desc').get();
 
-    const data = resourcesSnap.docs.map(docSnapshot => {
-      const r = docSnapshot.data();
+    const data = resources.docs.map(doc => {
+      const r = doc.data();
       return {
-        id: docSnapshot.id,
+        id: doc.id,
         title: r.title,
         description: r.description,
         type: r.type,
@@ -4081,9 +3837,8 @@ app.post('/api/admin/resources', authenticateToken, requireAdmin, async (req, re
 
     const accountTypesArray = Array.isArray(allowed_account_types) ? allowed_account_types : [allowed_account_types];
 
-    const resourcesCollection = collection(db, 'resources');
-    const resourceRef = doc(resourcesCollection); // Auto-generate ID
-    await setDoc(resourceRef, {
+    const resourceRef = db.collection('resources').doc();
+    await resourceRef.set({
       title,
       description,
       type,
@@ -4094,11 +3849,11 @@ app.post('/api/admin/resources', authenticateToken, requireAdmin, async (req, re
       button_color,
       allowed_account_types: accountTypesArray,
       is_premium: is_premium || false,
-      created_at: Timestamp.now(), // Client SDK Timestamp
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      created_at: Timestamp.now(),
+      updated_at: Timestamp.now()
     });
 
-    res.status(201).json({
+    res.status(201).json({ 
       message: 'Resource created successfully',
       resourceId: resourceRef.id
     });
@@ -4131,8 +3886,7 @@ app.put('/api/admin/resources/:id', authenticateToken, requireAdmin, async (req,
 
     const accountTypesArray = Array.isArray(allowed_account_types) ? allowed_account_types : [allowed_account_types];
 
-    const resourceRef = doc(db, 'resources', id);
-    await updateDoc(resourceRef, {
+    await db.collection('resources').doc(id).update({
       title,
       description,
       type,
@@ -4143,7 +3897,7 @@ app.put('/api/admin/resources/:id', authenticateToken, requireAdmin, async (req,
       button_color,
       allowed_account_types: accountTypesArray,
       is_premium,
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      updated_at: Timestamp.now()
     });
 
     res.json({ message: 'Resource updated successfully' });
@@ -4158,8 +3912,7 @@ app.delete('/api/admin/resources/:id', authenticateToken, requireAdmin, async (r
   try {
     const { id } = req.params;
 
-    const resourceRef = doc(db, 'resources', id);
-    await deleteDoc(resourceRef);
+    await db.collection('resources').doc(id).delete();
 
     res.json({ message: 'Resource deleted successfully' });
   } catch (error) {
@@ -4173,26 +3926,21 @@ app.delete('/api/admin/resources/:id', authenticateToken, requireAdmin, async (r
 // GET all assignments (admin only)
 app.get('/api/admin/assignments', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const assignmentsCollection = collection(db, 'assignments');
-    const coursesCollection = collection(db, 'courses');
-
-    const assignmentsQuery = query(assignmentsCollection, orderBy('created_at', 'desc'));
-    const assignmentsSnap = await getDocs(assignmentsQuery);
+    const assignments = await db.collection('assignments').orderBy('created_at', 'desc').get();
 
     const data = [];
-    for (const docSnapshot of assignmentsSnap.docs) {
-      const a = docSnapshot.data();
-      const courseDocRef = doc(coursesCollection, a.course_id);
-      const course = await getDoc(courseDocRef);
+    for (const doc of assignments.docs) {
+      const a = doc.data();
+      const course = await db.collection('courses').doc(a.course_id).get();
       data.push({
-        id: docSnapshot.id,
+        id: doc.id,
         course_id: a.course_id,
         title: a.title,
         description: a.description,
         due_date: a.due_date,
         max_points: a.max_points,
         created_at: a.created_at,
-        course_title: course.data() ? course.data().title : 'N/A' // Handle potential missing course
+        course_title: course.data().title
       });
     }
 
@@ -4218,18 +3966,17 @@ app.post('/api/admin/assignments', authenticateToken, requireAdmin, async (req, 
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const assignmentsCollection = collection(db, 'assignments');
-    const assignmentRef = doc(assignmentsCollection); // Auto-generate ID
-    await setDoc(assignmentRef, {
+    const assignmentRef = db.collection('assignments').doc();
+    await assignmentRef.set({
       title,
       course_id,
       description,
-      due_date: new Date(due_date), // Store as Date object or convert to Timestamp
-      max_points: parseInt(max_points), // Ensure numeric
-      created_at: Timestamp.now() // Client SDK Timestamp
+      due_date: new Date(due_date),
+      max_points,
+      created_at: Timestamp.now()
     });
 
-    res.status(201).json({
+    res.status(201).json({ 
       message: 'Assignment created successfully',
       assignmentId: assignmentRef.id
     });
@@ -4255,14 +4002,12 @@ app.put('/api/admin/assignments/:id', authenticateToken, requireAdmin, async (re
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const assignmentRef = doc(db, 'assignments', id);
-    await updateDoc(assignmentRef, {
+    await db.collection('assignments').doc(id).update({
       title,
       course_id,
       description,
-      due_date: new Date(due_date), // Store as Date object or convert to Timestamp
-      max_points: parseInt(max_points), // Ensure numeric
-      updated_at: Timestamp.now() // Client SDK Timestamp (if you want to track updates)
+      due_date: new Date(due_date),
+      max_points
     });
 
     res.json({ message: 'Assignment updated successfully' });
@@ -4277,16 +4022,13 @@ app.delete('/api/admin/assignments/:id', authenticateToken, requireAdmin, async 
   try {
     const { id } = req.params;
 
-    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
-    const submissionsQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', id));
-    const submissionsSnap = await getDocs(submissionsQuery);
+    const submissions = await db.collection('assignment_submissions').where('assignment_id', '==', id).get();
 
-    if (!submissionsSnap.empty) {
+    if (!submissions.empty) {
       return res.status(400).json({ error: 'Cannot delete assignment with existing submissions' });
     }
 
-    const assignmentRef = doc(db, 'assignments', id);
-    await deleteDoc(assignmentRef);
+    await db.collection('assignments').doc(id).delete();
 
     res.json({ message: 'Assignment deleted successfully' });
   } catch (error) {
@@ -4304,20 +4046,12 @@ app.get('/api/admin/contact-messages', authenticateToken, requireAdmin, async (r
     const limit = parseInt(req.query.limit) || 10;
     const offset = (page - 1) * limit;
 
-    const contactMessagesCollection = collection(db, 'contact_messages');
+    const messages = await db.collection('contact_messages').orderBy('created_at', 'desc').limit(limit).offset(offset).get();
 
-    // Get total for pagination
-    const totalSnap = await getDocs(contactMessagesCollection);
-    const total = totalSnap.size;
-
-    // Simulate offset by fetching more and slicing locally
-    const messagesQuery = query(contactMessagesCollection, orderBy('created_at', 'desc'), firebaseLimit(offset + limit));
-    const messagesSnap = await getDocs(messagesQuery);
-
-    const data = messagesSnap.docs.slice(offset).map(docSnapshot => {
-      const m = docSnapshot.data();
+    const data = messages.docs.map(doc => {
+      const m = doc.data();
       return {
-        id: docSnapshot.id,
+        id: doc.id,
         first_name: m.first_name,
         last_name: m.last_name,
         email: m.email,
@@ -4329,6 +4063,7 @@ app.get('/api/admin/contact-messages', authenticateToken, requireAdmin, async (r
       };
     });
 
+    const total = (await db.collection('contact_messages').get()).size;
 
     res.json({
       messages: data,
@@ -4357,10 +4092,8 @@ app.put('/api/admin/contact-messages/:id', authenticateToken, requireAdmin, asyn
       return res.status(400).json({ error: 'Invalid status value' });
     }
 
-    const contactMessageRef = doc(db, 'contact_messages', id);
-    await updateDoc(contactMessageRef, {
-      status: status,
-      updated_at: Timestamp.now() // Track when status was last updated
+    await db.collection('contact_messages').doc(id).update({
+      status: status
     });
 
     res.json({ message: 'Contact message updated successfully' });
@@ -4375,8 +4108,7 @@ app.delete('/api/admin/contact-messages/:id', authenticateToken, requireAdmin, a
   try {
     const { id } = req.params;
 
-    const contactMessageRef = doc(db, 'contact_messages', id);
-    await deleteDoc(contactMessageRef);
+    await db.collection('contact_messages').doc(id).delete();
 
     res.json({ message: 'Contact message deleted successfully' });
   } catch (error) {
@@ -4390,22 +4122,17 @@ app.delete('/api/admin/contact-messages/:id', authenticateToken, requireAdmin, a
 // Get all services (admin only)
 app.get('/api/admin/services', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const servicesCollection = collection(db, 'services');
-    const serviceCategoriesCollection = collection(db, 'service_categories');
-
-    const servicesQuery = query(servicesCollection, orderBy('created_at', 'desc'));
-    const servicesSnap = await getDocs(servicesQuery);
+    const services = await db.collection('services').orderBy('created_at', 'desc').get();
 
     const data = [];
-    for (const docSnapshot of servicesSnap.docs) {
-      const s = docSnapshot.data();
-      const categoryDocRef = doc(serviceCategoriesCollection, s.category_id);
-      const category = await getDoc(categoryDocRef);
+    for (const doc of services.docs) {
+      const s = doc.data();
+      const category = await db.collection('service_categories').doc(s.category_id).get();
       data.push({
-        id: docSnapshot.id,
+        id: doc.id,
         name: s.name,
         category_id: s.category_id,
-        category_name: category.data() ? category.data().name : 'N/A', // Handle potential missing category
+        category_name: category.data().name,
         description: s.description,
         price: s.price,
         duration: s.duration,
@@ -4428,22 +4155,20 @@ app.get('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, 
   try {
     const { id } = req.params;
 
-    const serviceDocRef = doc(db, 'services', id);
-    const service = await getDoc(serviceDocRef);
+    const service = await db.collection('services').doc(id).get();
 
-    if (!service.exists()) {
+    if (!service.exists) {
       return res.status(404).json({ error: 'Service not found' });
     }
 
     const s = service.data();
-    const categoryDocRef = doc(db, 'service_categories', s.category_id);
-    const category = await getDoc(categoryDocRef);
+    const category = await db.collection('service_categories').doc(s.category_id).get();
 
     res.json({
       id: id,
       name: s.name,
       category_id: s.category_id,
-      category_name: category.data() ? category.data().name : 'N/A',
+      category_name: category.data().name,
       description: s.description,
       price: s.price,
       duration: s.duration,
@@ -4475,26 +4200,20 @@ app.post('/api/admin/services', authenticateToken, requireAdmin, async (req, res
       is_active
     } = req.body;
 
-    // Basic validation
-    if (!name || !category_id || !description || price === undefined || duration === undefined) {
-      return res.status(400).json({ error: 'Missing required fields for service creation' });
-    }
-
-    const servicesCollection = collection(db, 'services');
-    const serviceRef = doc(servicesCollection); // Auto-generate ID
-    await setDoc(serviceRef, {
+    const serviceRef = db.collection('services').doc();
+    await serviceRef.set({
       name,
       category_id,
       description,
-      price: parseFloat(price),
-      duration: parseInt(duration),
-      rating: rating || 0,
-      reviews: reviews || 0,
-      features: features || [], // Assuming features is an array or stringified JSON
-      popular: popular || false,
-      is_active: is_active || true,
-      created_at: Timestamp.now(), // Client SDK Timestamp
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      price,
+      duration,
+      rating,
+      reviews,
+      features,
+      popular,
+      is_active,
+      created_at: Timestamp.now(),
+      updated_at: Timestamp.now()
     });
 
     res.status(201).json({
@@ -4524,24 +4243,18 @@ app.put('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, 
       is_active
     } = req.body;
 
-    // Basic validation
-    if (!name || !category_id || !description || price === undefined || duration === undefined) {
-      return res.status(400).json({ error: 'Missing required fields for service update' });
-    }
-
-    const serviceRef = doc(db, 'services', id);
-    await updateDoc(serviceRef, {
+    await db.collection('services').doc(id).update({
       name,
       category_id,
       description,
-      price: parseFloat(price),
-      duration: parseInt(duration),
-      rating: rating,
-      reviews: reviews,
-      features: features,
-      popular: popular,
-      is_active: is_active,
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      price,
+      duration,
+      rating,
+      reviews,
+      features,
+      popular,
+      is_active,
+      updated_at: Timestamp.now()
     });
 
     res.json({ message: 'Service updated successfully' });
@@ -4556,8 +4269,7 @@ app.delete('/api/admin/services/:id', authenticateToken, requireAdmin, async (re
   try {
     const { id } = req.params;
 
-    const serviceRef = doc(db, 'services', id);
-    await deleteDoc(serviceRef);
+    await db.collection('services').doc(id).delete();
 
     res.json({ message: 'Service deleted successfully' });
   } catch (error) {
@@ -4569,11 +4281,9 @@ app.delete('/api/admin/services/:id', authenticateToken, requireAdmin, async (re
 // Get service categories (admin only)
 app.get('/api/admin/service-categories', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const serviceCategoriesCollection = collection(db, 'service_categories');
-    const categoriesQuery = query(serviceCategoriesCollection, where('is_active', '==', true), orderBy('created_at'));
-    const categoriesSnap = await getDocs(categoriesQuery);
+    const categories = await db.collection('service_categories').where('is_active', '==', true).orderBy('created_at').get();
 
-    res.json(categoriesSnap.docs.map(docSnapshot => ({ id: docSnapshot.id, ...docSnapshot.data() }))); // Include ID in response
+    res.json(categories.docs.map(doc => doc.data()));
   } catch (error) {
     console.error('Error fetching service categories:', error);
     res.status(500).json({ error: 'Failed to fetch service categories' });
@@ -4585,36 +4295,19 @@ app.get('/api/admin/service-categories', authenticateToken, requireAdmin, async 
 // Get all calendar events (admin only)
 app.get('/api/admin/calendar-events', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const customCalendarEventsCollection = collection(db, 'custom_calendar_events');
-    const usersCollection = collection(db, 'users');
-
-    const eventsQuery = query(customCalendarEventsCollection, orderBy('created_at', 'desc'));
-    const eventsSnap = await getDocs(eventsQuery);
+    const events = await db.collection('custom_calendar_events').orderBy('created_at', 'desc').get();
 
     const data = [];
-    for (const docSnapshot of eventsSnap.docs) {
-      const e = docSnapshot.data();
-      let userFirstName = 'N/A';
-      let userLastName = 'N/A';
-      let userEmail = 'N/A';
-
-      if (e.user_id) {
-        const userDocRef = doc(usersCollection, e.user_id);
-        const user = await getDoc(userDocRef);
-        const u = user.data();
-        if (u) {
-          userFirstName = u.first_name;
-          userLastName = u.last_name;
-          userEmail = u.email;
-        }
-      }
-
+    for (const doc of events.docs) {
+      const e = doc.data();
+      const user = await db.collection('users').doc(e.user_id).get();
+      const u = user.data();
       data.push({
         ...e,
-        id: docSnapshot.id,
-        first_name: userFirstName,
-        last_name: userLastName,
-        email: userEmail
+        id: doc.id,
+        first_name: u.first_name,
+        last_name: u.last_name,
+        email: u.email
       });
     }
 
@@ -4630,36 +4323,22 @@ app.get('/api/admin/calendar-events/:id', authenticateToken, requireAdmin, async
   try {
     const { id } = req.params;
 
-    const eventDocRef = doc(db, 'custom_calendar_events', id);
-    const event = await getDoc(eventDocRef);
+    const event = await db.collection('custom_calendar_events').doc(id).get();
 
-    if (!event.exists()) {
+    if (!event.exists) {
       return res.status(404).json({ error: 'Calendar event not found' });
     }
 
     const e = event.data();
-    let userFirstName = 'N/A';
-    let userLastName = 'N/A';
-    let userEmail = 'N/A';
-
-    if (e.user_id) {
-      const userDocRef = doc(db, 'users', e.user_id);
-      const user = await getDoc(userDocRef);
-      const u = user.data();
-      if (u) {
-        userFirstName = u.first_name;
-        userLastName = u.last_name;
-        userEmail = u.email;
-      }
-    }
-
+    const user = await db.collection('users').doc(e.user_id).get();
+    const u = user.data();
 
     res.json({
       ...e,
       id: id,
-      first_name: userFirstName,
-      last_name: userLastName,
-      email: userEmail
+      first_name: u.first_name,
+      last_name: u.last_name,
+      email: u.email
     });
   } catch (error) {
     console.error('Error fetching calendar event:', error);
@@ -4688,17 +4367,16 @@ app.post('/api/admin/calendar-events', authenticateToken, requireAdmin, async (r
       return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
     }
 
-    const customCalendarEventsCollection = collection(db, 'custom_calendar_events');
-    const eventRef = doc(customCalendarEventsCollection); // Auto-generate ID
-    await setDoc(eventRef, {
-      user_id: user_id || null, // Can be null if it's a general admin event
+    const eventRef = db.collection('custom_calendar_events').doc();
+    await eventRef.set({
+      user_id: user_id || null,
       title,
       description: description || null,
-      event_date: new Date(event_date), // Store as Date object
+      event_date: new Date(event_date),
       event_time: event_time || null,
       event_type: event_type || 'custom',
-      created_at: Timestamp.now(), // Client SDK Timestamp
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      created_at: Timestamp.now(),
+      updated_at: Timestamp.now()
     });
 
     res.status(201).json({
@@ -4731,15 +4409,14 @@ app.put('/api/admin/calendar-events/:id', authenticateToken, requireAdmin, async
       }
     }
 
-    const eventRef = doc(db, 'custom_calendar_events', id);
-    await updateDoc(eventRef, {
+    await db.collection('custom_calendar_events').doc(id).update({
       user_id: user_id || null,
       title,
       description: description || null,
-      event_date: new Date(event_date), // Store as Date object
+      event_date: new Date(event_date),
       event_time: event_time || null,
       event_type: event_type || 'custom',
-      updated_at: Timestamp.now() // Client SDK Timestamp
+      updated_at: Timestamp.now()
     });
 
     res.json({ message: 'Calendar event updated successfully' });
@@ -4754,8 +4431,7 @@ app.delete('/api/admin/calendar-events/:id', authenticateToken, requireAdmin, as
   try {
     const { id } = req.params;
 
-    const eventRef = doc(db, 'custom_calendar_events', id);
-    await deleteDoc(eventRef);
+    await db.collection('custom_calendar_events').doc(id).delete();
 
     res.json({ message: 'Calendar event deleted successfully' });
   } catch (error) {
@@ -4765,23 +4441,19 @@ app.delete('/api/admin/calendar-events/:id', authenticateToken, requireAdmin, as
 });
 
 // Get all users for dropdown (admin only)
-// NOTE: This endpoint is duplicated (already one at /api/admin/users for full management)
-// Renaming this one to avoid conflict, typically such a specific endpoint would be '/api/admin/users/list-for-dropdown'
-app.get('/api/admin/users-for-dropdown', authenticateToken, requireAdmin, async (req, res) => {
+app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const usersCollection = collection(db, 'users');
-    const usersQuery = query(usersCollection, where('is_active', '==', true), orderBy('first_name'), orderBy('last_name'));
-    const usersSnap = await getDocs(usersQuery);
+    const users = await db.collection('users').where('is_active', '==', true).orderBy('first_name').orderBy('last_name').get();
 
-    const data = usersSnap.docs.map(docSnapshot => ({
-      id: docSnapshot.id,
-      first_name: docSnapshot.data().first_name,
-      last_name: docSnapshot.data().last_name
+    const data = users.docs.map(doc => ({
+      id: doc.id,
+      first_name: doc.data().first_name,
+      last_name: doc.data().last_name
     }));
 
     res.json(data);
   } catch (error) {
-    console.error('Error fetching users for dropdown:', error);
+    console.error('Error fetching users:', error);
     res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
@@ -4791,41 +4463,18 @@ app.get('/api/admin/users-for-dropdown', authenticateToken, requireAdmin, async 
 // GET /api/admin/service-requests
 app.get('/api/admin/service-requests', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const serviceRequestsCollection = collection(db, 'service_requests');
-    const serviceSubcategoriesCollection = collection(db, 'service_subcategories');
-    const usersCollection = collection(db, 'users');
-
-    const requestsQuery = query(serviceRequestsCollection, orderBy('created_at', 'desc'));
-    const requestsSnap = await getDocs(requestsQuery);
+    const requests = await db.collection('service_requests').orderBy('created_at', 'desc').get();
 
     const data = [];
-    for (const docSnapshot of requestsSnap.docs) {
-      const sr = docSnapshot.data();
-
-      // Fetch subcategory
-      const subcategoryDocRef = doc(serviceSubcategoriesCollection, sr.subcategory_id);
-      const subcategorySnap = await getDoc(subcategoryDocRef);
-      const subcategoryName = subcategorySnap.exists() ? subcategorySnap.data().name : 'N/A';
-
-      // Fetch user details
-      let userFirstName = 'N/A';
-      let userLastName = 'N/A';
-      let userAccountType = 'N/A';
-      if (sr.user_id) {
-        const userDocRef = doc(usersCollection, sr.user_id);
-        const userSnap = await getDoc(userDocRef);
-        if (userSnap.exists()) {
-          const u = userSnap.data();
-          userFirstName = u.first_name;
-          userLastName = u.last_name;
-          userAccountType = u.account_type;
-        }
-      }
-
+    for (const doc of requests.docs) {
+      const sr = doc.data();
+      const subcategory = await db.collection('service_subcategories').doc(sr.subcategory_id).get();
+      const user = await db.collection('users').doc(sr.user_id).get();
+      const u = user.data();
       data.push({
-        id: docSnapshot.id,
+        id: doc.id,
         name: sr.full_name,
-        service: subcategoryName,
+        service: subcategory.data().name,
         date: sr.created_at.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
         status: sr.status,
         email: sr.email,
@@ -4838,9 +4487,9 @@ app.get('/api/admin/service-requests', authenticateToken, requireAdmin, async (r
         contact_method: sr.contact_method,
         additional_requirements: sr.additional_requirements,
         user_id: sr.user_id,
-        user_first_name: userFirstName,
-        user_last_name: userLastName,
-        user_account_type: userAccountType
+        user_first_name: u.first_name,
+        user_last_name: u.last_name,
+        user_account_type: u.account_type
       });
     }
 
@@ -4851,23 +4500,38 @@ app.get('/api/admin/service-requests', authenticateToken, requireAdmin, async (r
   }
 });
 
-// PUT /api/admin/service-requests/:id - Update service request (both status and details)
-// NOTE: There were two PUT endpoints with the same path. Merged them into one.
+// PUT /api/admin/service-requests/:id - Update service request
 app.put('/api/admin/service-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { status, project_details, budget_range, timeline, additional_requirements } = req.body;
 
-    const updateData = { updated_at: Timestamp.now() }; // Client SDK Timestamp
+    await db.collection('service_requests').doc(id).update({
+      status: status,
+      project_details: project_details,
+      budget_range: budget_range,
+      timeline: timeline,
+      additional_requirements: additional_requirements,
+      updated_at: Timestamp.now()
+    });
 
-    if (status) updateData.status = status;
-    if (project_details !== undefined) updateData.project_details = project_details;
-    if (budget_range !== undefined) updateData.budget_range = budget_range;
-    if (timeline !== undefined) updateData.timeline = timeline;
-    if (additional_requirements !== undefined) updateData.additional_requirements = additional_requirements;
+    res.json({ message: 'Service request updated successfully' });
+  } catch (error) {
+    console.error('Error updating service request:', error);
+    res.status(500).json({ error: 'Failed to update service request', details: error.message });
+  }
+});
 
-    const serviceRequestRef = doc(db, 'service_requests', id);
-    await updateDoc(serviceRequestRef, updateData);
+// PUT /api/admin/service-requests/:id - Update service request status
+app.put('/api/admin/service-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    await db.collection('service_requests').doc(id).update({
+      status: status,
+      updated_at: Timestamp.now()
+    });
 
     res.json({ message: 'Service request updated successfully' });
   } catch (error) {
@@ -4881,8 +4545,7 @@ app.delete('/api/admin/service-requests/:id', authenticateToken, requireAdmin, a
   try {
     const { id } = req.params;
 
-    const serviceRequestRef = doc(db, 'service_requests', id);
-    await deleteDoc(serviceRequestRef);
+    await db.collection('service_requests').doc(id).delete();
 
     res.json({ message: 'Service request deleted successfully' });
   } catch (error) {
@@ -4932,10 +4595,7 @@ app.use((err, req, res, next) => {
       return res.status(400).json({ error: 'File too large' });
     }
   }
-  if (err.message.includes('Only image files are allowed for avatar') ||
-      err.message.includes('Invalid file type') ||
-      err.message.includes('Only images and PDF files are allowed') ||
-      err.message.includes('Only image files are allowed for course thumbnails')) {
+  if (err.message.includes('Only image files are allowed for avatar')) {
     return res.status(400).json({ error: err.message });
   }
 
