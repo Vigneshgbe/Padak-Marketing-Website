@@ -523,7 +523,7 @@ const ContactManagement: React.FC = () => {
         </div>
       </Modal>
 
-      {/* Contact Actions */}
+      {/* Contact Actions
       {selectedContact && (
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 mt-6">
           <h3 className="text-lg font-semibold mb-4">Contact Actions</h3>
@@ -546,7 +546,8 @@ const ContactManagement: React.FC = () => {
             )}
           </div>
         </div>
-      )}
+      )} */}
+      
     </div>
   );
 };
