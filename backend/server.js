@@ -3982,119 +3982,450 @@ app.delete('/api/admin/resources/:id', authenticateToken, requireAdmin, async (r
 
 // ==================== ADMIN ASSIGNMENT MANAGEMENT ENDPOINTS ====================
 
-// GET all assignments (admin only)
-app.get('/api/admin/assignments', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const assignmentsSnap = await db.collection('assignments').orderBy('created_at', 'desc').get();
+// ==================== ASSIGNMENT MANAGEMENT ENDPOINTS ====================
 
-    const assignments = [];
-    for (const doc of assignmentsSnap.docs) {
-      const a = doc.data();
-      const courseDoc = await db.collection('courses').doc(a.course_id).get();
-      assignments.push({
-        id: doc.id,
-        course_id: a.course_id,
-        title: a.title,
-        description: a.description,
-        due_date: a.due_date,
-        max_points: a.max_points,
-        created_at: a.created_at,
-        course_title: courseDoc.data().title
-      });
+// GET /api/assignments/my-assignments - Get assignments for current user's enrolled courses
+app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userAccountType = req.user.account_type;
+
+    let assignments = [];
+
+    if (userAccountType === 'admin') {
+      // Admin can see all assignments
+      const assignmentsSnapshot = await db.collection('assignments').get();
+      assignments = await Promise.all(
+        assignmentsSnapshot.docs.map(async (doc) => {
+          const assignment = doc.data();
+          const courseDoc = await db.collection('courses').doc(assignment.course_id).get();
+          const course = courseDoc.exists ? courseDoc.data() : { title: 'Unknown Course', category: 'Unknown' };
+          
+          // Get submission if exists
+          const submissionSnapshot = await db.collection('submissions')
+            .where('assignment_id', '==', doc.id)
+            .where('user_id', '==', userId)
+            .get();
+          
+          const submission = submissionSnapshot.empty ? null : {
+            id: submissionSnapshot.docs[0].id,
+            ...submissionSnapshot.docs[0].data()
+          };
+
+          return {
+            id: doc.id,
+            ...assignment,
+            course: {
+              id: assignment.course_id,
+              title: course.title,
+              category: course.category
+            },
+            submission: submission
+          };
+        })
+      );
+    } else {
+      // For students/professionals, get assignments from enrolled courses
+      const enrollmentsSnapshot = await db.collection('enrollments')
+        .where('user_id', '==', userId)
+        .get();
+
+      const enrolledCourseIds = enrollmentsSnapshot.docs.map(doc => doc.data().course_id);
+
+      if (enrolledCourseIds.length === 0) {
+        return res.json([]);
+      }
+
+      // Get assignments for enrolled courses
+      const assignmentsSnapshot = await db.collection('assignments')
+        .where('course_id', 'in', enrolledCourseIds)
+        .get();
+
+      assignments = await Promise.all(
+        assignmentsSnapshot.docs.map(async (doc) => {
+          const assignment = doc.data();
+          const courseDoc = await db.collection('courses').doc(assignment.course_id).get();
+          const course = courseDoc.exists ? courseDoc.data() : { title: 'Unknown Course', category: 'Unknown' };
+          
+          // Get submission if exists
+          const submissionSnapshot = await db.collection('submissions')
+            .where('assignment_id', '==', doc.id)
+            .where('user_id', '==', userId)
+            .get();
+          
+          const submission = submissionSnapshot.empty ? null : {
+            id: submissionSnapshot.docs[0].id,
+            ...submissionSnapshot.docs[0].data()
+          };
+
+          return {
+            id: doc.id,
+            ...assignment,
+            course: {
+              id: assignment.course_id,
+              title: course.title,
+              category: course.category
+            },
+            submission: submission
+          };
+        })
+      );
     }
 
     res.json(assignments);
+
   } catch (error) {
-    console.error('Error fetching assignments:', error);
-    res.status(500).json({ error: 'Failed to fetch assignments' });
+    console.error('Get my assignments error:', error);
+    res.status(500).json({ error: 'Server error while fetching assignments' });
   }
 });
 
-// CREATE new assignment (admin only)
+// POST /api/assignments/submit - Submit an assignment
+app.post('/api/assignments/submit', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { assignment_id, content } = req.body;
+
+    if (!assignment_id) {
+      return res.status(400).json({ error: 'Assignment ID is required' });
+    }
+
+    // Check if assignment exists
+    const assignmentDoc = await db.collection('assignments').doc(assignment_id).get();
+    if (!assignmentDoc.exists) {
+      return res.status(404).json({ error: 'Assignment not found' });
+    }
+
+    // Check if user is enrolled in the course
+    const assignment = assignmentDoc.data();
+    const enrollmentSnapshot = await db.collection('enrollments')
+      .where('user_id', '==', userId)
+      .where('course_id', '==', assignment.course_id)
+      .get();
+
+    if (enrollmentSnapshot.empty) {
+      return res.status(403).json({ error: 'You are not enrolled in this course' });
+    }
+
+    // Check if already submitted
+    const existingSubmissionSnapshot = await db.collection('submissions')
+      .where('assignment_id', '==', assignment_id)
+      .where('user_id', '==', userId)
+      .get();
+
+    if (!existingSubmissionSnapshot.empty) {
+      return res.status(400).json({ error: 'Assignment already submitted' });
+    }
+
+    // Create submission
+    const submissionRef = db.collection('submissions').doc();
+    const submissionData = {
+      assignment_id: assignment_id,
+      user_id: userId,
+      content: content || '',
+      file_path: '', // File upload would be handled separately
+      submitted_at: firebase.firestore.FieldValue.serverTimestamp(),
+      grade: null,
+      feedback: '',
+      status: 'submitted'
+    };
+
+    await submissionRef.set(submissionData);
+
+    console.log('Assignment submitted:', { submissionId: submissionRef.id, userId, assignmentId: assignment_id });
+
+    res.status(201).json({
+      message: 'Assignment submitted successfully',
+      submissionId: submissionRef.id
+    });
+
+  } catch (error) {
+    console.error('Submit assignment error:', error);
+    res.status(500).json({ error: 'Server error while submitting assignment' });
+  }
+});
+
+// GET /api/assignments/download-submission/:submissionId - Download submission file
+app.get('/api/assignments/download-submission/:submissionId', authenticateToken, async (req, res) => {
+  try {
+    const submissionId = req.params.submissionId;
+    const userId = req.user.id;
+
+    const submissionDoc = await db.collection('submissions').doc(submissionId).get();
+    if (!submissionDoc.exists) {
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+
+    const submission = submissionDoc.data();
+
+    // Check if user owns the submission or is admin
+    if (submission.user_id !== userId && req.user.account_type !== 'admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (!submission.file_path) {
+      return res.status(404).json({ error: 'No file attached to this submission' });
+    }
+
+    // For now, return file path. In production, you'd serve the actual file
+    res.json({
+      file_path: submission.file_path,
+      file_name: `submission_${submissionId}.pdf` // You'd get this from metadata
+    });
+
+  } catch (error) {
+    console.error('Download submission error:', error);
+    res.status(500).json({ error: 'Server error while downloading submission' });
+  }
+});
+
+// ==================== ADMIN ASSIGNMENT ENDPOINTS ====================
+
+// GET /api/admin/assignments - Get all assignments (admin only)
+app.get('/api/admin/assignments', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const assignmentsSnapshot = await db.collection('assignments').get();
+    
+    const assignments = await Promise.all(
+      assignmentsSnapshot.docs.map(async (doc) => {
+        const assignment = doc.data();
+        const courseDoc = await db.collection('courses').doc(assignment.course_id).get();
+        const course = courseDoc.exists ? courseDoc.data() : { title: 'Unknown Course' };
+        
+        return {
+          id: doc.id,
+          ...assignment,
+          course_title: course.title
+        };
+      })
+    );
+
+    res.json(assignments);
+
+  } catch (error) {
+    console.error('Get admin assignments error:', error);
+    res.status(500).json({ error: 'Server error while fetching assignments' });
+  }
+});
+
+// GET /api/admin/courses - Get all courses for assignment form (admin only)
+app.get('/api/admin/courses', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const coursesSnapshot = await db.collection('courses').get();
+    const courses = coursesSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    res.json(courses);
+
+  } catch (error) {
+    console.error('Get courses error:', error);
+    res.status(500).json({ error: 'Server error while fetching courses' });
+  }
+});
+
+// POST /api/admin/assignments - Create new assignment (admin only)
 app.post('/api/admin/assignments', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const {
-      title,
-      course_id,
-      description,
-      due_date,
-      max_points
-    } = req.body;
+    const { title, description, due_date, max_points, course_id } = req.body;
 
     // Validate required fields
-    if (!title || !course_id || !due_date || !max_points) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    if (!title || !due_date || !max_points || !course_id) {
+      return res.status(400).json({
+        error: 'Title, due date, max points, and course are required'
+      });
     }
 
+    // Check if course exists
+    const courseDoc = await db.collection('courses').doc(course_id).get();
+    if (!courseDoc.exists) {
+      return res.status(404).json({ error: 'Course not found' });
+    }
+
+    // Create assignment
     const assignmentRef = db.collection('assignments').doc();
-    await assignmentRef.set({
-      title,
-      course_id,
-      description,
-      due_date: new Date(due_date),
-      max_points,
-      created_at: firebase.firestore.Timestamp.now()
+    const assignmentData = {
+      title: title.trim(),
+      description: description || '',
+      due_date: due_date,
+      max_points: parseInt(max_points),
+      course_id: course_id,
+      created_at: firebase.firestore.FieldValue.serverTimestamp(),
+      updated_at: firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    await assignmentRef.set(assignmentData);
+
+    console.log('Assignment created by admin:', { assignmentId: assignmentRef.id, title, admin: req.user.email });
+
+    res.status(201).json({
+      message: 'Assignment created successfully',
+      assignment: {
+        id: assignmentRef.id,
+        ...assignmentData
+      }
     });
 
-    res.status(201).json({ 
-      message: 'Assignment created successfully',
-      assignmentId: assignmentRef.id
-    });
   } catch (error) {
-    console.error('Error creating assignment:', error);
-    res.status(500).json({ error: 'Failed to create assignment' });
+    console.error('Create assignment error:', error);
+    res.status(500).json({ error: 'Server error while creating assignment' });
   }
 });
 
-// UPDATE assignment (admin only)
+// PUT /api/admin/assignments/:id - Update assignment (admin only)
 app.put('/api/admin/assignments/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { id } = req.params;
-    const {
-      title,
-      course_id,
-      description,
-      due_date,
-      max_points
-    } = req.body;
+    const assignmentId = req.params.id;
+    const { title, description, due_date, max_points, course_id } = req.body;
 
-    // Validate required fields
-    if (!title || !course_id || !due_date || !max_points) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    // Check if assignment exists
+    const assignmentDoc = await db.collection('assignments').doc(assignmentId).get();
+    if (!assignmentDoc.exists) {
+      return res.status(404).json({ error: 'Assignment not found' });
     }
 
-    await db.collection('assignments').doc(id).update({
-      title,
-      course_id,
-      description,
-      due_date: new Date(due_date),
-      max_points
+    // Check if course exists if course_id is being updated
+    if (course_id) {
+      const courseDoc = await db.collection('courses').doc(course_id).get();
+      if (!courseDoc.exists) {
+        return res.status(404).json({ error: 'Course not found' });
+      }
+    }
+
+    const currentAssignment = assignmentDoc.data();
+
+    // Update assignment
+    const updateData = {
+      title: title || currentAssignment.title,
+      description: description || currentAssignment.description,
+      due_date: due_date || currentAssignment.due_date,
+      max_points: max_points ? parseInt(max_points) : currentAssignment.max_points,
+      course_id: course_id || currentAssignment.course_id,
+      updated_at: firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    await db.collection('assignments').doc(assignmentId).update(updateData);
+
+    // Get updated assignment with course title
+    const updatedAssignmentDoc = await db.collection('assignments').doc(assignmentId).get();
+    const updatedAssignment = updatedAssignmentDoc.data();
+    const courseDoc = await db.collection('courses').doc(updatedAssignment.course_id).get();
+    const course = courseDoc.exists ? courseDoc.data() : { title: 'Unknown Course' };
+
+    res.json({
+      message: 'Assignment updated successfully',
+      assignment: {
+        id: assignmentId,
+        ...updatedAssignment,
+        course_title: course.title
+      }
     });
 
-    res.json({ message: 'Assignment updated successfully' });
   } catch (error) {
-    console.error('Error updating assignment:', error);
-    res.status(500).json({ error: 'Failed to update assignment' });
+    console.error('Update assignment error:', error);
+    res.status(500).json({ error: 'Server error while updating assignment' });
   }
 });
 
-// DELETE assignment (admin only)
+// DELETE /api/admin/assignments/:id - Delete assignment (admin only)
 app.delete('/api/admin/assignments/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { id } = req.params;
+    const assignmentId = req.params.id;
 
-    const submissionsSnap = await db.collection('assignment_submissions').where('assignment_id', '==', id).get();
-
-    if (!submissionsSnap.empty) {
-      return res.status(400).json({ error: 'Cannot delete assignment with existing submissions' });
+    // Check if assignment exists
+    const assignmentDoc = await db.collection('assignments').doc(assignmentId).get();
+    if (!assignmentDoc.exists) {
+      return res.status(404).json({ error: 'Assignment not found' });
     }
 
-    await db.collection('assignments').doc(id).delete();
+    // Check if there are submissions for this assignment
+    const submissionsSnapshot = await db.collection('submissions')
+      .where('assignment_id', '==', assignmentId)
+      .get();
+
+    if (!submissionsSnapshot.empty) {
+      return res.status(400).json({ 
+        error: 'Cannot delete assignment with existing submissions. Delete submissions first.' 
+      });
+    }
+
+    // Delete assignment
+    await db.collection('assignments').doc(assignmentId).delete();
+
+    console.log('Assignment deleted by admin:', { assignmentId, admin: req.user.email });
 
     res.json({ message: 'Assignment deleted successfully' });
+
   } catch (error) {
-    console.error('Error deleting assignment:', error);
-    res.status(500).json({ error: 'Failed to delete assignment' });
+    console.error('Delete assignment error:', error);
+    res.status(500).json({ error: 'Server error while deleting assignment' });
+  }
+});
+
+// GET /api/admin/assignment-submissions/:assignmentId - Get submissions for an assignment (admin only)
+app.get('/api/admin/assignment-submissions/:assignmentId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const assignmentId = req.params.id;
+
+    const submissionsSnapshot = await db.collection('submissions')
+      .where('assignment_id', '==', assignmentId)
+      .get();
+
+    const submissions = await Promise.all(
+      submissionsSnapshot.docs.map(async (doc) => {
+        const submission = doc.data();
+        const userDoc = await db.collection('users').doc(submission.user_id).get();
+        const user = userDoc.exists ? userDoc.data() : { first_name: 'Unknown', last_name: 'User' };
+        
+        return {
+          id: doc.id,
+          ...submission,
+          user: {
+            id: submission.user_id,
+            first_name: user.first_name,
+            last_name: user.last_name,
+            email: user.email
+          }
+        };
+      })
+    );
+
+    res.json(submissions);
+
+  } catch (error) {
+    console.error('Get assignment submissions error:', error);
+    res.status(500).json({ error: 'Server error while fetching submissions' });
+  }
+});
+
+// PUT /api/admin/grade-submission/:submissionId - Grade a submission (admin only)
+app.put('/api/admin/grade-submission/:submissionId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const submissionId = req.params.submissionId;
+    const { grade, feedback } = req.body;
+
+    if (grade === undefined || grade === null) {
+      return res.status(400).json({ error: 'Grade is required' });
+    }
+
+    const submissionDoc = await db.collection('submissions').doc(submissionId).get();
+    if (!submissionDoc.exists) {
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+
+    await db.collection('submissions').doc(submissionId).update({
+      grade: parseInt(grade),
+      feedback: feedback || '',
+      status: 'graded',
+      graded_at: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    res.json({ message: 'Submission graded successfully' });
+
+  } catch (error) {
+    console.error('Grade submission error:', error);
+    res.status(500).json({ error: 'Server error while grading submission' });
   }
 });
 
