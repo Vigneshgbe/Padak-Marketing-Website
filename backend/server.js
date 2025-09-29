@@ -180,7 +180,7 @@ const authenticateToken = async (req, res, next) => {
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
+    return res.status(401).json({ error: 'Access token required, Please log in again | New user Create account' });
   }
 
   try {
@@ -3506,43 +3506,44 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
       usersQuery = query(usersQuery, where('is_active', '==', isActive));
     }
 
+    // Fetch all matching users (no limit to avoid function error)
+    const allUsersSnapshot = await getDocs(usersQuery);
+    let users = allUsersSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+
+    // Apply search filter in memory if provided
     if (search) {
-      // Firestore doesn't support full text search, so fetch all and filter
-      const allUsersSnapshot = await getDocs(usersQuery);
-      let users = allUsersSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
-      users = users.filter(u => u.first_name.includes(search) || u.last_name.includes(search) || u.email.includes(search));
-      const totalUsers = users.length;
-      users = users.slice(offset, offset + pageSize);
-
-      res.json({
-        users,
-        pagination: {
-          currentPage: page,
-          totalPages: Math.ceil(totalUsers / pageSize),
-          totalUsers,
-          hasNextPage: page < Math.ceil(totalUsers / pageSize),
-          hasPreviousPage: page > 1
-        }
-      });
-    } else {
-      usersQuery = query(usersQuery, fsLimit(pageSize + offset));
-      const usersSnapshot = await getDocs(usersQuery);
-      let users = usersSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
-      const totalSnapshot = await getDocs(query(collection(db, 'users')));
-      const totalUsers = totalSnapshot.size;
-      users = users.slice(offset);
-
-      res.json({
-        users,
-        pagination: {
-          currentPage: page,
-          totalPages: Math.ceil(totalUsers / pageSize),
-          totalUsers,
-          hasNextPage: page < Math.ceil(totalUsers / pageSize),
-          hasPreviousPage: page > 1
-        }
-      });
+      users = users.filter(u => 
+        u.first_name.toLowerCase().includes(search.toLowerCase()) || 
+        u.last_name.toLowerCase().includes(search.toLowerCase()) || 
+        u.email.toLowerCase().includes(search.toLowerCase())
+      );
     }
+
+    const totalUsers = users.length;
+
+    // Paginate in memory
+    users = users.slice(offset, offset + pageSize);
+
+    // Format join_date safely (handle if created_at is not Timestamp)
+    const formattedUsers = users.map(user => ({
+      ...user,
+      join_date: user.created_at 
+        ? (user.created_at.toDate ? user.created_at.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) 
+          : new Date(user.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })) 
+        : 'Invalid Date'  // Fallback for invalid dates
+    }));
+
+    res.json({
+      users: formattedUsers,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalUsers / pageSize),
+        totalUsers,
+        hasNextPage: page < Math.ceil(totalUsers / pageSize),
+        hasPreviousPage: page > 1
+      }
+    });
+
   } catch (error) {
     console.error('Get users error:', error);
     res.status(500).json({ error: 'Server error' });
