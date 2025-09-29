@@ -1,9 +1,8 @@
 // src/pages/dashboard/admin/AdminOverview.tsx
 import React, { useState, useEffect } from 'react';
-import { Users, BookOpen, UserCheck, BarChart, PlusCircle, MessageSquare, GraduationCap, ChevronRight } from 'lucide-react';
+import { Users, BookOpen, UserCheck, BarChart, PlusCircle, MessageSquare, GraduationCap, ChevronRight, RefreshCw, AlertCircle } from 'lucide-react';
 import StatCard from '../../../components/dashboard/common/StatCard';
 import { DashboardStats, RecentUser, RecentEnrollment, ServiceRequest } from '../../../lib/admin-types';
-import { useAdminData } from '../../../hooks/useAdminData';
 
 const AdminOverview: React.FC = () => {
   const [adminStats, setAdminStats] = useState<DashboardStats>({
@@ -20,247 +19,152 @@ const AdminOverview: React.FC = () => {
   const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Fetch dashboard data
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
+  const fetchDashboardData = async (isRefresh = false) => {
+    try {
+      if (!isRefresh) {
         setLoading(true);
-        setError(null);
-
-        const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-        const headers: HeadersInit = {
-          'Content-Type': 'application/json'
-        };
-
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
-
-        const baseURL = window.location.origin;
-
-        // Fetch dashboard stats
-        try {
-          const statsResponse = await fetch(`${baseURL}/api/admin/dashboard-stats`, {
-            method: 'GET',
-            headers,
-            credentials: 'include'
-          });
-
-          if (statsResponse.ok) {
-            const statsData = await statsResponse.json();
-            
-            // Format revenue with Indian currency
-            const formattedRevenue = new Intl.NumberFormat('en-IN', {
-              style: 'currency',
-              currency: 'INR',
-              maximumFractionDigits: 0
-            }).format(statsData.totalRevenue || 0);
-
-            setAdminStats({
-              totalUsers: statsData.totalUsers || 0,
-              totalCourses: statsData.totalCourses || 0,
-              totalEnrollments: statsData.totalEnrollments || 0,
-              totalRevenue: formattedRevenue,
-              pendingContacts: statsData.pendingContacts || 0,
-              pendingServiceRequests: statsData.pendingServiceRequests || 0
-            });
-          } else {
-            console.warn('Failed to fetch dashboard stats, using mock data');
-            setMockData();
-          }
-        } catch (statsError) {
-          console.warn('Error fetching dashboard stats, using mock data:', statsError);
-          setMockData();
-        }
-
-        // Fetch recent users
-        try {
-          const usersResponse = await fetch(`${baseURL}/api/admin/recent-users`, {
-            method: 'GET',
-            headers,
-            credentials: 'include'
-          });
-
-          if (usersResponse.ok) {
-            const usersData = await usersResponse.json();
-            setRecentUsers(usersData);
-          } else {
-            console.warn('Failed to fetch recent users, using mock data');
-            setMockRecentUsers();
-          }
-        } catch (usersError) {
-          console.warn('Error fetching recent users, using mock data:', usersError);
-          setMockRecentUsers();
-        }
-
-        // Fetch recent enrollments
-        try {
-          const enrollmentsResponse = await fetch(`${baseURL}/api/admin/recent-enrollments`, {
-            method: 'GET',
-            headers,
-            credentials: 'include'
-          });
-
-          if (enrollmentsResponse.ok) {
-            const enrollmentsData = await enrollmentsResponse.json();
-            setRecentEnrollments(enrollmentsData);
-          } else {
-            console.warn('Failed to fetch recent enrollments, using mock data');
-            setMockRecentEnrollments();
-          }
-        } catch (enrollmentsError) {
-          console.warn('Error fetching recent enrollments, using mock data:', enrollmentsError);
-          setMockRecentEnrollments();
-        }
-
-        // Fetch service requests
-        try {
-          const serviceRequestsResponse = await fetch(`${baseURL}/api/admin/service-requests`, {
-            method: 'GET',
-            headers,
-            credentials: 'include'
-          });
-
-          if (serviceRequestsResponse.ok) {
-            const serviceRequestsData = await serviceRequestsResponse.json();
-            // Transform the data to match the ServiceRequest type
-            const transformedRequests = serviceRequestsData.map((request: any) => ({
-              id: request.id,
-              name: request.name || `${request.user_first_name} ${request.user_last_name}`,
-              service: request.service,
-              date: request.date,
-              status: request.status,
-              email: request.email,
-              phone: request.phone,
-              company: request.company,
-              website: request.website,
-              project_details: request.project_details,
-              budget_range: request.budget_range,
-              timeline: request.timeline,
-              contact_method: request.contact_method,
-              additional_requirements: request.additional_requirements
-            }));
-            setServiceRequests(transformedRequests);
-          } else {
-            console.warn('Failed to fetch service requests, using mock data');
-            setMockServiceRequests();
-          }
-        } catch (serviceRequestsError) {
-          console.warn('Error fetching service requests, using mock data:', serviceRequestsError);
-          setMockServiceRequests();
-        }
-
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-        setError('Failed to load dashboard data');
-        setMockData();
-      } finally {
-        setLoading(false);
+      } else {
+        setRefreshing(true);
       }
-    };
+      setError(null);
 
-    // Mock data functions
-    const setMockData = () => {
-      setAdminStats({
-        totalUsers: 125,
-        totalCourses: 15,
-        totalEnrollments: 342,
-        totalRevenue: "₹2,45,000",
-        pendingContacts: 8,
-        pendingServiceRequests: 5
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const baseURL = window.location.origin;
+
+      // Fetch dashboard stats
+      const statsResponse = await fetch(`${baseURL}/api/admin/dashboard-stats`, {
+        method: 'GET',
+        headers,
+        credentials: 'include'
       });
-    };
 
-    const setMockRecentUsers = () => {
-      setRecentUsers([
-        {
-          id: '1',
-          first_name: 'John',
-          last_name: 'Doe',
-          email: 'john.doe@example.com',
-          account_type: 'student',
-          join_date: '15 Dec 2024'
-        },
-        {
-          id: '2',
-          first_name: 'Jane',
-          last_name: 'Smith',
-          email: 'jane.smith@example.com',
-          account_type: 'professional',
-          join_date: '14 Dec 2024'
-        },
-        {
-          id: '3',
-          first_name: 'Mike',
-          last_name: 'Johnson',
-          email: 'mike.johnson@example.com',
-          account_type: 'business',
-          join_date: '13 Dec 2024'
-        }
-      ]);
-    };
+      if (!statsResponse.ok) {
+        throw new Error(`Failed to fetch dashboard stats: ${statsResponse.status}`);
+      }
 
-    const setMockRecentEnrollments = () => {
-      setRecentEnrollments([
-        {
-          id: '1',
-          user_name: 'John Doe',
-          course_name: 'Web Development Fundamentals',
-          date: '15 Dec 2024',
-          status: 'active'
-        },
-        {
-          id: '2',
-          user_name: 'Jane Smith',
-          course_name: 'Data Science Essentials',
-          date: '14 Dec 2024',
-          status: 'completed'
-        },
-        {
-          id: '3',
-          user_name: 'Mike Johnson',
-          course_name: 'Digital Marketing Strategy',
-          date: '13 Dec 2024',
-          status: 'active'
-        }
-      ]);
-    };
+      const statsData = await statsResponse.json();
+      
+      // Format revenue with Indian currency
+      const formattedRevenue = new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        maximumFractionDigits: 0
+      }).format(statsData.totalRevenue || 0);
 
-    const setMockServiceRequests = () => {
-      setServiceRequests([
-        {
-          id: '1',
-          name: 'Sarah Wilson',
-          service: 'Website Development',
-          date: '15 Dec 2024',
-          status: 'pending'
-        },
-        {
-          id: '2',
-          name: 'David Brown',
-          service: 'Mobile App Development',
-          date: '14 Dec 2024',
-          status: 'in-process'
-        },
-        {
-          id: '3',
-          name: 'Emily Davis',
-          service: 'Digital Marketing',
-          date: '13 Dec 2024',
-          status: 'completed'
-        }
-      ]);
-    };
+      setAdminStats({
+        totalUsers: statsData.totalUsers || 0,
+        totalCourses: statsData.totalCourses || 0,
+        totalEnrollments: statsData.totalEnrollments || 0,
+        totalRevenue: formattedRevenue,
+        pendingContacts: statsData.pendingContacts || 0,
+        pendingServiceRequests: statsData.pendingServiceRequests || 0
+      });
 
+      // Fetch recent users
+      const usersResponse = await fetch(`${baseURL}/api/admin/recent-users`, {
+        method: 'GET',
+        headers,
+        credentials: 'include'
+      });
+
+      if (usersResponse.ok) {
+        const usersData = await usersResponse.json();
+        setRecentUsers(usersData);
+      } else {
+        console.warn('Failed to fetch recent users');
+        setRecentUsers([]);
+      }
+
+      // Fetch recent enrollments
+      const enrollmentsResponse = await fetch(`${baseURL}/api/admin/recent-enrollments`, {
+        method: 'GET',
+        headers,
+        credentials: 'include'
+      });
+
+      if (enrollmentsResponse.ok) {
+        const enrollmentsData = await enrollmentsResponse.json();
+        setRecentEnrollments(enrollmentsData);
+      } else {
+        console.warn('Failed to fetch recent enrollments');
+        setRecentEnrollments([]);
+      }
+
+      // Fetch service requests
+      const serviceRequestsResponse = await fetch(`${baseURL}/api/admin/service-requests`, {
+        method: 'GET',
+        headers,
+        credentials: 'include'
+      });
+
+      if (serviceRequestsResponse.ok) {
+        const serviceRequestsData = await serviceRequestsResponse.json();
+        // Transform the data to match the ServiceRequest type
+        const transformedRequests = serviceRequestsData.map((request: any) => ({
+          id: request.id,
+          name: request.name || `${request.user_first_name} ${request.user_last_name}`,
+          service: request.service,
+          date: request.date,
+          status: request.status,
+          email: request.email,
+          phone: request.phone,
+          company: request.company,
+          website: request.website,
+          project_details: request.project_details,
+          budget_range: request.budget_range,
+          timeline: request.timeline,
+          contact_method: request.contact_method,
+          additional_requirements: request.additional_requirements
+        }));
+        setServiceRequests(transformedRequests);
+      } else {
+        console.warn('Failed to fetch service requests');
+        setServiceRequests([]);
+      }
+
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+      setError(error instanceof Error ? error.message : 'Failed to load dashboard data');
+      
+      // Reset all data on error
+      setAdminStats({
+        totalUsers: 0,
+        totalCourses: 0,
+        totalEnrollments: 0,
+        totalRevenue: "₹0",
+        pendingContacts: 0,
+        pendingServiceRequests: 0
+      });
+      setRecentUsers([]);
+      setRecentEnrollments([]);
+      setServiceRequests([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
     fetchDashboardData();
   }, []);
+
+  const handleRefresh = () => {
+    fetchDashboardData(true);
+  };
 
   const handleManagementClick = (sectionId: string) => {
     // This would be handled by the parent component to change the active view
     console.log(`Navigate to ${sectionId}`);
-    // You can dispatch an event or use a state management solution here
-    // For now, we'll just log it
     window.dispatchEvent(new CustomEvent('admin-navigation', { 
       detail: { section: sectionId } 
     }));
@@ -274,49 +178,69 @@ const AdminOverview: React.FC = () => {
     );
   }
 
-  if (error) {
-    return (
-      <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6">
-        <div className="flex items-center mb-4">
-          <span className="text-red-500 mr-2">⚠️</span>
-          <h3 className="text-lg font-semibold text-red-700 dark:text-red-300">Error Loading Dashboard</h3>
-        </div>
-        <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
-        <button
-          onClick={() => window.location.reload()}
-          className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
-
   return (
     <div>
+      {/* Header with Refresh Button */}
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Admin Dashboard</h1>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
+          {refreshing ? 'Refreshing...' : 'Refresh Data'}
+        </button>
+      </div>
+
+      {/* Error Banner */}
+      {error && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <AlertCircle size={20} className="text-red-500 mr-2" />
+              <div>
+                <h3 className="text-sm font-semibold text-red-800 dark:text-red-200">
+                  Failed to load dashboard data
+                </h3>
+                <p className="text-sm text-red-600 dark:text-red-300 mt-1">
+                  {error}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleRefresh}
+              className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200 text-sm font-medium"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Admin Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard
           title="Total Users"
-          value={adminStats.totalUsers!}
+          value={adminStats.totalUsers}
           icon={<Users size={20} />}
           color="from-blue-500 to-blue-400"
         />
         <StatCard
           title="Total Courses"
-          value={adminStats.totalCourses!}
+          value={adminStats.totalCourses}
           icon={<BookOpen size={20} />}
           color="from-green-500 to-green-400"
         />
         <StatCard
           title="Total Enrollments"
-          value={adminStats.totalEnrollments!}
+          value={adminStats.totalEnrollments}
           icon={<UserCheck size={20} />}
           color="from-purple-500 to-purple-400"
         />
         <StatCard
           title="Total Revenue"
-          value={adminStats.totalRevenue!}
+          value={adminStats.totalRevenue}
           icon={<BarChart size={20} />}
           color="from-orange-500 to-orange-400"
         />
@@ -335,7 +259,7 @@ const AdminOverview: React.FC = () => {
             </button>
           </div>
           <div className="space-y-4">
-            {recentUsers && recentUsers.length > 0 ? (
+            {recentUsers.length > 0 ? (
               recentUsers.map((user: RecentUser) => (
                 <div key={user.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                   <div>
@@ -351,7 +275,13 @@ const AdminOverview: React.FC = () => {
                 </div>
               ))
             ) : (
-              <p className="text-gray-500 dark:text-gray-400 text-center py-4">No recent users</p>
+              <div className="text-center py-8">
+                <Users size={48} className="mx-auto text-gray-400 mb-3" />
+                <p className="text-gray-500 dark:text-gray-400">No recent users found</p>
+                <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+                  Users will appear here as they register
+                </p>
+              </div>
             )}
           </div>
         </div>
@@ -368,7 +298,7 @@ const AdminOverview: React.FC = () => {
             </button>
           </div>
           <div className="space-y-4">
-            {recentEnrollments && recentEnrollments.length > 0 ? (
+            {recentEnrollments.length > 0 ? (
               recentEnrollments.map((enrollment: RecentEnrollment) => (
                 <div key={enrollment.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                   <div>
@@ -390,7 +320,13 @@ const AdminOverview: React.FC = () => {
                 </div>
               ))
             ) : (
-              <p className="text-gray-500 dark:text-gray-400 text-center py-4">No recent enrollments</p>
+              <div className="text-center py-8">
+                <UserCheck size={48} className="mx-auto text-gray-400 mb-3" />
+                <p className="text-gray-500 dark:text-gray-400">No recent enrollments</p>
+                <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+                  Course enrollments will appear here
+                </p>
+              </div>
             )}
           </div>
         </div>
@@ -400,15 +336,22 @@ const AdminOverview: React.FC = () => {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 mb-8">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-bold">Service Requests</h2>
-          <button
-            onClick={() => handleManagementClick('service-requests')}
-            className="text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300 flex items-center"
-          >
-            Manage <ChevronRight size={18} className="ml-1" />
-          </button>
+          <div className="flex items-center gap-4">
+            {serviceRequests.length > 0 && (
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                {adminStats.pendingServiceRequests} pending
+              </span>
+            )}
+            <button
+              onClick={() => handleManagementClick('service-requests')}
+              className="text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300 flex items-center"
+            >
+              Manage <ChevronRight size={18} className="ml-1" />
+            </button>
+          </div>
         </div>
         <div className="space-y-4">
-          {serviceRequests && serviceRequests.length > 0 ? (
+          {serviceRequests.length > 0 ? (
             serviceRequests.map((request: ServiceRequest) => (
               <div key={request.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                 <div>
@@ -430,12 +373,18 @@ const AdminOverview: React.FC = () => {
               </div>
             ))
           ) : (
-            <p className="text-gray-500 dark:text-gray-400 text-center py-4">No service requests</p>
+            <div className="text-center py-8">
+              <MessageSquare size={48} className="mx-auto text-gray-400 mb-3" />
+              <p className="text-gray-500 dark:text-gray-400">No service requests</p>
+              <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+                Service requests from users will appear here
+              </p>
+            </div>
           )}
         </div>
       </div>
 
-      {/* Quick Actions */}
+      {/* Quick Actions
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
         <h2 className="text-xl font-bold mb-4">Quick Actions</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -468,7 +417,8 @@ const AdminOverview: React.FC = () => {
             <p className="text-sm font-medium">Assignments</p>
           </button>
         </div>
-      </div>
+      </div> */}
+      
     </div>
   );
 };
