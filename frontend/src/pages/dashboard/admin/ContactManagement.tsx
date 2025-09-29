@@ -17,6 +17,17 @@ interface ContactMessage {
   created_at: string;
 }
 
+interface ApiResponse {
+  messages?: ContactMessage[];
+  pagination?: {
+    currentPage: number;
+    totalPages: number;
+    totalMessages: number;
+    hasNextPage: boolean;
+    hasPreviousPage: boolean;
+  };
+}
+
 const ContactManagement: React.FC = () => {
   const [contacts, setContacts] = useState<ContactMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,32 +46,73 @@ const ContactManagement: React.FC = () => {
   const fetchContacts = async () => {
     try {
       setLoading(true);
+      setError(null);
+      
       const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      
+      if (!token) {
+        throw new Error('No authentication token found. Please log in again.');
       }
 
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      };
+
       const baseURL = 'http://localhost:5000';
+      
+      console.log('Fetching contact messages...');
+      
       const response = await fetch(`${baseURL}/api/admin/contact-messages`, {
         method: 'GET',
         headers,
         credentials: 'include'
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        // Handle both response formats (array or object with messages property)
-        const messages = Array.isArray(data) ? data : (data.messages || []);
-        setContacts(messages);
-      } else {
-        throw new Error('Failed to fetch contact messages');
+      console.log('Response status:', response.status);
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('Unauthorized. Please log in again.');
+        } else if (response.status === 403) {
+          throw new Error('Access denied. Admin privileges required.');
+        } else if (response.status === 404) {
+          throw new Error('API endpoint not found. Please check server configuration.');
+        } else {
+          throw new Error(`Server error: ${response.status}`);
+        }
       }
+
+      const contentType = response.headers.get('content-type');
+      
+      if (!contentType || !contentType.includes('application/json')) {
+        const textResponse = await response.text();
+        console.error('Non-JSON response:', textResponse);
+        throw new Error('Server returned invalid response format');
+      }
+
+      const data: ApiResponse | ContactMessage[] = await response.json();
+      console.log('Received data:', data);
+
+      // Handle both response formats
+      let messages: ContactMessage[] = [];
+      
+      if (Array.isArray(data)) {
+        messages = data;
+      } else if (data && typeof data === 'object' && 'messages' in data) {
+        messages = data.messages || [];
+      } else {
+        console.error('Unexpected data format:', data);
+        throw new Error('Unexpected data format received from server');
+      }
+
+      console.log('Parsed messages:', messages);
+      setContacts(messages);
+
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      console.error('Error fetching contact messages:', err);
+      const errorMessage = err instanceof Error ? err.message : 'An error occurred while fetching contact messages';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -83,14 +135,18 @@ const ContactManagement: React.FC = () => {
 
     try {
       setSaving(true);
+      setError(null);
+      
       const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      
+      if (!token) {
+        throw new Error('No authentication token found');
       }
+
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      };
 
       const baseURL = 'http://localhost:5000';
       const response = await fetch(`${baseURL}/api/admin/contact-messages/${selectedContact.id}`, {
@@ -100,14 +156,16 @@ const ContactManagement: React.FC = () => {
         body: JSON.stringify(formData)
       });
 
-      if (response.ok) {
-        setIsModalOpen(false);
-        fetchContacts(); // Refresh the data
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to update contact message');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to update: ${response.status}`);
       }
+
+      setIsModalOpen(false);
+      await fetchContacts(); // Refresh the data
+      
     } catch (err) {
+      console.error('Error updating contact:', err);
       setError(err instanceof Error ? err.message : 'Failed to update contact message');
     } finally {
       setSaving(false);
@@ -118,14 +176,18 @@ const ContactManagement: React.FC = () => {
     if (!selectedContact) return;
 
     try {
+      setError(null);
+      
       const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      
+      if (!token) {
+        throw new Error('No authentication token found');
       }
+
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      };
 
       const baseURL = 'http://localhost:5000';
       const response = await fetch(`${baseURL}/api/admin/contact-messages/${selectedContact.id}`, {
@@ -134,14 +196,16 @@ const ContactManagement: React.FC = () => {
         credentials: 'include'
       });
 
-      if (response.ok) {
-        setIsModalOpen(false);
-        fetchContacts(); // Refresh the data
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to delete contact message');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to delete: ${response.status}`);
       }
+
+      setIsModalOpen(false);
+      await fetchContacts(); // Refresh the data
+      
     } catch (err) {
+      console.error('Error deleting contact:', err);
       setError(err instanceof Error ? err.message : 'Failed to delete contact message');
     }
   };
@@ -170,7 +234,11 @@ const ContactManagement: React.FC = () => {
 
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString();
+    try {
+      return new Date(dateString).toLocaleDateString();
+    } catch {
+      return 'Invalid Date';
+    }
   };
 
   return (
@@ -229,7 +297,19 @@ const ContactManagement: React.FC = () => {
         </div>
       )}
 
-      {!loading && !error && (
+      {!loading && !error && contacts.length === 0 && (
+        <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-12 text-center">
+          <Mail size={48} className="mx-auto text-gray-400 mb-4" />
+          <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
+            No Contact Messages
+          </h3>
+          <p className="text-gray-500 dark:text-gray-400">
+            There are no contact messages to display yet.
+          </p>
+        </div>
+      )}
+
+      {!loading && !error && contacts.length > 0 && (
         <DataTable<ContactMessage>
           data={filteredContacts}
           columns={[
