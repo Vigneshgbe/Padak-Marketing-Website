@@ -12,7 +12,7 @@ const port = process.env.PORT; // || 5000;
 
 // For Firebase JS SDK
 const { initializeApp } = require('firebase/app');
-const { getFirestore, collection, addDoc, getDocs, doc, setDoc, updateDoc, deleteDoc, getDoc, query, where, orderBy, limit, startAfter, arrayUnion, arrayRemove, increment, Timestamp } = require('firebase/firestore');
+const { getFirestore, collection, addDoc, getDocs, doc, setDoc, updateDoc, deleteDoc, getDoc, query, where, orderBy, limit: fsLimit, startAfter, arrayUnion, arrayRemove, increment, Timestamp } = require('firebase/firestore');
 
 const firebaseConfig = {
   apiKey: "AIzaSyA4uHspTDS-8kIT2HsmPFGL9JNNBvI6NI4",
@@ -574,8 +574,8 @@ const getFullImageUrl = (req, imagePath) => {
 app.get('/api/posts', authenticateToken, async (req, res) => {
   const userId = req.user.id;
   const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || 10;
-  const offset = (page - 1) * limit;
+  const pageSize = parseInt(req.query.limit, 10) || 10;
+  const offset = (page - 1) * pageSize;
 
   try {
     // Get connections
@@ -603,10 +603,10 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
     });
 
     const totalPosts = posts.length;
-    const totalPages = Math.ceil(totalPosts / limit);
+    const totalPages = Math.ceil(totalPosts / pageSize);
 
     // Slice for pagination
-    posts = posts.slice(offset, offset + limit);
+    posts = posts.slice(offset, offset + pageSize);
 
     if (posts.length === 0) {
       return res.json({ posts: [], pagination: { page, totalPages, totalPosts } });
@@ -1815,6 +1815,32 @@ app.delete('/api/calendar/events/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// GET /api/auth/me - Get current user info (for calendar frontend)
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user;
+
+    res.json({
+      id: user.id,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      email: user.email,
+      account_type: user.account_type,
+      profile_image: user.profile_image,
+      company: user.company,
+      website: user.website,
+      bio: user.bio,
+      is_active: user.is_active,
+      email_verified: user.email_verified,
+      created_at: user.created_at,
+      last_login: user.last_login
+    });
+  } catch (error) {
+    console.error('Error fetching user info:', error);
+    res.status(500).json({ error: 'Failed to fetch user information' });
+  }
+});
+
 // ==================== COURSE ENROLLMENT REQUESTS ====================
 app.post('/api/enroll-request', 
   authenticateToken, 
@@ -1977,9 +2003,9 @@ app.post('/api/courses/enroll', authenticateToken, async (req, res) => {
     await addDoc(collection(db, 'enrollments'), {
       user_id: userId,
       course_id: courseId,
+      enrollment_date: Timestamp.now(),
       progress: 0,
       status: 'active',
-      enrollment_date: Timestamp.now(),
       completion_date: null
     });
 
@@ -2341,6 +2367,19 @@ app.put('/assignments/grade/:submissionId', authenticateToken, async (req, res) 
     console.error('Error grading assignment:', error);
     res.status(500).json({ error: 'Server error' });
   }
+});
+
+// Error handling middleware for multer
+app.use((error, req, res, next) => {
+  if (error instanceof multer.MulterError) {
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'File too large. Maximum size is 10MB.' });
+    }
+  }
+  if (error.message.includes('Invalid file type')) {
+    return res.status(400).json({ error: error.message });
+  }
+  next(error);
 });
 
 // ==================== RESOURCES ROUTES ======================
@@ -3278,7 +3317,7 @@ app.get('/api/admin/dashboard-stats', authenticateToken, async (req, res) => {
 // Recent Users
 app.get('/api/admin/recent-users', authenticateToken, async (req, res) => {
   try {
-    const usersQuery = query(collection(db, 'users'), where('is_active', '==', true), orderBy('created_at', 'desc'), limit(5));
+    const usersQuery = query(collection(db, 'users'), where('is_active', '==', true), orderBy('created_at', 'desc'), fsLimit(5));
     const usersSnapshot = await getDocs(usersQuery);
     const users = usersSnapshot.docs.map(u => {
       const data = u.data();
@@ -3302,7 +3341,7 @@ app.get('/api/admin/recent-users', authenticateToken, async (req, res) => {
 // Recent Enrollments
 app.get('/api/admin/recent-enrollments', authenticateToken, async (req, res) => {
   try {
-    const enrollmentsQuery = query(collection(db, 'enrollments'), orderBy('enrollment_date', 'desc'), limit(5));
+    const enrollmentsQuery = query(collection(db, 'enrollments'), orderBy('enrollment_date', 'desc'), fsLimit(5));
     const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
     const enrollments = enrollmentsSnapshot.docs.map(e => e.data());
 
@@ -3311,8 +3350,7 @@ app.get('/api/admin/recent-enrollments', authenticateToken, async (req, res) => 
     const usersSnapshot = await getDocs(usersQuery);
     const usersMap = {};
     usersSnapshot.docs.forEach(u => {
-      const data = u.data();
-      usersMap[u.id] = `${data.first_name} ${data.last_name}`;
+      usersMap[u.id] = `${u.data().first_name} ${u.data().last_name}`;
     });
 
     const courseIds = enrollments.map(e => e.course_id);
@@ -3451,97 +3489,63 @@ app.get('/api/admin/analytics', authenticateToken, requireAdmin, async (req, res
 app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const offset = (page - 1) * limit;
+    const pageSize = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * pageSize;
     const accountType = req.query.accountType;
     const status = req.query.status;
     const search = req.query.search;
 
     let usersQuery = query(collection(db, 'users'), orderBy('created_at', 'desc'));
 
-    // Build query conditions
-    const conditions = [];
-
     if (accountType && accountType !== 'all') {
-      conditions.push(where('account_type', '==', accountType));
+      usersQuery = query(usersQuery, where('account_type', '==', accountType));
     }
 
     if (status && status !== 'all') {
-      const isActive = status === 'active';
-      conditions.push(where('is_active', '==', isActive));
-    }
-
-    // Apply conditions to query
-    if (conditions.length > 0) {
-      usersQuery = query(usersQuery, ...conditions);
+      const isActive = status === 'active' ? true : false;
+      usersQuery = query(usersQuery, where('is_active', '==', isActive));
     }
 
     if (search) {
-      // For search, we need to handle it differently since Firestore doesn't support full text search
+      // Firestore doesn't support full text search, so fetch all and filter
       const allUsersSnapshot = await getDocs(usersQuery);
-      let users = allUsersSnapshot.docs.map(d => ({
-        id: d.id,
-        ...d.data(),
-        // Convert timestamps to readable format
-        created_at: d.data().created_at?.toDate?.() || d.data().created_at,
-        updated_at: d.data().updated_at?.toDate?.() || d.data().updated_at
-      }));
-      
-      // Client-side filtering for search
-      const searchLower = search.toLowerCase();
-      users = users.filter(u => 
-        u.first_name?.toLowerCase().includes(searchLower) || 
-        u.last_name?.toLowerCase().includes(searchLower) || 
-        u.email?.toLowerCase().includes(searchLower)
-      );
-      
+      let users = allUsersSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+      users = users.filter(u => u.first_name.includes(search) || u.last_name.includes(search) || u.email.includes(search));
       const totalUsers = users.length;
-      const paginatedUsers = users.slice(offset, offset + limit);
-
-      res.json({
-        users: paginatedUsers,
-        pagination: {
-          currentPage: page,
-          totalPages: Math.ceil(totalUsers / limit),
-          totalUsers,
-          hasNextPage: page < Math.ceil(totalUsers / limit),
-          hasPreviousPage: page > 1
-        }
-      });
-    } else {
-      // Get total count for pagination
-      const totalQuery = conditions.length > 0 ? 
-        query(collection(db, 'users'), ...conditions) : 
-        collection(db, 'users');
-      
-      const totalSnapshot = await getDocs(totalQuery);
-      const totalUsers = totalSnapshot.size;
-
-      // Get paginated data
-      usersQuery = query(usersQuery, limit(limit), offset(offset));
-      const usersSnapshot = await getDocs(usersQuery);
-      const users = usersSnapshot.docs.map(d => ({
-        id: d.id,
-        ...d.data(),
-        // Convert timestamps to readable format
-        created_at: d.data().created_at?.toDate?.() || d.data().created_at,
-        updated_at: d.data().updated_at?.toDate?.() || d.data().updated_at
-      }));
+      users = users.slice(offset, offset + pageSize);
 
       res.json({
         users,
         pagination: {
           currentPage: page,
-          totalPages: Math.ceil(totalUsers / limit),
+          totalPages: Math.ceil(totalUsers / pageSize),
           totalUsers,
-          hasNextPage: (offset + limit) < totalUsers,
+          hasNextPage: page < Math.ceil(totalUsers / pageSize),
+          hasPreviousPage: page > 1
+        }
+      });
+    } else {
+      usersQuery = query(usersQuery, fsLimit(pageSize + offset));
+      const usersSnapshot = await getDocs(usersQuery);
+      let users = usersSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+      const totalSnapshot = await getDocs(query(collection(db, 'users')));
+      const totalUsers = totalSnapshot.size;
+      users = users.slice(offset);
+
+      res.json({
+        users,
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(totalUsers / pageSize),
+          totalUsers,
+          hasNextPage: page < Math.ceil(totalUsers / pageSize),
           hasPreviousPage: page > 1
         }
       });
     }
   } catch (error) {
     console.error('Get users error:', error);
-    res.status(500).json({ error: 'Failed to fetch users' });
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -3550,45 +3554,28 @@ app.get('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
   try {
     const userId = req.params.id;
 
-    const userDoc = await getDoc(doc(db, 'users', userId));
-    if (!userDoc.exists()) {
+    const userSnap = await getDoc(doc(db, 'users', userId));
+    if (!userSnap.exists()) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const userData = userDoc.data();
-    const user = {
-      id: userId,
-      ...userData,
-      // Convert timestamps to readable format
-      created_at: userData.created_at?.toDate?.() || userData.created_at,
-      updated_at: userData.updated_at?.toDate?.() || userData.updated_at
-    };
+    const user = userSnap.data();
+    user.id = userId;
 
     res.json(user);
   } catch (error) {
     console.error('Get user error:', error);
-    res.status(500).json({ error: 'Failed to fetch user' });
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
 // POST /api/admin/users - Create a new user
 app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { 
-      firstName, 
-      lastName, 
-      email, 
-      phone, 
-      password, 
-      accountType, 
-      isActive = true,
-      company, 
-      website, 
-      bio 
-    } = req.body;
+    const { firstName, lastName, email, phone, password, accountType, isActive, company, website, bio } = req.body;
 
     // Validate required fields
-    if (!firstName?.trim() || !lastName?.trim() || !email?.trim() || !password) {
+    if (!firstName || !lastName || !email || !password) {
       return res.status(400).json({
         error: 'First name, last name, email, and password are required'
       });
@@ -3596,7 +3583,7 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email.trim())) {
+    if (!emailRegex.test(email)) {
       return res.status(400).json({ error: 'Please provide a valid email address' });
     }
 
@@ -3605,10 +3592,10 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
       return res.status(400).json({ error: 'Password must be at least 6 characters long' });
     }
 
-    // Check if email already exists
-    const emailQuery = query(collection(db, 'users'), where('email', '==', email.trim()));
-    const emailSnapshot = await getDocs(emailQuery);
-    if (!emailSnapshot.empty) {
+    // Check if email exists
+    const q = query(collection(db, 'users'), where('email', '==', email));
+    const querySnapshot = await getDocs(q);
+    if (!querySnapshot.empty) {
       return res.status(400).json({ error: 'Email already exists' });
     }
 
@@ -3616,44 +3603,53 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    const userData = {
+    // Insert new user
+    const userRef = await addDoc(collection(db, 'users'), {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       email: email.trim(),
-      phone: phone?.trim() || null,
+      phone: phone || null,
       password_hash: hashedPassword,
       account_type: accountType || 'student',
-      is_active: isActive,
-      company: company?.trim() || null,
-      website: website?.trim() || null,
-      bio: bio?.trim() || null,
-      created_at: serverTimestamp(),
-      updated_at: serverTimestamp(),
+      is_active: isActive !== undefined ? isActive : true,
+      company: company || null,
+      website: website || null,
+      bio: bio || null,
+      created_at: Timestamp.now(),
+      updated_at: Timestamp.now(),
       profile_image: null,
       email_verified: false
-    };
+    });
 
-    // Create user document
-    const userRef = await addDoc(collection(db, 'users'), userData);
-    const userId = userRef.id;
+    const newUserId = userRef.id;
 
     // Create user stats entry
     await addDoc(collection(db, 'user_stats'), {
-      user_id: userId,
+      user_id: newUserId,
       courses_enrolled: 0,
       courses_completed: 0,
       certificates_earned: 0,
       learning_streak: 0,
-      last_activity: serverTimestamp()
+      last_activity: Timestamp.now()
     });
 
-    console.log('User created successfully by admin:', { userId, email: email.trim() });
+    console.log('User created successfully by admin:', { userId: newUserId, email });
 
     const newUser = {
-      id: userId,
-      ...userData,
-      created_at: new Date(),
-      updated_at: new Date()
+      id: newUserId,
+      first_name: firstName.trim(),
+      last_name: lastName.trim(),
+      email: email.trim(),
+      phone: phone || null,
+      account_type: accountType || 'student',
+      profile_image: null,
+      company: company || null,
+      website: website || null,
+      bio: bio || null,
+      is_active: isActive !== undefined ? isActive : true,
+      email_verified: false,
+      created_at: Timestamp.now(),
+      updated_at: Timestamp.now()
     };
 
     res.status(201).json({
@@ -3663,7 +3659,7 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
 
   } catch (error) {
     console.error('Create user error:', error);
-    res.status(500).json({ error: 'Failed to create user' });
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -3671,69 +3667,48 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
 app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
-    const { 
-      firstName, 
-      lastName, 
-      email, 
-      phone, 
-      accountType, 
-      isActive, 
-      company, 
-      website, 
-      bio 
-    } = req.body;
+    const { firstName, lastName, email, phone, accountType, isActive, company, website, bio } = req.body;
 
     const userRef = doc(db, 'users', userId);
-    const userDoc = await getDoc(userRef);
+    const userSnap = await getDoc(userRef);
 
-    if (!userDoc.exists()) {
+    if (!userSnap.exists()) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const currentUser = userDoc.data();
+    const currentUser = userSnap.data();
 
     // Validate email if changed
     if (email && email !== currentUser.email) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email.trim())) {
+      if (!emailRegex.test(email)) {
         return res.status(400).json({ error: 'Please provide a valid email address' });
       }
 
-      // Check if new email already exists
-      const emailQuery = query(
-        collection(db, 'users'), 
-        where('email', '==', email.trim())
-      );
-      const emailSnapshot = await getDocs(emailQuery);
-      if (!emailSnapshot.empty && emailSnapshot.docs[0].id !== userId) {
+      const existingQuery = query(collection(db, 'users'), where('email', '==', email));
+      const existingSnapshot = await getDocs(existingQuery);
+      if (!existingSnapshot.empty && existingSnapshot.docs[0].id !== userId) {
         return res.status(400).json({ error: 'Email already exists' });
       }
     }
 
-    const updateData = {
-      first_name: firstName?.trim() || currentUser.first_name,
-      last_name: lastName?.trim() || currentUser.last_name,
-      email: email?.trim() || currentUser.email,
-      phone: phone?.trim() || currentUser.phone,
+    // Update user
+    await updateDoc(userRef, {
+      first_name: firstName || currentUser.first_name,
+      last_name: lastName || currentUser.last_name,
+      email: email || currentUser.email,
+      phone: phone || currentUser.phone,
       account_type: accountType || currentUser.account_type,
       is_active: isActive !== undefined ? isActive : currentUser.is_active,
-      company: company?.trim() || currentUser.company,
-      website: website?.trim() || currentUser.website,
-      bio: bio?.trim() || currentUser.bio,
-      updated_at: serverTimestamp()
-    };
+      company: company || currentUser.company,
+      website: website || currentUser.website,
+      bio: bio || currentUser.bio,
+      updated_at: Timestamp.now()
+    });
 
-    // Update user document
-    await updateDoc(userRef, updateData);
-
-    // Get updated user data
-    const updatedDoc = await getDoc(userRef);
-    const updatedUser = {
-      id: userId,
-      ...updatedDoc.data(),
-      created_at: updatedDoc.data().created_at?.toDate?.() || updatedDoc.data().created_at,
-      updated_at: updatedDoc.data().updated_at?.toDate?.() || updatedDoc.data().updated_at
-    };
+    const updatedSnap = await getDoc(userRef);
+    const updatedUser = updatedSnap.data();
+    updatedUser.id = userId;
 
     res.json({
       message: 'User updated successfully',
@@ -3742,47 +3717,11 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
 
   } catch (error) {
     console.error('Update user error:', error);
-    res.status(500).json({ error: 'Failed to update user' });
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-// PATCH /api/admin/users/:id/toggle-status - Toggle user active status
-app.patch('/api/admin/users/:id/toggle-status', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const userId = req.params.id;
-    const adminId = req.user.id;
-
-    if (userId === adminId) {
-      return res.status(400).json({ error: 'You cannot deactivate your own account' });
-    }
-
-    const userRef = doc(db, 'users', userId);
-    const userDoc = await getDoc(userRef);
-
-    if (!userDoc.exists()) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const currentStatus = userDoc.data().is_active;
-    const newStatus = !currentStatus;
-
-    await updateDoc(userRef, {
-      is_active: newStatus,
-      updated_at: serverTimestamp()
-    });
-
-    res.json({
-      message: `User ${newStatus ? 'activated' : 'deactivated'} successfully`,
-      is_active: newStatus
-    });
-
-  } catch (error) {
-    console.error('Toggle user status error:', error);
-    res.status(500).json({ error: 'Failed to update user status' });
-  }
-});
-
-// DELETE /api/admin/users/:id - Delete a user permanently
+// DELETE /api/admin/users/:id - Delete a user
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
@@ -3793,29 +3732,23 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
     }
 
     const userRef = doc(db, 'users', userId);
-    const userDoc = await getDoc(userRef);
+    const userSnap = await getDoc(userRef);
 
-    if (!userDoc.exists()) {
+    if (!userSnap.exists()) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Delete user document
-    await deleteDoc(userRef);
-
-    // Also delete user stats
-    const statsQuery = query(collection(db, 'user_stats'), where('user_id', '==', userId));
-    const statsSnapshot = await getDocs(statsQuery);
-    
-    if (!statsSnapshot.empty) {
-      const deletePromises = statsSnapshot.docs.map(doc => deleteDoc(doc.ref));
-      await Promise.all(deletePromises);
-    }
+    // Soft delete
+    await updateDoc(userRef, {
+      is_active: false,
+      updated_at: Timestamp.now()
+    });
 
     res.json({ message: 'User deleted successfully' });
 
   } catch (error) {
     console.error('Delete user error:', error);
-    res.status(500).json({ error: 'Failed to delete user' });
+    res.status(500).json({ error: 'Server error while deleting user' });
   }
 });
 
@@ -3834,9 +3767,9 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
     }
 
     const userRef = doc(db, 'users', userId);
-    const userDoc = await getDoc(userRef);
+    const userSnap = await getDoc(userRef);
 
-    if (!userDoc.exists()) {
+    if (!userSnap.exists()) {
       return res.status(404).json({ error: 'User not found' });
     }
 
@@ -3847,14 +3780,14 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
     // Update password
     await updateDoc(userRef, {
       password_hash: hashedPassword,
-      updated_at: serverTimestamp()
+      updated_at: Timestamp.now()
     });
 
     res.json({ message: 'Password reset successfully' });
 
   } catch (error) {
     console.error('Reset password error:', error);
-    res.status(500).json({ error: 'Failed to reset password' });
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -4481,15 +4414,15 @@ app.use((error, req, res, next) => {
 app.get('/api/admin/contact-messages', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const offset = (page - 1) * limit;
+    const pageSize = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * pageSize;
 
     const messagesQuery = query(collection(db, 'contact_messages'), orderBy('created_at', 'desc'));
     const messagesSnapshot = await getDocs(messagesQuery);
     let messages = messagesSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
 
     const totalMessages = messages.length;
-    messages = messages.slice(offset, offset + limit);
+    messages = messages.slice(offset, offset + pageSize);
 
     // Add default status if not present
     messages.forEach(message => {
@@ -4500,9 +4433,9 @@ app.get('/api/admin/contact-messages', authenticateToken, requireAdmin, async (r
       messages,
       pagination: {
         currentPage: page,
-        totalPages: Math.ceil(totalMessages / limit),
+        totalPages: Math.ceil(totalMessages / pageSize),
         totalMessages,
-        hasNextPage: page < Math.ceil(totalMessages / limit),
+        hasNextPage: page < Math.ceil(totalMessages / pageSize),
         hasPreviousPage: page > 1
       }
     });
@@ -4627,6 +4560,39 @@ app.put('/api/admin/service-requests/:id', authenticateToken, requireAdmin, asyn
   } catch (error) {
     console.error('Error updating service request:', error);
     res.status(500).json({ error: 'Failed to update service request', details: error.message });
+  }
+});
+
+// PUT /api/admin/service-requests/:id - Update service request status
+app.put('/api/admin/service-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const requestRef = doc(db, 'service_requests', id);
+    await updateDoc(requestRef, {
+      status: status,
+      updated_at: Timestamp.now()
+    });
+
+    res.json({ message: 'Service request updated successfully' });
+  } catch (error) {
+    console.error('Error updating service request:', error);
+    res.status(500).json({ error: 'Failed to update service request', details: error.message });
+  }
+});
+
+// DELETE /api/admin/service-requests/:id - Delete service request
+app.delete('/api/admin/service-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await deleteDoc(doc(db, 'service_requests', id));
+
+    res.json({ message: 'Service request deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting service request:', error);
+    res.status(500).json({ error: 'Failed to delete service request', details: error.message });
   }
 });
 
