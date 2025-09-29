@@ -1,3 +1,4 @@
+// src/pages/dashboard/admin/UserManagement.tsx
 import React, { useState, useEffect } from 'react';
 import { Edit, Trash2, Plus, Search, Filter, Key } from 'lucide-react';
 import DataTable from '../../../components/admin/DataTable';
@@ -229,6 +230,7 @@ const UserManagement: React.FC = () => {
   });
 
   const getAuthToken = (): string | null => {
+    // Check multiple possible token storage locations
     return localStorage.getItem('token') || 
            localStorage.getItem('authToken') || 
            localStorage.getItem('adminToken') ||
@@ -251,11 +253,6 @@ const UserManagement: React.FC = () => {
     return headers;
   };
 
-  const getApiBaseUrl = (): string => {
-    // Try to use the current origin, fallback to a default if needed
-    return window.location.origin || 'http://localhost:8080';
-  };
-
   const handleSaveUser = async () => {
     if (!validateForm()) {
       toast.error('Please fix the form errors before submitting');
@@ -271,7 +268,7 @@ const UserManagement: React.FC = () => {
     setIsSubmitting(true);
     
     try {
-      const baseURL = getApiBaseUrl();
+      const baseURL = window.location.origin;
       let url, method, body;
 
       if (modalType === 'create') {
@@ -314,6 +311,8 @@ const UserManagement: React.FC = () => {
       }
 
       console.log('Making request to:', url);
+      console.log('Request method:', method);
+      console.log('Request body:', body);
 
       const response = await fetch(url, {
         method,
@@ -331,13 +330,11 @@ const UserManagement: React.FC = () => {
         if (contentType && contentType.includes('application/json')) {
           const errorData = await response.json();
           errorMessage = errorData.error || errorMessage;
+          console.error('JSON error response:', errorData);
         } else {
           const textError = await response.text();
           console.error('Non-JSON error response:', textError);
           errorMessage = `Server error (${response.status})`;
-          if (response.status === 404) {
-            errorMessage += '. Please ensure the API server is running and accessible.';
-          }
         }
         
         throw new Error(errorMessage);
@@ -371,7 +368,7 @@ const UserManagement: React.FC = () => {
     setIsSubmitting(true);
     
     try {
-      const baseURL = getApiBaseUrl();
+      const baseURL = window.location.origin;
       
       console.log('Deleting user:', selectedUser.id);
 
@@ -390,13 +387,11 @@ const UserManagement: React.FC = () => {
         if (contentType && contentType.includes('application/json')) {
           const errorData = await response.json();
           errorMessage = errorData.error || errorMessage;
+          console.error('JSON error response:', errorData);
         } else {
           const textError = await response.text();
           console.error('Non-JSON error response:', textError);
           errorMessage = `Server error (${response.status})`;
-          if (response.status === 404) {
-            errorMessage += '. Please ensure the API server is running and accessible.';
-          }
         }
         
         throw new Error(errorMessage);
