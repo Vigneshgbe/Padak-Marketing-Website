@@ -3061,6 +3061,7 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
     const accountType = req.query.accountType;
     const status = req.query.status;
     const search = req.query.search;
@@ -3077,37 +3078,30 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
     }
 
     if (search) {
-      // Firestore doesn't support full-text search, so approximate with start/end for names or email
-      // For simplicity, search on email
-      query = query.where('email', '>=', search).where('email', '<=', search + '\uf8ff');
+      // Simple search on first_name or last_name or email
+      // Firestore doesn't support OR, so separate queries and merge
+      const firstName = await db.collection('users').where('first_name', '>=', search).where('first_name', '<=', search + '\uf8ff').get();
+      const lastName = await db.collection('users').where('last_name', '>=', search).where('last_name', '<=', search + '\uf8ff').get();
+      const email = await db.collection('users').where('email', '>=', search).where('email', '<=', search + '\uf8ff').get();
+      const all = [...firstName.docs, ...lastName.docs, ...email.docs];
+      const unique = [...new Set(all.map(d => d.id))].map(id => all.find(d => d.id === id));
+      const users = unique.map(doc => doc.data());
+      res.json(users);
+      return;
     }
 
-    const snapshot = await query.get();
-    const total = snapshot.size;
-    const usersSnap = await query.limit(limit).offset((page - 1) * limit).get();
+    const users = await query.limit(limit).offset(offset).get();
 
-    const users = usersSnap.docs.map(doc => {
+    const data = users.docs.map(doc => {
       const u = doc.data();
-      return {
-        id: doc.id,
-        first_name: u.first_name,
-        last_name: u.last_name,
-        email: u.email,
-        phone: u.phone,
-        account_type: u.account_type,
-        profile_image: u.profile_image,
-        company: u.company,
-        website: u.website,
-        bio: u.bio,
-        is_active: u.is_active,
-        email_verified: u.email_verified,
-        created_at: u.created_at,
-        updated_at: u.updated_at
-      };
+      u.id = doc.id;
+      return u;
     });
 
+    const total = (await query.get()).size;
+
     res.json({
-      users,
+      users: data,
       pagination: {
         currentPage: page,
         totalPages: Math.ceil(total / limit),
@@ -3126,32 +3120,18 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
 // GET /api/admin/users/:id - Get a specific user
 app.get('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const userId = req.params.id;
+    const { id } = req.params;
 
-    const userDoc = await db.collection('users').doc(userId).get();
+    const user = await db.collection('users').doc(id).get();
 
-    if (!userDoc.exists) {
+    if (!user.exists) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const user = userDoc.data();
+    const data = user.data();
+    data.id = id;
 
-    res.json({
-      id: userId,
-      first_name: user.first_name,
-      last_name: user.last_name,
-      email: user.email,
-      phone: user.phone,
-      account_type: user.account_type,
-      profile_image: user.profile_image,
-      company: user.company,
-      website: user.website,
-      bio: user.bio,
-      is_active: user.is_active,
-      email_verified: user.email_verified,
-      created_at: user.created_at,
-      updated_at: user.updated_at
-    });
+    res.json(data);
   } catch (error) {
     console.error('Get user error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -3182,9 +3162,9 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
     }
 
     // Check if email exists
-    const existingUsers = await db.collection('users').where('email', '==', email).get();
+    const existing = await db.collection('users').where('email', '==', email).get();
 
-    if (!existingUsers.empty) {
+    if (!existing.empty) {
       return res.status(400).json({ error: 'Email already exists' });
     }
 
@@ -3201,11 +3181,11 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
       phone: phone || null,
       password_hash: hashedPassword,
       account_type: accountType || 'student',
-      is_active: isActive !== undefined ? isActive : true,
       company: company || null,
       website: website || null,
       bio: bio || null,
-      email_verified: false,
+      is_active: isActive !== undefined ? isActive : true,
+      email_verified: true,
       created_at: firebase.firestore.Timestamp.now(),
       updated_at: firebase.firestore.Timestamp.now()
     });
@@ -3216,32 +3196,18 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
       courses_completed: 0,
       certificates_earned: 0,
       learning_streak: 0,
-      last_activity: new Date().toISOString()
+      last_activity: firebase.firestore.Timestamp.now()
     });
 
     console.log('User created successfully by admin:', { userId: userRef.id, email });
-
-    const newUserDoc = await db.collection('users').doc(userRef.id).get();
-    const newUser = newUserDoc.data();
+    
+    const newUser = await db.collection('users').doc(userRef.id).get();
+    const data = newUser.data();
+    data.id = userRef.id;
 
     res.status(201).json({
       message: 'User created successfully',
-      user: {
-        id: userRef.id,
-        first_name: newUser.first_name,
-        last_name: newUser.last_name,
-        email: newUser.email,
-        phone: newUser.phone,
-        account_type: newUser.account_type,
-        profile_image: newUser.profile_image,
-        company: newUser.company,
-        website: newUser.website,
-        bio: newUser.bio,
-        is_active: newUser.is_active,
-        email_verified: newUser.email_verified,
-        created_at: newUser.created_at,
-        updated_at: newUser.updated_at
-      }
+      user: data
     });
 
   } catch (error) {
@@ -3253,68 +3219,50 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
 // PUT /api/admin/users/:id - Update a user
 app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const userId = req.params.id;
+    const { id } = req.params;
     const { firstName, lastName, email, phone, accountType, isActive, company, website, bio } = req.body;
 
-    const userDoc = await db.collection('users').doc(userId).get();
+    const user = await db.collection('users').doc(id).get();
 
-    if (!userDoc.exists) {
+    if (!user.exists) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const users = userDoc.data();
+    const u = user.data();
 
-    // Validate email if changed
-    if (email && email !== users.email) {
+    if (email && email !== u.email) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
         return res.status(400).json({ error: 'Please provide a valid email address' });
       }
 
-      // Check if new email already exists
-      const existingUsers = await db.collection('users').where('email', '==', email).get();
+      const existing = await db.collection('users').where('email', '==', email).where(firebase.firestore.FieldPath.documentId(), '!=', id).get();
 
-      if (!existingUsers.empty) {
+      if (!existing.empty) {
         return res.status(400).json({ error: 'Email already exists' });
       }
     }
 
-    // Update user
-    await db.collection('users').doc(userId).update({
-      first_name: firstName || users.first_name,
-      last_name: lastName || users.last_name,
-      email: email || users.email,
-      phone: phone || users.phone,
-      account_type: accountType || users.account_type,
-      is_active: isActive !== undefined ? isActive : users.is_active,
-      company: company || users.company,
-      website: website || users.website,
-      bio: bio || users.bio,
+    await db.collection('users').doc(id).update({
+      first_name: firstName || u.first_name,
+      last_name: lastName || u.last_name,
+      email: email || u.email,
+      phone: phone || u.phone,
+      account_type: accountType || u.account_type,
+      is_active: isActive !== undefined ? isActive : u.is_active,
+      company: company || u.company,
+      website: website || u.website,
+      bio: bio || u.bio,
       updated_at: firebase.firestore.Timestamp.now()
     });
 
-    // Get the updated user to return
-    const updatedUserDoc = await db.collection('users').doc(userId).get();
-    const updatedUser = updatedUserDoc.data();
+    const updated = await db.collection('users').doc(id).get();
+    const data = updated.data();
+    data.id = id;
 
     res.json({
       message: 'User updated successfully',
-      user: {
-        id: userId,
-        first_name: updatedUser.first_name,
-        last_name: updatedUser.last_name,
-        email: updatedUser.email,
-        phone: updatedUser.phone,
-        account_type: updatedUser.account_type,
-        profile_image: updatedUser.profile_image,
-        company: updatedUser.company,
-        website: updatedUser.website,
-        bio: updatedUser.bio,
-        is_active: updatedUser.is_active,
-        email_verified: updatedUser.email_verified,
-        created_at: updatedUser.created_at,
-        updated_at: updatedUser.updated_at
-      }
+      user: data
     });
 
   } catch (error) {
@@ -3326,22 +3274,20 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
 // DELETE /api/admin/users/:id - Delete a user
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const userId = req.params.id;
+    const { id } = req.params;
     const adminId = req.user.id;
 
-    // Prevent admin from deleting themselves
-    if (userId === adminId) {
+    if (id === adminId) {
       return res.status(400).json({ error: 'You cannot delete your own account' });
     }
 
-    const userDoc = await db.collection('users').doc(userId).get();
+    const user = await db.collection('users').doc(id).get();
 
-    if (!userDoc.exists) {
+    if (!user.exists) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // For safety, we'll do a soft delete by setting is_active to false
-    await db.collection('users').doc(userId).update({
+    await db.collection('users').doc(id).update({
       is_active: false,
       updated_at: firebase.firestore.Timestamp.now()
     });
@@ -3350,14 +3296,14 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
 
   } catch (error) {
     console.error('Delete user error:', error);
-    res.status(500).json({ error: 'Server error while deleting user' });
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
 // PUT /api/admin/users/:id/password - Reset user password (admin only)
 app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const userId = req.params.id;
+    const { id } = req.params;
     const { password } = req.body;
 
     if (!password) {
@@ -3368,18 +3314,15 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
       return res.status(400).json({ error: 'Password must be at least 6 characters long' });
     }
 
-    const userDoc = await db.collection('users').doc(userId).get();
+    const user = await db.collection('users').doc(id).get();
 
-    if (!userDoc.exists) {
+    if (!user.exists) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Hash new password
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Update password
-    await db.collection('users').doc(userId).update({
+    await db.collection('users').doc(id).update({
       password_hash: hashedPassword,
       updated_at: firebase.firestore.Timestamp.now()
     });
