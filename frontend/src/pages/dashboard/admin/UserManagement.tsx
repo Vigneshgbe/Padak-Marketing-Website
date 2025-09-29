@@ -250,44 +250,49 @@ const UserManagement: React.FC = () => {
     setIsSubmitting(true);
     
     try {
-      const baseURL = '';
-      let url, method, body;
+      const baseURL = window.location.origin.includes('localhost') 
+        ? 'http://localhost:5000' 
+        : '';
+      
+      let url: string;
+      let method: string;
+      let body: any;
 
       if (modalType === 'create') {
         url = `${baseURL}/api/admin/users`;
         method = 'POST';
-        body = JSON.stringify({
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          email: formData.email,
-          phone: formData.phone,
+        body = {
+          firstName: formData.firstName.trim(),
+          lastName: formData.lastName.trim(),
+          email: formData.email.trim(),
+          phone: formData.phone.trim(),
           password: formData.password,
           accountType: formData.accountType,
           isActive: formData.isActive,
-          company: formData.company,
-          website: formData.website,
-          bio: formData.bio
-        });
+          company: formData.company.trim(),
+          website: formData.website.trim(),
+          bio: formData.bio.trim()
+        };
       } else if (modalType === 'edit' && selectedUser) {
         url = `${baseURL}/api/admin/users/${selectedUser.id}`;
         method = 'PUT';
-        body = JSON.stringify({
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          email: formData.email,
-          phone: formData.phone,
+        body = {
+          firstName: formData.firstName.trim(),
+          lastName: formData.lastName.trim(),
+          email: formData.email.trim(),
+          phone: formData.phone.trim(),
           accountType: formData.accountType,
           isActive: formData.isActive,
-          company: formData.company,
-          website: formData.website,
-          bio: formData.bio
-        });
+          company: formData.company.trim(),
+          website: formData.website.trim(),
+          bio: formData.bio.trim()
+        };
       } else if (modalType === 'password' && selectedUser) {
         url = `${baseURL}/api/admin/users/${selectedUser.id}/password`;
         method = 'PUT';
-        body = JSON.stringify({
+        body = {
           password: formData.password
-        });
+        };
       } else {
         throw new Error('Invalid modal type');
       }
@@ -296,16 +301,25 @@ const UserManagement: React.FC = () => {
         method,
         headers: getAuthHeaders(),
         credentials: 'include',
-        body
+        body: JSON.stringify(body)
       });
       
+      const contentType = response.headers.get('content-type');
+      let errorData;
+      
+      if (contentType && contentType.includes('application/json')) {
+        errorData = await response.json();
+      } else {
+        const text = await response.text();
+        errorData = { error: text || `Failed to ${modalType} user` };
+      }
+      
       if (!response.ok) {
-        const errorData = await response.json();
         throw new Error(errorData.error || `Failed to ${modalType} user`);
       }
       
       setIsModalOpen(false);
-      refetch();
+      await refetch();
       
       toast.success(`User ${modalType === 'create' ? 'created' : modalType === 'password' ? 'password reset' : 'updated'} successfully`);
       
@@ -323,7 +337,9 @@ const UserManagement: React.FC = () => {
     setIsSubmitting(true);
     
     try {
-      const baseURL = '';
+      const baseURL = window.location.origin.includes('localhost') 
+        ? 'http://localhost:5000' 
+        : '';
       
       const response = await fetch(`${baseURL}/api/admin/users/${selectedUser.id}`, {
         method: 'DELETE',
@@ -331,13 +347,22 @@ const UserManagement: React.FC = () => {
         credentials: 'include'
       });
       
+      const contentType = response.headers.get('content-type');
+      let errorData;
+      
+      if (contentType && contentType.includes('application/json')) {
+        errorData = await response.json();
+      } else {
+        const text = await response.text();
+        errorData = { error: text || 'Failed to delete user' };
+      }
+      
       if (!response.ok) {
-        const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to delete user');
       }
       
       setIsModalOpen(false);
-      refetch();
+      await refetch();
       
       toast.success('User deleted successfully');
       
