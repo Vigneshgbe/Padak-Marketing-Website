@@ -3061,59 +3061,25 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
-    const offset = (page - 1) * limit;
     const accountType = req.query.accountType;
     const status = req.query.status;
     const search = req.query.search;
 
-    let query = db.collection('users').orderBy('created_at', 'desc');
-
-    if (accountType && accountType !== 'all') {
-      query = query.where('account_type', '==', accountType);
-    }
-
-    if (status && status !== 'all') {
-      const isActive = status === 'active' ? true : false;
-      query = query.where('is_active', '==', isActive);
-    }
-
-    if (search) {
-      // Simple search on first_name or last_name or email
-      // Firestore doesn't support OR, so separate queries and merge
-      const firstName = await db.collection('users').where('first_name', '>=', search).where('first_name', '<=', search + '\uf8ff').get();
-      const lastName = await db.collection('users').where('last_name', '>=', search).where('last_name', '<=', search + '\uf8ff').get();
-      const email = await db.collection('users').where('email', '>=', search).where('email', '<=', search + '\uf8ff').get();
-      const all = [...firstName.docs, ...lastName.docs, ...email.docs];
-      const unique = [...new Set(all.map(d => d.id))].map(id => all.find(d => d.id === id));
-      const users = unique.map(doc => doc.data());
-      res.json(users);
-      return;
-    }
-
-    const users = await query.limit(limit).offset(offset).get();
-
-    const data = users.docs.map(doc => {
-      const u = doc.data();
-      u.id = doc.id;
-      return u;
+    // Call Cloud Function to get users (Admin SDK runs in Cloud Functions)
+    const getAllUsers = functions.httpsCallable('adminGetAllUsers');
+    const result = await getAllUsers({
+      page,
+      limit,
+      accountType,
+      status,
+      search
     });
 
-    const total = (await query.get()).size;
-
-    res.json({
-      users: data,
-      pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(total / limit),
-        totalUsers: total,
-        hasNextPage: page < Math.ceil(total / limit),
-        hasPreviousPage: page > 1
-      }
-    });
+    res.json(result.data);
 
   } catch (error) {
     console.error('Get users error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: error.message || 'Server error' });
   }
 });
 
@@ -3122,6 +3088,7 @@ app.get('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
   try {
     const { id } = req.params;
 
+    // Direct Firestore read with proper security rules
     const user = await db.collection('users').doc(id).get();
 
     if (!user.exists) {
@@ -3161,58 +3128,26 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
       return res.status(400).json({ error: 'Password must be at least 6 characters long' });
     }
 
-    // Check if email exists
-    const existing = await db.collection('users').where('email', '==', email).get();
-
-    if (!existing.empty) {
-      return res.status(400).json({ error: 'Email already exists' });
-    }
-
-    // Hash password
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-    // Insert new user
-    const userRef = db.collection('users').doc();
-    await userRef.set({
-      first_name: firstName.trim(),
-      last_name: lastName.trim(),
+    // Call Cloud Function to create user
+    const createUser = functions.httpsCallable('adminCreateUser');
+    const result = await createUser({
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
       email: email.trim(),
       phone: phone || null,
-      password_hash: hashedPassword,
-      account_type: accountType || 'student',
+      password,
+      accountType: accountType || 'student',
       company: company || null,
       website: website || null,
       bio: bio || null,
-      is_active: isActive !== undefined ? isActive : true,
-      email_verified: true,
-      created_at: admin.firestore.Timestamp.now(),
-      updated_at: admin.firestore.Timestamp.now()
+      isActive: isActive !== undefined ? isActive : true
     });
 
-    // Create user stats entry
-    await db.collection('user_stats').doc(userRef.id).set({
-      courses_enrolled: 0,
-      courses_completed: 0,
-      certificates_earned: 0,
-      learning_streak: 0,
-      last_activity: admin.firestore.Timestamp.now()
-    });
-
-    console.log('User created successfully by admin:', { userId: userRef.id, email });
-    
-    const newUser = await db.collection('users').doc(userRef.id).get();
-    const data = newUser.data();
-    data.id = userRef.id;
-
-    res.status(201).json({
-      message: 'User created successfully',
-      user: data
-    });
+    res.status(201).json(result.data);
 
   } catch (error) {
     console.error('Create user error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: error.message || 'Server error' });
   }
 });
 
@@ -3222,52 +3157,26 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
     const { id } = req.params;
     const { firstName, lastName, email, phone, accountType, isActive, company, website, bio } = req.body;
 
-    const user = await db.collection('users').doc(id).get();
-
-    if (!user.exists) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const u = user.data();
-
-    if (email && email !== u.email) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        return res.status(400).json({ error: 'Please provide a valid email address' });
-      }
-
-      const existing = await db.collection('users').where('email', '==', email).where(admin.firestore.FieldPath.documentId(), '!=', id).get();
-
-      if (!existing.empty) {
-        return res.status(400).json({ error: 'Email already exists' });
-      }
-    }
-
-    await db.collection('users').doc(id).update({
-      first_name: firstName || u.first_name,
-      last_name: lastName || u.last_name,
-      email: email || u.email,
-      phone: phone || u.phone,
-      account_type: accountType || u.account_type,
-      is_active: isActive !== undefined ? isActive : u.is_active,
-      company: company || u.company,
-      website: website || u.website,
-      bio: bio || u.bio,
-      updated_at: admin.firestore.Timestamp.now()
+    // Call Cloud Function to update user
+    const updateUser = functions.httpsCallable('adminUpdateUser');
+    const result = await updateUser({
+      userId: id,
+      firstName,
+      lastName,
+      email,
+      phone,
+      accountType,
+      isActive,
+      company,
+      website,
+      bio
     });
 
-    const updated = await db.collection('users').doc(id).get();
-    const data = updated.data();
-    data.id = id;
-
-    res.json({
-      message: 'User updated successfully',
-      user: data
-    });
+    res.json(result.data);
 
   } catch (error) {
     console.error('Update user error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: error.message || 'Server error' });
   }
 });
 
@@ -3281,22 +3190,15 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
       return res.status(400).json({ error: 'You cannot delete your own account' });
     }
 
-    const user = await db.collection('users').doc(id).get();
+    // Call Cloud Function to delete user
+    const deleteUser = functions.httpsCallable('adminDeleteUser');
+    const result = await deleteUser({ userId: id });
 
-    if (!user.exists) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    await db.collection('users').doc(id).update({
-      is_active: false,
-      updated_at: admin.firestore.Timestamp.now()
-    });
-
-    res.json({ message: 'User deleted successfully' });
+    res.json(result.data);
 
   } catch (error) {
     console.error('Delete user error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: error.message || 'Server error' });
   }
 });
 
@@ -3314,24 +3216,18 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
       return res.status(400).json({ error: 'Password must be at least 6 characters long' });
     }
 
-    const user = await db.collection('users').doc(id).get();
-
-    if (!user.exists) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    await db.collection('users').doc(id).update({
-      password_hash: hashedPassword,
-      updated_at: admin.firestore.Timestamp.now()
+    // Call Cloud Function to reset password
+    const resetPassword = functions.httpsCallable('adminResetPassword');
+    const result = await resetPassword({
+      userId: id,
+      password
     });
 
-    res.json({ message: 'Password reset successfully' });
+    res.json(result.data);
 
   } catch (error) {
     console.error('Reset password error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: error.message || 'Server error' });
   }
 });
 
