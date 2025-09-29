@@ -1,4 +1,4 @@
-// server.js - Firebase Client SDK Version
+// server.js
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -8,68 +8,60 @@ const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-
-// Firebase Client SDK
-const { initializeApp } = require('firebase/app');
-const { 
-  getFirestore, 
-  collection, 
-  doc, 
-  getDoc, 
-  getDocs, 
-  setDoc, 
-  updateDoc, 
-  deleteDoc, 
-  query, 
-  where, 
-  orderBy, 
-  limit, 
-  startAfter,
-  Timestamp,
-  increment,
-  arrayUnion,
-  paymentScreenshotUpload,
-  arrayRemove 
-} = require('firebase/firestore');
-
 const app = express();
 const port = process.env.PORT || 5000;
 
-// Firebase Configuration
+// Firebase Client SDK Imports
+const { initializeApp } = require('firebase/app');
+const { getFirestore, Timestamp, FieldValue } = require('firebase/firestore');
+const { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit: firebaseLimit, startAfter } = require('firebase/firestore');
+
+// Firebase Configuration (from .env or config file)
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
   authDomain: process.env.FIREBASE_AUTH_DOMAIN,
   projectId: process.env.FIREBASE_PROJECT_ID,
   storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.FIREBASE_APP_ID
+  appId: process.env.FIREBASE_APP_ID,
+  measurementId: process.env.FIREBASE_MEASUREMENT_ID
 };
 
-// Initialize Firebase
+// Initialize Firebase Client SDK
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 
-// JWT Secret with longer expiration
+// JWT Secret
 const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-secret-key';
-const JWT_EXPIRY = '7d'; // 7 days default
-const JWT_REFRESH_EXPIRY = '30d'; // 30 days for refresh token
 
 // Create necessary directories
-const createDir = (dirPath) => {
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true });
-  }
-};
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-createDir(path.join(__dirname, 'uploads', 'assignments'));
-createDir(path.join(__dirname, 'uploads', 'avatars'));
-createDir(path.join(__dirname, 'uploads', 'payments'));
-createDir(path.join(__dirname, 'public', 'uploads', 'social'));
+const avatarsDir = path.join(uploadsDir, 'avatars');
+if (!fs.existsSync(avatarsDir)) fs.mkdirSync(avatarsDir, { recursive: true });
+
+const assignmentsDir = path.join(uploadsDir, 'assignments');
+if (!fs.existsSync(assignmentsDir)) fs.mkdirSync(assignmentsDir, { recursive: true });
+
+const paymentsDir = path.join(uploadsDir, 'payments');
+if (!fs.existsSync(paymentsDir)) fs.mkdirSync(paymentsDir, { recursive: true });
+
+const socialUploadDir = path.join(uploadsDir, 'social');
+if (!fs.existsSync(socialUploadDir)) fs.mkdirSync(socialUploadDir, { recursive: true });
+
+const courseThumbnailsDir = path.join(uploadsDir, 'courses'); // New directory for course thumbnails
+if (!fs.existsSync(courseThumbnailsDir)) fs.mkdirSync(courseThumbnailsDir, { recursive: true });
+
 
 // ===== MULTER CONFIGURATIONS =====
+
+// AVATAR MULTER CONFIGURATION
 const avatarStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, path.join(__dirname, 'uploads', 'avatars')),
-  filename: (req, file, cb) => {
+  destination: function (req, file, cb) {
+    cb(null, avatarsDir);
+  },
+  filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, 'avatar-' + uniqueSuffix + path.extname(file.originalname));
   }
@@ -77,8 +69,8 @@ const avatarStorage = multer.diskStorage({
 
 const avatarUpload = multer({
   storage: avatarStorage,
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: function (req, file, cb) {
     if (file.mimetype.startsWith('image/')) {
       cb(null, true);
     } else {
@@ -87,9 +79,12 @@ const avatarUpload = multer({
   }
 });
 
+// ASSIGNMENT MULTER CONFIGURATION
 const assignmentStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, path.join(__dirname, 'uploads', 'assignments')),
-  filename: (req, file, cb) => {
+  destination: function (req, file, cb) {
+    cb(null, assignmentsDir);
+  },
+  filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, `assignment-${uniqueSuffix}${path.extname(file.originalname)}`);
   }
@@ -97,29 +92,57 @@ const assignmentStorage = multer.diskStorage({
 
 const assignmentUpload = multer({
   storage: assignmentStorage,
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: function (req, file, cb) {
     const allowedTypes = ['.pdf', '.doc', '.docx', '.txt', '.zip', '.rar'];
     const fileExt = path.extname(file.originalname).toLowerCase();
     if (allowedTypes.includes(fileExt)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type'));
+      cb(new Error('Invalid file type. Only PDF, DOC, DOCX, TXT, ZIP, RAR files are allowed.'));
     }
   }
 });
 
-const paymentStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, path.join(__dirname, 'uploads', 'payments')),
-  filename: (req, file, cb) => {
+// PAYMENT SCREENSHOT MULTER CONFIGURATION
+const paymentScreenshotStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, paymentsDir);
+  },
+  filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, `payment-${uniqueSuffix}${path.extname(file.originalname)}`);
   }
 });
 
-const paymentUpload = multer({
-  storage: paymentStorage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+const paymentScreenshotUpload = multer({
+  storage: paymentScreenshotStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: function (req, file, cb) {
+    const allowedTypes = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
+    const fileExt = path.extname(file.originalname).toLowerCase();
+    if (allowedTypes.includes(fileExt)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only images are allowed.'));
+    }
+  }
+});
+
+// PAYMENT PROOF RESOURCES NEW MULTER CONFIGURATION (Same as paymentScreenshot for simplicity if they use same dir)
+const paymentProofStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, paymentsDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `payment-proof-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+const paymentProofUpload = multer({
+  storage: paymentProofStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
       cb(null, true);
@@ -129,16 +152,19 @@ const paymentUpload = multer({
   }
 });
 
+// SOCIAL POST IMAGE MULTER CONFIGURATION
 const socialStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, path.join(__dirname, 'public', 'uploads', 'social')),
+  destination: (req, file, cb) => {
+    cb(null, socialUploadDir);
+  },
   filename: (req, file, cb) => {
     cb(null, `social-${Date.now()}${path.extname(file.originalname)}`);
-  }
+  },
 });
 
 const socialUpload = multer({
   storage: socialStorage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: (req, file, cb) => {
     const filetypes = /jpeg|jpg|png|gif/;
     const mimetype = filetypes.test(file.mimetype);
@@ -146,13 +172,38 @@ const socialUpload = multer({
     if (mimetype && extname) {
       return cb(null, true);
     }
-    cb(new Error('Only image files allowed'));
+    cb(new Error('Error: File upload only supports the following filetypes - ' + filetypes));
+  },
+}).single('image');
+
+// Course Thumbnail Multer Configuration
+const courseThumbnailStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, courseThumbnailsDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'course-thumbnail-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+const courseThumbnailUpload = multer({
+  storage: courseThumbnailStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: function (req, file, cb) {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed for course thumbnails'));
+    }
   }
 });
 
-// ===== CORS Configuration =====
+
+// ===== CORS configuration =====
+const allowedOrigins = [process.env.FRONTEND_URL].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
+  origin: allowedOrigins.length > 0 ? allowedOrigins : '*', // Use specific origins if available, otherwise allow all (for testing)
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -161,45 +212,48 @@ app.use(cors({
 // Middleware
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-app.use('/uploads/avatars', express.static(path.join(__dirname, 'uploads', 'avatars')));
-app.use('/uploads/social', express.static(path.join(__dirname, 'public', 'uploads', 'social')));
+app.use('/uploads', express.static(path.join(__dirname, 'public/uploads'))); // Original, if public/uploads exists
+app.use('/uploads/avatars', express.static(avatarsDir)); // Directly serve from our new structure
+app.use('/uploads/social', express.static(socialUploadDir)); // Serve social images
+app.use('/uploads/assignments', express.static(assignmentsDir)); // Serve assignments
+app.use('/uploads/payments', express.static(paymentsDir)); // Serve payments
+app.use('/uploads/courses', express.static(courseThumbnailsDir)); // Serve course thumbnails
 
-// Request logging
+
+// Request logging middleware
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
 
-// ===== AUTHENTICATION MIDDLEWARE =====
+// JWT Authentication middleware
 const authenticateToken = async (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+
   try {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-
-    if (!token) {
-      return res.status(401).json({ error: 'Access token required' });
-    }
-
     const decoded = jwt.verify(token, JWT_SECRET);
-    
-    const userRef = doc(db, 'users', decoded.userId);
-    const userDoc = await getDoc(userRef);
-    
+    // Use Client SDK Firestore methods
+    const userDocRef = doc(db, 'users', decoded.userId);
+    const userDoc = await getDoc(userDocRef);
+
     if (!userDoc.exists() || !userDoc.data().is_active) {
-      return res.status(401).json({ error: 'Invalid or inactive user' });
+      return res.status(401).json({ error: 'Invalid token' });
     }
-    
-    req.user = { ...userDoc.data(), id: decoded.userId };
+    req.user = userDoc.data();
+    req.user.id = decoded.userId;
     next();
   } catch (error) {
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED' });
-    }
+    console.error('Authentication Error:', error);
     return res.status(403).json({ error: 'Invalid token' });
   }
 };
 
+// Admin middleware
 const requireAdmin = (req, res, next) => {
   if (req.user.account_type !== 'admin') {
     return res.status(403).json({ error: 'Admin access required' });
@@ -207,37 +261,63 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
+// Helper function to get full URL for images
+const getFullImageUrl = (req, imagePath) => {
+  if (!imagePath) {
+    return null;
+  }
+  if (imagePath.startsWith('http')) {
+    return imagePath;
+  }
+  let cleanPath = imagePath.replace(/^\/uploads\//, ''); // Adjust path if it stored with `/uploads/` prefix
+  if (!cleanPath.startsWith('/')) { // Ensure it has leading slash for static serving if not already
+    cleanPath = '/' + cleanPath;
+  }
+  // This assumes your static middleware correctly serves '/uploads'
+  return `${req.protocol}://${req.get('host')}/uploads${cleanPath}`;
+}
+
+
 // ==================== AUTH ROUTES ====================
 
-// Register
+// Register endpoint
 app.post('/api/register', async (req, res) => {
-  try {
-    const { firstName, lastName, email, phone, password, accountType } = req.body;
+  const { firstName, lastName, email, phone, password, accountType } = req.body;
 
+  try {
+    // Validate required fields
     if (!firstName || !lastName || !email || !password) {
-      return res.status(400).json({ error: 'All required fields must be provided' });
+      return res.status(400).json({
+        error: 'First name, last name, email, and password are required'
+      });
     }
 
+    // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: 'Invalid email format' });
+      return res.status(400).json({ error: 'Please provide a valid email address' });
     }
 
+    // Validate password strength
     if (password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
+      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
     }
 
-    const usersRef = collection(db, 'users');
-    const q = query(usersRef, where('email', '==', email.trim()));
-    const existingUsers = await getDocs(q);
+    // Check if email exists
+    const usersCollection = collection(db, 'users');
+    const existingUsersQuery = query(usersCollection, where('email', '==', email));
+    const existingUsers = await getDocs(existingUsersQuery);
 
     if (!existingUsers.empty) {
       return res.status(400).json({ error: 'Email already exists' });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const userRef = doc(collection(db, 'users'));
-    
+    // Hash password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    // Insert new user
+    const userRef = doc(usersCollection); // Client SDK generates ID automatically here
     await setDoc(userRef, {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
@@ -247,57 +327,63 @@ app.post('/api/register', async (req, res) => {
       account_type: accountType || 'student',
       is_active: true,
       email_verified: false,
-      created_at: Timestamp.now(),
-      updated_at: Timestamp.now()
+      created_at: Timestamp.now(), // Client SDK Timestamp
+      updated_at: Timestamp.now() // Client SDK Timestamp
     });
 
-    const statsRef = doc(db, 'user_stats', userRef.id);
-    await setDoc(statsRef, {
+    // Create user stats entry
+    const userStatsRef = doc(db, 'user_stats', userRef.id);
+    await setDoc(userStatsRef, {
       courses_enrolled: 0,
       courses_completed: 0,
       certificates_earned: 0,
       learning_streak: 0,
-      last_activity: Timestamp.now()
+      last_activity: Timestamp.now() // Client SDK Timestamp
     });
 
+    console.log('User registered successfully:', { userId: userRef.id, email });
     res.status(201).json({
       message: 'User registered successfully',
       userId: userRef.id
     });
+
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Login with extended token expiry
+// Login endpoint
 app.post('/api/login', async (req, res) => {
-  try {
-    const { email, password, rememberMe } = req.body;
+  const { email, password, rememberMe } = req.body;
 
+  try {
+    // Validate input
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
-    const usersRef = collection(db, 'users');
-    const q = query(usersRef, where('email', '==', email), where('is_active', '==', true));
-    const usersSnap = await getDocs(q);
+    // Check if user exists
+    const usersCollection = collection(db, 'users');
+    const usersQuery = query(usersCollection, where('email', '==', email), where('is_active', '==', true));
+    const usersSnap = await getDocs(usersQuery);
 
     if (usersSnap.empty) {
-      return res.status(404).json({ error: 'No account found' });
+      return res.status(404).json({ error: 'No account found with this email' });
     }
 
-    const userDoc = usersSnap.docs[0];
-    const user = userDoc.data();
-    const userId = userDoc.id;
+    const user = usersSnap.docs[0].data();
+    const userId = usersSnap.docs[0].id;
 
+    // Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
 
     if (!isPasswordValid) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    const tokenExpiry = rememberMe ? JWT_REFRESH_EXPIRY : JWT_EXPIRY;
+    // Generate JWT token
+    const tokenExpiry = rememberMe ? '30d' : '1d';
     const token = jwt.sign(
       {
         userId: userId,
@@ -308,15 +394,18 @@ app.post('/api/login', async (req, res) => {
       { expiresIn: tokenExpiry }
     );
 
+    // Update last login timestamp
     const userRef = doc(db, 'users', userId);
     await updateDoc(userRef, {
-      updated_at: Timestamp.now()
+      updated_at: Timestamp.now() // Client SDK Timestamp
     });
 
+    console.log('User logged in successfully:', { userId, email: user.email });
+
+    // Send success response
     res.status(200).json({
       message: 'Login successful',
       token: token,
-      expiresIn: tokenExpiry,
       user: {
         id: userId,
         firstName: user.first_name,
@@ -329,39 +418,50 @@ app.post('/api/login', async (req, res) => {
         website: user.website,
         bio: user.bio,
         isActive: user.is_active,
-        emailVerified: user.email_verified
+        emailVerified: user.email_verified,
+        createdAt: user.created_at,
+        updatedAt: user.updated_at
       }
     });
+
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Get current user
-app.get('/api/auth/me', authenticateToken, (req, res) => {
-  res.json({
-    id: req.user.id,
-    firstName: req.user.first_name,
-    lastName: req.user.last_name,
-    email: req.user.email,
-    phone: req.user.phone,
-    accountType: req.user.account_type,
-    profileImage: req.user.profile_image,
-    company: req.user.company,
-    website: req.user.website,
-    bio: req.user.bio,
-    isActive: req.user.is_active,
-    emailVerified: req.user.email_verified
-  });
+// Get current user profile (used for dashboard info)
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  try {
+    res.json({
+      id: req.user.id,
+      firstName: req.user.first_name,
+      lastName: req.user.last_name,
+      email: req.user.email,
+      phone: req.user.phone,
+      accountType: req.user.account_type,
+      profileImage: req.user.profile_image,
+      company: req.user.company,
+      website: req.user.website,
+      bio: req.user.bio,
+      isActive: req.user.is_active,
+      emailVerified: req.user.email_verified,
+      createdAt: req.user.created_at,
+      updatedAt: req.user.updated_at
+    });
+  } catch (error) {
+    console.error('Get profile error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
-// Update profile
+// Update user profile
 app.put('/api/auth/profile', authenticateToken, async (req, res) => {
   try {
     const { firstName, lastName, phone, company, website, bio } = req.body;
-    const userRef = doc(db, 'users', req.user.id);
+    const userId = req.user.id;
 
+    const userRef = doc(db, 'users', userId);
     await updateDoc(userRef, {
       first_name: firstName,
       last_name: lastName,
@@ -369,14 +469,14 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
       company: company,
       website: website,
       bio: bio,
-      updated_at: Timestamp.now()
+      updated_at: Timestamp.now() // Client SDK Timestamp
     });
 
-    const updatedDoc = await getDoc(userRef);
-    const user = updatedDoc.data();
+    const updatedUserDoc = await getDoc(userRef);
+    const user = updatedUserDoc.data();
 
     res.json({
-      id: req.user.id,
+      id: userId,
       firstName: user.first_name,
       lastName: user.last_name,
       email: user.email,
@@ -387,306 +487,207 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
       website: user.website,
       bio: user.bio,
       isActive: user.is_active,
-      emailVerified: user.email_verified
+      emailVerified: user.email_verified,
+      createdAt: user.created_at,
+      updatedAt: user.updated_at
     });
+
   } catch (error) {
     console.error('Update profile error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Upload avatar
+// Upload avatar (UNIFIED)
 app.post('/api/auth/avatar', authenticateToken, (req, res, next) => {
-  avatarUpload.single('avatar')(req, res, async (err) => {
+  // Handle multer errors properly
+  avatarUpload.single('avatar')(req, res, (err) => {
     if (err) {
       return res.status(400).json({ error: err.message });
     }
-
-    try {
-      if (!req.file) {
-        return res.status(400).json({ error: 'No file uploaded' });
-      }
-
-      const profileImage = `/uploads/avatars/${req.file.filename}`;
-      
-      if (req.user.profile_image) {
-        const oldPath = path.join(__dirname, 'uploads', 'avatars', path.basename(req.user.profile_image));
-        if (fs.existsSync(oldPath)) {
-          fs.unlinkSync(oldPath);
-        }
-      }
-
-      const userRef = doc(db, 'users', req.user.id);
-      await updateDoc(userRef, {
-        profile_image: profileImage,
-        updated_at: Timestamp.now()
-      });
-
-      res.status(200).send(profileImage);
-    } catch (error) {
-      console.error('Avatar upload error:', error);
-      res.status(500).json({ error: 'Server error' });
-    }
+    next();
   });
+}, async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const userId = req.user.id;
+    const profileImage = `/uploads/avatars/${req.file.filename}`;
+
+    // Delete old avatar if exists
+    if (req.user.profile_image) {
+      const oldFilename = path.basename(req.user.profile_image);
+      const oldPath = path.join(avatarsDir, oldFilename);
+      if (fs.existsSync(oldPath)) {
+        fs.unlinkSync(oldPath);
+      }
+    }
+
+    const userRef = doc(db, 'users', userId);
+    await updateDoc(userRef, {
+      profile_image: profileImage,
+      updated_at: Timestamp.now() // Client SDK Timestamp
+    });
+
+    // Send success response with plain text
+    res.status(200).send(profileImage);
+
+  } catch (error) {
+    console.error('Avatar upload error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
-// Dashboard stats
+// Get user stats (dashboard)
 app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
   try {
-    const statsRef = doc(db, 'user_stats', req.user.id);
-    const statsDoc = await getDoc(statsRef);
+    const userId = req.user.id;
 
-    if (!statsDoc.exists()) {
+    const statsRef = doc(db, 'user_stats', userId);
+    const stats = await getDoc(statsRef);
+
+    if (!stats.exists()) {
+      // Create default stats if not exists
       await setDoc(statsRef, {
         courses_enrolled: 0,
         courses_completed: 0,
         certificates_earned: 0,
         learning_streak: 0,
-        last_activity: Timestamp.now()
+        last_activity: Timestamp.now() // Client SDK Timestamp
       });
 
-      return res.json({
+      res.json({
         coursesEnrolled: 0,
         coursesCompleted: 0,
         certificatesEarned: 0,
         learningStreak: 0,
-        lastActivity: new Date().toISOString()
+        lastActivity: Timestamp.now() // Client SDK Timestamp
+      });
+    } else {
+      const userStats = stats.data();
+      res.json({
+        coursesEnrolled: userStats.courses_enrolled,
+        coursesCompleted: userStats.courses_completed,
+        certificatesEarned: userStats.certificates_earned,
+        learningStreak: userStats.learning_streak,
+        lastActivity: userStats.last_activity
       });
     }
 
-    const stats = statsDoc.data();
-    res.json({
-      coursesEnrolled: stats.courses_enrolled,
-      coursesCompleted: stats.courses_completed,
-      certificatesEarned: stats.certificates_earned,
-      learningStreak: stats.learning_streak,
-      lastActivity: stats.last_activity
-    });
   } catch (error) {
     console.error('Get stats error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
-});
-
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    error: 'Endpoint not found',
-    path: req.path,
-    method: req.method
-  });
-});
-
-// Error handler
-app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
-
-  if (err instanceof multer.MulterError) {
-    return res.status(400).json({ error: 'File upload error: ' + err.message });
-  }
-
-  res.status(500).json({
-    error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
-  });
-});
-
-
 // =================================================================
 // ============== ENHANCED SOCIAL FEED FUNCTIONALITY ===============
 // =================================================================
-
-// --- Multer Configuration for Social Post Images ---
-const socialUploadDir = 'public/uploads/social';
-if (!fs.existsSync(socialUploadDir)) {
-  fs.mkdirSync(socialUploadDir, { recursive: true });
-}
-
-// const socialStorage = multer.diskStorage({
-//   destination: (req, file, cb) => {
-//     cb(null, socialUploadDir);
-//   },
-//   filename: (req, file, cb) => {
-//     cb(null, `social-${Date.now()}${path.extname(file.originalname)}`);
-//   },
-// });
-
-// const socialUpload = multer({
-//   storage: socialStorage,
-//   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
-//   fileFilter: (req, file, cb) => {
-//     const filetypes = /jpeg|jpg|png|gif/;
-//     const mimetype = filetypes.test(file.mimetype);
-//     const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-//     if (mimetype && extname) {
-//       return cb(null, true);
-//     }
-//     cb(new Error('Error: File upload only supports the following filetypes - ' + filetypes));
-//   },
-// }).single('image');
-
-// Helper function to get full URL for images (SIMPLIFIED)
-const getFullImageUrl = (req, imagePath) => {
-  if (!imagePath) {
-    return null;
-  }
-  if (imagePath.startsWith('http')) {
-    return imagePath;
-  }
-  let cleanPath = imagePath.replace(/^public\//, '');
-  if (!cleanPath.startsWith('/')) {
-    cleanPath = '/' + cleanPath;
-  }
-  return `${req.protocol}://${req.get('host')}${cleanPath}`;
-}
 
 // --- GET All Posts (with Pagination, Likes, Comments, etc.) ---
 app.get('/api/posts', authenticateToken, async (req, res) => {
   const userId = req.user.id;
   const page = parseInt(req.query.page, 10) || 1;
-  const pageSize = parseInt(req.query.limit, 10) || 10;
-  const offset = (page - 1) * pageSize;
+  const limitCount = parseInt(req.query.limit, 10) || 10; // Renamed to avoid conflict with `limit` from firestore query
+  const offset = (page - 1) * limitCount;
 
   try {
-    // Get connections
-    const connectionsQuery1 = query(collection(db, 'user_connections'), where('user_id_1', '==', userId), where('status', '==', 'accepted'));
-    const connectionsSnapshot1 = await getDocs(connectionsQuery1);
-    const connections1 = connectionsSnapshot1.docs.map(d => d.data().user_id_2);
+    const socialActivitiesCollection = collection(db, 'social_activities');
+    const usersCollection = collection(db, 'users');
+    const userConnectionsCollection = collection(db, 'user_connections');
 
-    const connectionsQuery2 = query(collection(db, 'user_connections'), where('user_id_2', '==', userId), where('status', '==', 'accepted'));
-    const connectionsSnapshot2 = await getDocs(connectionsQuery2);
-    const connections2 = connectionsSnapshot2.docs.map(d => d.data().user_id_1);
+    // Fetch all posts (initial filter for visibility)
+    const allPostsQuery = query(socialActivitiesCollection, where('activity_type', '==', 'post'), orderBy('created_at', 'desc'));
+    const allPostsSnap = await getDocs(allPostsQuery);
 
-    const connections = [...new Set([...connections1, ...connections2])];
-    connections.push(userId); // include self
+    const connections1Query = query(userConnectionsCollection, where('user_id_1', '==', userId), where('status', '==', 'accepted'));
+    const connections1Snap = await getDocs(connections1Query);
+    const connections2Query = query(userConnectionsCollection, where('user_id_2', '==', userId), where('status', '==', 'accepted'));
+    const connections2Snap = await getDocs(connections2Query);
+    const connections = [
+      ...connections1Snap.docs.map(d => d.data().user_id_2),
+      ...connections2Snap.docs.map(d => d.data().user_id_1)
+    ];
 
-    // Fetch all posts (assume not too many for simplicity)
-    const postsQuery = query(collection(db, 'social_activities'), where('activity_type', '==', 'post'), orderBy('created_at', 'desc'));
-    const postsSnapshot = await getDocs(postsQuery);
-    let posts = postsSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
-
-    // Filter visible posts
-    posts = posts.filter(post => {
-      return post.visibility === 'public' ||
-             (post.visibility === 'private' && post.user_id === userId) ||
-             (post.visibility === 'connections' && connections.includes(post.user_id));
+    const visiblePosts = [];
+    allPostsSnap.docs.forEach(docSnapshot => {
+      const p = docSnapshot.data();
+      if (
+        p.visibility === 'public' ||
+        (p.visibility === 'private' && p.user_id === userId) ||
+        (p.visibility === 'connections' && (p.user_id === userId || connections.includes(p.user_id)))
+      ) {
+        visiblePosts.push({ id: docSnapshot.id, ...p });
+      }
     });
 
-    const totalPosts = posts.length;
-    const totalPages = Math.ceil(totalPosts / pageSize);
+    const totalPosts = visiblePosts.length;
+    const totalPages = Math.ceil(totalPosts / limitCount);
 
-    // Slice for pagination
-    posts = posts.slice(offset, offset + pageSize);
+    // Manual pagination of filtered posts
+    const paginatedPosts = visiblePosts.slice(offset, offset + limitCount);
 
-    if (posts.length === 0) {
-      return res.json({ posts: [], pagination: { page, totalPages, totalPosts } });
-    }
+    const posts = [];
+    for (const postDoc of paginatedPosts) {
+      const post = { ...postDoc }; // Create a mutable copy
 
-    const postIds = posts.map(p => p.id);
+      const userDocRef = doc(usersCollection, post.user_id);
+      const userDoc = await getDoc(userDocRef);
+      const u = userDoc.data();
 
-    // Fetch users for posts
-    const userIds = [...new Set(posts.map(p => p.user_id))];
-    const usersQuery = query(collection(db, 'users'), where('__name__', 'in', userIds.length ? userIds : ['dummy']));
-    const usersSnapshot = await getDocs(usersQuery);
-    const usersMap = {};
-    usersSnapshot.docs.forEach(u => {
-      const data = u.data();
-      usersMap[u.id] = {
-        first_name: data.first_name,
-        last_name: data.last_name,
-        profile_image: data.profile_image,
-        account_type: data.account_type
-      };
-    });
+      const likesQuery = query(socialActivitiesCollection, where('activity_type', '==', 'like'), where('target_id', '==', post.id));
+      const likesSnap = await getDocs(likesQuery);
+      post.likes = likesSnap.size;
 
-    // Fetch likes, comments count, has_liked, has_bookmarked for each post
-    for (let post of posts) {
-      // likes count
-      const likesQuery = query(collection(db, 'social_activities'), where('activity_type', '==', 'like'), where('target_id', '==', post.id));
-      const likesSnapshot = await getDocs(likesQuery);
-      post.likes = likesSnapshot.size;
+      const commentsQuery = query(socialActivitiesCollection, where('activity_type', '==', 'comment'), where('target_id', '==', post.id));
+      const commentsSnap = await getDocs(commentsQuery);
+      post.comment_count = commentsSnap.size;
 
-      // comment count
-      const commentsQuery = query(collection(db, 'social_activities'), where('activity_type', '==', 'comment'), where('target_id', '==', post.id));
-      const commentsSnapshot = await getDocs(commentsQuery);
-      post.comment_count = commentsSnapshot.size;
+      const userLikeQuery = query(socialActivitiesCollection, where('activity_type', '==', 'like'), where('target_id', '==', post.id), where('user_id', '==', userId));
+      const userLikeSnap = await getDocs(userLikeQuery);
+      post.has_liked = !userLikeSnap.empty;
 
-      // has_liked
-      const hasLikedQuery = query(collection(db, 'social_activities'), where('activity_type', '==', 'like'), where('target_id', '==', post.id), where('user_id', '==', userId));
-      const hasLikedSnapshot = await getDocs(hasLikedQuery);
-      post.has_liked = !hasLikedSnapshot.empty;
+      const userBookmarkQuery = query(socialActivitiesCollection, where('activity_type', '==', 'bookmark'), where('target_id', '==', post.id), where('user_id', '==', userId));
+      const userBookmarkSnap = await getDocs(userBookmarkQuery);
+      post.has_bookmarked = !userBookmarkSnap.empty;
 
-      // has_bookmarked
-      const hasBookmarkedQuery = query(collection(db, 'social_activities'), where('activity_type', '==', 'bookmark'), where('target_id', '==', post.id), where('user_id', '==', userId));
-      const hasBookmarkedSnapshot = await getDocs(hasBookmarkedQuery);
-      post.has_bookmarked = !hasBookmarkedSnapshot.empty;
+      post.image_url = getFullImageUrl(req, post.image_url);
 
-      // user data
       post.user = {
         id: post.user_id,
-        ...usersMap[post.user_id]
+        first_name: u.first_name,
+        last_name: u.last_name,
+        profile_image: getFullImageUrl(req, u.profile_image),
+        account_type: u.account_type
       };
 
-      // image_url
-      post.image_url = getFullImageUrl(req, post.image_url);
-      post.user.profile_image = getFullImageUrl(req, post.user.profile_image);
+      const commentsForPostQuery = query(socialActivitiesCollection, where('activity_type', '==', 'comment'), where('target_id', '==', post.id), orderBy('created_at'));
+      const commentsForPostSnap = await getDocs(commentsForPostQuery);
+
+      post.comments = [];
+      for (const commentDoc of commentsForPostSnap.docs) {
+        const c = { id: commentDoc.id, ...commentDoc.data() };
+        const commentUserDocRef = doc(usersCollection, c.user_id);
+        const commentUserDoc = await getDoc(commentUserDocRef);
+        const commentUser = commentUserDoc.data();
+
+        c.user = {
+          id: c.user_id,
+          first_name: commentUser.first_name,
+          last_name: commentUser.last_name,
+          profile_image: getFullImageUrl(req, commentUser.profile_image),
+          account_type: commentUser.account_type
+        };
+        post.comments.push(c);
+      }
+
+      posts.push(post);
     }
 
-    // Fetch all comments for these posts
-    const allCommentsQuery = query(collection(db, 'social_activities'), where('activity_type', '==', 'comment'), where('target_id', 'in', postIds.length ? postIds : ['dummy']));
-    const allCommentsSnapshot = await getDocs(allCommentsQuery);
-    let comments = allCommentsSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
-
-    // Fetch users for comments
-    const commentUserIds = [...new Set(comments.map(c => c.user_id))];
-    const commentUsersQuery = query(collection(db, 'users'), where('__name__', 'in', commentUserIds.length ? commentUserIds : ['dummy']));
-    const commentUsersSnapshot = await getDocs(commentUsersQuery);
-    const commentUsersMap = {};
-    commentUsersSnapshot.docs.forEach(u => {
-      const data = u.data();
-      commentUsersMap[u.id] = {
-        first_name: data.first_name,
-        last_name: data.last_name,
-        profile_image: data.profile_image,
-        account_type: data.account_type
-      };
-    });
-
-    // Map comments to posts
-    const postsWithData = posts.map(post => {
-      const postComments = comments
-        .filter(comment => comment.target_id === post.id)
-        .sort((a,b) => a.created_at.toDate() - b.created_at.toDate())
-        .map(c => ({
-          ...c,
-          user: {
-            id: c.user_id,
-            first_name: commentUsersMap[c.user_id]?.first_name,
-            last_name: commentUsersMap[c.user_id]?.last_name,
-            profile_image: getFullImageUrl(req, commentUsersMap[c.user_id]?.profile_image),
-            account_type: commentUsersMap[c.user_id]?.account_type
-          }
-        }));
-
-      return {
-        ...post,
-        has_liked: !!post.has_liked,
-        has_bookmarked: !!post.has_bookmarked,
-        comments: postComments
-      };
-    });
-
     res.json({
-      posts: postsWithData,
+      posts: posts,
       pagination: { page, totalPages, totalPosts }
     });
 
@@ -696,8 +697,8 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
   }
 });
 
+
 // --- POST a new post ---
-// --- CORRECTED IMAGE PATH SAVING ---
 app.post('/api/posts', authenticateToken, (req, res) => {
   socialUpload(req, res, async (err) => {
     if (err) {
@@ -714,34 +715,34 @@ app.post('/api/posts', authenticateToken, (req, res) => {
       }
 
       const imageUrl = req.file ? `/uploads/social/${req.file.filename}` : null;
-
       const isAchievement = achievement === 'true';
 
-      const postRef = await addDoc(collection(db, 'social_activities'), {
+      const socialActivitiesCollection = collection(db, 'social_activities');
+      const postRef = doc(socialActivitiesCollection);
+      await setDoc(postRef, {
         user_id: userId,
         activity_type: 'post',
         content: content || '',
         image_url: imageUrl,
         achievement: isAchievement,
         visibility: visibility,
-        share_count: 0,
-        created_at: Timestamp.now(),
-        updated_at: Timestamp.now()
+        created_at: Timestamp.now(), // Client SDK Timestamp
+        updated_at: Timestamp.now(), // Client SDK Timestamp
+        share_count: 0
       });
 
       const postId = postRef.id;
 
-      // Fetch the newly created post to return to the frontend
-      const postSnap = await getDoc(postRef);
-      const newPost = postSnap.data();
-      newPost.id = postId;
+      const newPostDoc = await getDoc(postRef);
+      const newPost = newPostDoc.data();
 
-      // Fetch user
-      const userSnap = await getDoc(doc(db, 'users', userId));
-      const userData = userSnap.data();
+      const userDocRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userDocRef);
+      const u = userDoc.data();
 
       res.status(201).json({
         ...newPost,
+        id: postId,
         has_liked: false,
         has_bookmarked: false,
         likes: 0,
@@ -749,12 +750,12 @@ app.post('/api/posts', authenticateToken, (req, res) => {
         image_url: getFullImageUrl(req, newPost.image_url),
         user: {
           id: userId,
-          first_name: userData.first_name,
-          last_name: userData.last_name,
-          profile_image: getFullImageUrl(req, userData.profile_image),
-          account_type: userData.account_type,
+          first_name: u.first_name,
+          last_name: u.last_name,
+          profile_image: getFullImageUrl(req, u.profile_image),
+          account_type: u.account_type
         },
-        comments: [],
+        comments: []
       });
     } catch (error) {
       console.error('Error creating post:', error);
@@ -775,13 +776,13 @@ app.put('/api/posts/:id', authenticateToken, async (req, res) => {
 
   try {
     const postRef = doc(db, 'social_activities', id);
-    const postSnap = await getDoc(postRef);
+    const postDoc = await getDoc(postRef);
 
-    if (!postSnap.exists()) {
+    if (!postDoc.exists()) {
       return res.status(404).json({ error: 'Post not found.' });
     }
 
-    const post = postSnap.data();
+    const post = postDoc.data();
 
     if (post.user_id !== userId) {
       return res.status(403).json({ error: 'You are not authorized to edit this post.' });
@@ -789,7 +790,7 @@ app.put('/api/posts/:id', authenticateToken, async (req, res) => {
 
     await updateDoc(postRef, {
       content: content,
-      updated_at: Timestamp.now()
+      updated_at: Timestamp.now() // Client SDK Timestamp
     });
 
     res.json({ message: 'Post updated successfully.' });
@@ -806,19 +807,19 @@ app.delete('/api/posts/:id', authenticateToken, async (req, res) => {
 
   try {
     const postRef = doc(db, 'social_activities', id);
-    const postSnap = await getDoc(postRef);
+    const postDoc = await getDoc(postRef);
 
-    if (!postSnap.exists()) {
+    if (!postDoc.exists()) {
       return res.status(404).json({ error: 'Post not found.' });
     }
 
-    const post = postSnap.data();
+    const post = postDoc.data();
 
     if (post.user_id !== userId) {
       return res.status(403).json({ error: 'You are not authorized to delete this post.' });
     }
 
-    // Delete the post
+    // Delete the post record
     await deleteDoc(postRef);
 
     // If there was an image, delete it from the filesystem
@@ -846,32 +847,34 @@ app.post('/api/posts/:id/comment', authenticateToken, async (req, res) => {
   }
 
   try {
-    const commentRef = await addDoc(collection(db, 'social_activities'), {
+    const socialActivitiesCollection = collection(db, 'social_activities');
+    const commentRef = doc(socialActivitiesCollection);
+    await setDoc(commentRef, {
       user_id: userId,
       activity_type: 'comment',
       content: content,
       target_id: targetId,
-      created_at: Timestamp.now(),
-      updated_at: Timestamp.now()
+      created_at: Timestamp.now() // Client SDK Timestamp
     });
 
     const commentId = commentRef.id;
 
     // Fetch the new comment with user info to return
-    const commentSnap = await getDoc(commentRef);
-    const newComment = commentSnap.data();
-    newComment.id = commentId;
+    const newCommentDoc = await getDoc(commentRef);
+    const newComment = newCommentDoc.data();
 
-    const userSnap = await getDoc(doc(db, 'users', userId));
-    const user = userSnap.data();
+    const userDocRef = doc(db, 'users', userId);
+    const userDoc = await getDoc(userDocRef);
+    const u = userDoc.data();
 
     res.status(201).json({
       ...newComment,
+      id: commentId,
       user: {
         id: userId,
-        first_name: user.first_name,
-        last_name: user.last_name,
-        profile_image: getFullImageUrl(req, user.profile_image)
+        first_name: u.first_name,
+        last_name: u.last_name,
+        profile_image: getFullImageUrl(req, u.profile_image)
       }
     });
   } catch (error) {
@@ -886,22 +889,21 @@ app.post('/api/posts/:id/like', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    // Check if already liked
-    const likeQuery = query(collection(db, 'social_activities'), where('user_id', '==', userId), where('activity_type', '==', 'like'), where('target_id', '==', targetId));
-    const likeSnapshot = await getDocs(likeQuery);
+    const socialActivitiesCollection = collection(db, 'social_activities');
+    const likeQuery = query(socialActivitiesCollection, where('user_id', '==', userId), where('activity_type', '==', 'like'), where('target_id', '==', targetId));
+    const likeSnap = await getDocs(likeQuery);
 
-    if (!likeSnapshot.empty) {
-      return res.status(400).json({ error: 'Already liked.' });
+    if (!likeSnap.empty) {
+      return res.status(400).json({ error: 'Post already liked.' });
     }
 
-    await addDoc(collection(db, 'social_activities'), {
+    const likeRef = doc(socialActivitiesCollection);
+    await setDoc(likeRef, {
       user_id: userId,
       activity_type: 'like',
       target_id: targetId,
-      created_at: Timestamp.now(),
-      updated_at: Timestamp.now()
+      created_at: Timestamp.now() // Client SDK Timestamp
     });
-
     res.status(201).json({ message: 'Post liked.' });
   } catch (error) {
     console.error('Error liking post:', error);
@@ -915,14 +917,15 @@ app.delete('/api/posts/:id/like', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const likeQuery = query(collection(db, 'social_activities'), where('user_id', '==', userId), where('activity_type', '==', 'like'), where('target_id', '==', targetId));
-    const likeSnapshot = await getDocs(likeQuery);
+    const socialActivitiesCollection = collection(db, 'social_activities');
+    const likeQuery = query(socialActivitiesCollection, where('user_id', '==', userId), where('activity_type', '==', 'like'), where('target_id', '==', targetId));
+    const likeSnap = await getDocs(likeQuery);
 
-    if (likeSnapshot.empty) {
-      return res.status(404).json({ error: 'Like not found.' });
+    if (likeSnap.empty) {
+      return res.status(404).json({ error: 'Like not found' });
     }
 
-    await deleteDoc(likeSnapshot.docs[0].ref);
+    await deleteDoc(likeSnap.docs[0].ref); // Delete the document found
 
     res.json({ message: 'Post unliked.' });
   } catch (error) {
@@ -937,22 +940,21 @@ app.post('/api/posts/:id/bookmark', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    // Check if already bookmarked
-    const bookmarkQuery = query(collection(db, 'social_activities'), where('user_id', '==', userId), where('activity_type', '==', 'bookmark'), where('target_id', '==', targetId));
-    const bookmarkSnapshot = await getDocs(bookmarkQuery);
+    const socialActivitiesCollection = collection(db, 'social_activities');
+    const bookmarkQuery = query(socialActivitiesCollection, where('user_id', '==', userId), where('activity_type', '==', 'bookmark'), where('target_id', '==', targetId));
+    const bookmarkSnap = await getDocs(bookmarkQuery);
 
-    if (!bookmarkSnapshot.empty) {
-      return res.status(400).json({ error: 'Already bookmarked.' });
+    if (!bookmarkSnap.empty) {
+      return res.status(400).json({ error: 'Post already bookmarked.' });
     }
 
-    await addDoc(collection(db, 'social_activities'), {
+    const bookmarkRef = doc(socialActivitiesCollection);
+    await setDoc(bookmarkRef, {
       user_id: userId,
       activity_type: 'bookmark',
       target_id: targetId,
-      created_at: Timestamp.now(),
-      updated_at: Timestamp.now()
+      created_at: Timestamp.now() // Client SDK Timestamp
     });
-
     res.status(201).json({ message: 'Post bookmarked.' });
   } catch (error) {
     console.error('Error bookmarking post:', error);
@@ -966,14 +968,15 @@ app.delete('/api/posts/:id/bookmark', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const bookmarkQuery = query(collection(db, 'social_activities'), where('user_id', '==', userId), where('activity_type', '==', 'bookmark'), where('target_id', '==', targetId));
-    const bookmarkSnapshot = await getDocs(bookmarkQuery);
+    const socialActivitiesCollection = collection(db, 'social_activities');
+    const bookmarkQuery = query(socialActivitiesCollection, where('user_id', '==', userId), where('activity_type', '==', 'bookmark'), where('target_id', '==', targetId));
+    const bookmarkSnap = await getDocs(bookmarkQuery);
 
-    if (bookmarkSnapshot.empty) {
-      return res.status(404).json({ error: 'Bookmark not found.' });
+    if (bookmarkSnap.empty) {
+      return res.status(404).json({ error: 'Bookmark not found' });
     }
 
-    await deleteDoc(bookmarkSnapshot.docs[0].ref);
+    await deleteDoc(bookmarkSnap.docs[0].ref); // Delete the document found
 
     res.json({ message: 'Post unbookmarked.' });
   } catch (error) {
@@ -989,7 +992,7 @@ app.post('/api/posts/:id/share', authenticateToken, async (req, res) => {
   try {
     const postRef = doc(db, 'social_activities', postId);
     await updateDoc(postRef, {
-      share_count: increment(1)
+      share_count: FieldValue.increment(1) // Client SDK FieldValue
     });
     res.json({ message: 'Share tracked.' });
   } catch (error) {
@@ -1005,41 +1008,37 @@ app.get('/api/users/:userId/enrollments', authenticateToken, async (req, res) =>
   const userId = req.user.id; // User ID is from the authenticated token
 
   // Security check: Ensure the user requesting data matches the user ID in the URL parameter
-  if (req.params.userId !== userId) {
+  if (req.params.userId !== userId) { // userId is string from Firebase, so no parseInt
     return res.status(403).json({ message: 'Forbidden: You can only access your own enrollment data.' });
   }
 
   try {
-    const enrollmentsQuery = query(collection(db, 'enrollments'), where('user_id', '==', userId), orderBy('enrollment_date', 'desc'));
-    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
-    const enrollments = enrollmentsSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+    const enrollmentsCollection = collection(db, 'enrollments');
+    const coursesCollection = collection(db, 'courses');
 
-    const courseIds = enrollments.map(e => e.course_id);
-    const coursesQuery = query(collection(db, 'courses'), where('__name__', 'in', courseIds.length ? courseIds : ['dummy']));
-    const coursesSnapshot = await getDocs(coursesQuery);
-    const coursesMap = {};
-    coursesSnapshot.docs.forEach(c => {
-      const data = c.data();
-      coursesMap[c.id] = {
-        title: data.title,
-        instructor_name: data.instructor_name,
-        duration_weeks: data.duration_weeks
-      };
-    });
+    const enrollmentsQuery = query(enrollmentsCollection, where('user_id', '==', userId), orderBy('enrollment_date', 'desc'));
+    const enrollmentsSnap = await getDocs(enrollmentsQuery);
 
-    const formattedEnrollments = enrollments.map(e => ({
-      id: e.id,
-      progress: e.progress,
-      status: e.status,
-      enrollment_date: e.enrollment_date,
-      completion_date: e.completion_date,
-      course_id: e.course_id,
-      courseTitle: coursesMap[e.course_id]?.title,
-      instructorName: coursesMap[e.course_id]?.instructor_name,
-      durationWeeks: coursesMap[e.course_id]?.duration_weeks
-    }));
+    const enrollments = [];
+    for (const docSnapshot of enrollmentsSnap.docs) {
+      const e = docSnapshot.data();
+      const courseDocRef = doc(coursesCollection, e.course_id);
+      const course = await getDoc(courseDocRef);
+      const c = course.data();
+      enrollments.push({
+        id: docSnapshot.id,
+        progress: e.progress,
+        status: e.status,
+        enrollment_date: e.enrollment_date,
+        completion_date: e.completion_date,
+        course_id: e.course_id,
+        courseTitle: c.title,
+        instructorName: c.instructor_name,
+        durationWeeks: c.duration_weeks
+      });
+    }
 
-    res.json(formattedEnrollments);
+    res.json(enrollments);
   } catch (error) {
     console.error('Error fetching user enrollments for dashboard:', error);
     res.status(500).json({ error: 'Internal server error while fetching enrolled courses.' });
@@ -1050,37 +1049,34 @@ app.get('/api/users/:userId/enrollments', authenticateToken, async (req, res) =>
 app.get('/api/users/:userId/internship-submissions', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
-  if (req.params.userId !== userId) {
+  if (req.params.userId !== userId) { // userId is string from Firebase, so no parseInt
     return res.status(403).json({ message: 'Forbidden: You can only access your own internship submissions.' });
   }
 
   try {
-    const applicationsQuery = query(collection(db, 'internship_submissions'), where('user_id', '==', userId), orderBy('submitted_at', 'desc'));
-    const applicationsSnapshot = await getDocs(applicationsQuery);
-    const applications = applicationsSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+    const internshipSubmissionsCollection = collection(db, 'internship_submissions');
+    const internshipsCollection = collection(db, 'internships');
 
-    const internshipIds = applications.map(a => a.internship_id);
-    const internshipsQuery = query(collection(db, 'internships'), where('__name__', 'in', internshipIds.length ? internshipIds : ['dummy']));
-    const internshipsSnapshot = await getDocs(internshipsQuery);
-    const internshipsMap = {};
-    internshipsSnapshot.docs.forEach(i => {
-      const data = i.data();
-      internshipsMap[i.id] = {
-        title: data.title,
-        company: data.company
-      };
-    });
+    const submissionsQuery = query(internshipSubmissionsCollection, where('user_id', '==', userId), orderBy('submitted_at', 'desc'));
+    const submissionsSnap = await getDocs(submissionsQuery);
 
-    const formattedApplications = applications.map(app => ({
-      id: app.id,
-      internship_id: app.internship_id,
-      applicationStatus: app.status,
-      applicationDate: app.submitted_at,
-      internshipTitle: internshipsMap[app.internship_id]?.title,
-      companyName: internshipsMap[app.internship_id]?.company
-    }));
+    const applications = [];
+    for (const docSnapshot of submissionsSnap.docs) {
+      const sub = docSnapshot.data();
+      const internshipDocRef = doc(internshipsCollection, sub.internship_id);
+      const internship = await getDoc(internshipDocRef);
+      const i = internship.data();
+      applications.push({
+        id: docSnapshot.id,
+        internship_id: sub.internship_id,
+        status: sub.status,
+        submitted_at: sub.submitted_at,
+        internshipTitle: i.title,
+        companyName: i.company
+      });
+    }
 
-    res.json(formattedApplications);
+    res.json(applications);
   } catch (error) {
     console.error('Error fetching user internship applications for dashboard:', error);
     res.status(500).json({ message: 'Internal server error while fetching your applications.' });
@@ -1092,27 +1088,35 @@ app.get('/api/users/:userId/internship-submissions', authenticateToken, async (r
 // Assumes a 'services' table with detailed service info, joined with 'service_categories'
 app.get('/api/services', authenticateToken, async (req, res) => {
   try {
-    const servicesQuery = query(collection(db, 'services'), where('__name__', 'in', []), orderBy('popular', 'desc'), orderBy('name'));
-    const servicesSnapshot = await getDocs(servicesQuery);
-    const services = servicesSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+    const servicesCollection = collection(db, 'services');
+    const serviceCategoriesCollection = collection(db, 'service_categories');
 
-    const categoryIds = [...new Set(services.map(s => s.category_id))];
-    const categoriesQuery = query(collection(db, 'service_categories'), where('__name__', 'in', categoryIds.length ? categoryIds : ['dummy']), where('is_active', '==', true));
-    const categoriesSnapshot = await getDocs(categoriesQuery);
-    const categoriesMap = {};
-    categoriesSnapshot.docs.forEach(c => {
-      const data = c.data();
-      categoriesMap[c.id] = data.name;
-    });
+    const servicesSnap = await getDocs(servicesCollection);
+    const services = [];
+    for (const docSnapshot of servicesSnap.docs) {
+      const s = docSnapshot.data();
+      const categoryDocRef = doc(serviceCategoriesCollection, s.category_id);
+      const categoryDoc = await getDoc(categoryDocRef);
+      if (categoryDoc.exists() && categoryDoc.data().is_active) {
+        services.push({
+          id: docSnapshot.id,
+          name: s.name,
+          category_id: s.category_id,
+          categoryName: categoryDoc.data().name,
+          description: s.description,
+          price: s.price,
+          duration: s.duration,
+          rating: s.rating,
+          reviews: s.reviews,
+          features: JSON.parse(s.features || '[]'),
+          popular: s.popular
+        });
+      }
+    }
 
-    // Parse JSON fields
-    const parsedServices = services.map(service => ({
-      ...service,
-      features: service.features ? JSON.parse(service.features) : [],
-      categoryName: categoriesMap[service.category_id]
-    }));
+    services.sort((a, b) => b.popular - a.popular || a.name.localeCompare(b.name));
 
-    res.json(parsedServices);
+    res.json(services);
   } catch (error) {
     console.error('Error fetching available services:', error);
     res.status(500).json({ message: 'Failed to fetch available services.', error: error.message });
@@ -1123,45 +1127,49 @@ app.get('/api/services', authenticateToken, async (req, res) => {
 app.get('/api/users/:userId/service-requests', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
-  if (req.params.userId !== userId) {
+  if (req.params.userId !== userId) { // userId is string from Firebase, so no parseInt
     return res.status(403).json({ message: 'Forbidden: You can only access your own service requests.' });
   }
 
   try {
-    const requestsQuery = query(collection(db, 'service_requests'), where('user_id', '==', userId), orderBy('created_at', 'desc'));
-    const requestsSnapshot = await getDocs(requestsQuery);
-    const requests = requestsSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+    const serviceRequestsCollection = collection(db, 'service_requests');
+    const serviceSubcategoriesCollection = collection(db, 'service_subcategories');
+    const serviceCategoriesCollection = collection(db, 'service_categories');
 
-    const subcategoryIds = requests.map(r => r.subcategory_id);
-    const subcategoriesQuery = query(collection(db, 'service_categories'), where('__name__', 'in', subcategoryIds.length ? subcategoryIds : ['dummy']));
-    const subcategoriesSnapshot = await getDocs(subcategoriesQuery);
-    const subcategoriesMap = {};
-    subcategoriesSnapshot.docs.forEach(sc => {
-      const data = sc.data();
-      subcategoriesMap[sc.id] = data.name;
-    });
+    const requestsQuery = query(serviceRequestsCollection, where('user_id', '==', userId), orderBy('created_at', 'desc'));
+    const requestsSnap = await getDocs(requestsQuery);
 
-    const formattedRequests = requests.map(sr => ({
-      id: sr.id,
-      userId: sr.user_id,
-      categoryId: sr.subcategory_id,
-      categoryName: subcategoriesMap[sr.subcategory_id],
-      fullName: sr.full_name,
-      email: sr.email,
-      phone: sr.phone,
-      company: sr.company,
-      website: sr.website,
-      projectDetails: sr.project_details,
-      budgetRange: sr.budget_range,
-      timeline: sr.timeline,
-      contactMethod: sr.contact_method,
-      additionalRequirements: sr.additional_requirements,
-      status: sr.status,
-      requestDate: sr.created_at,
-      updatedAt: sr.updated_at
-    }));
+    const requests = [];
+    for (const docSnapshot of requestsSnap.docs) {
+      const sr = docSnapshot.data();
+      const subcategoryDocRef = doc(serviceSubcategoriesCollection, sr.subcategory_id);
+      const subcategoryDoc = await getDoc(subcategoryDocRef);
+      const sc = subcategoryDoc.data();
+      const categoryDocRef = doc(serviceCategoriesCollection, sc.category_id);
+      const categoryDoc = await getDoc(categoryDocRef);
+      const category = categoryDoc.data();
+      requests.push({
+        id: docSnapshot.id,
+        userId: sr.user_id,
+        subcategory_id: sr.subcategory_id, // Renamed from categoryId for clarity
+        categoryName: category.name,
+        full_name: sr.full_name,
+        email: sr.email,
+        phone: sr.phone,
+        company: sr.company,
+        website: sr.website,
+        project_details: sr.project_details,
+        budget_range: sr.budget_range,
+        timeline: sr.timeline,
+        contact_method: sr.contact_method,
+        additional_requirements: sr.additional_requirements,
+        status: sr.status,
+        created_at: sr.created_at,
+        updated_at: sr.updated_at
+      });
+    }
 
-    res.json(formattedRequests);
+    res.json(requests);
   } catch (error) {
     console.error('Error fetching user service requests:', error);
     res.status(500).json({ message: 'Failed to fetch your service requests.', error: error.message });
@@ -1172,177 +1180,141 @@ app.get('/api/users/:userId/service-requests', authenticateToken, async (req, re
 app.post('/api/service-requests', authenticateToken, async (req, res) => {
   const userId = req.user.id; // User ID from authenticated token
   const {
-    categoryId, // Comes from selectedService.category_id
-    fullName,
+    subcategory_id,
+    full_name,
     email,
     phone,
     company,
     website,
-    projectDetails, // Changed from description
-    budgetRange,    // Changed from budget
-    timeline,       // Changed from deadline
-    contactMethod,
-    additionalRequirements
+    project_details,
+    budget_range,
+    timeline,
+    contact_method,
+    additional_requirements
   } = req.body;
 
   // Validate required fields based on your 'service_requests' table schema
-  if (!userId || !categoryId || !fullName || !email || !phone || !projectDetails || !budgetRange || !timeline || !contactMethod) {
+  if (!subcategory_id || !full_name || !email || !phone || !project_details || !budget_range || !timeline || !contact_method) {
     return res.status(400).json({ message: 'Missing required fields for service request. Please fill in all necessary details.' });
   }
 
   try {
-    const result = await addDoc(collection(db, 'service_requests'), {
+    const serviceRequestsCollection = collection(db, 'service_requests');
+    const requestRef = doc(serviceRequestsCollection);
+    await setDoc(requestRef, {
       user_id: userId,
-      subcategory_id: categoryId,
-      full_name: fullName,
-      email: email,
-      phone: phone,
+      subcategory_id,
+      full_name,
+      email,
+      phone,
       company: company || null,
       website: website || null,
-      project_details: projectDetails,
-      budget_range: budgetRange,
-      timeline: timeline,
-      contact_method: contactMethod,
-      additional_requirements: additionalRequirements || null,
+      project_details,
+      budget_range,
+      timeline,
+      contact_method,
+      additional_requirements: additional_requirements || null,
       status: 'pending',
-      created_at: Timestamp.now(),
-      updated_at: Timestamp.now()
+      created_at: Timestamp.now(), // Client SDK Timestamp
+      updated_at: Timestamp.now() // Client SDK Timestamp
     });
 
     // Return the ID of the newly created request
-    res.status(201).json({ message: 'Service request submitted successfully!', id: result.id });
+    res.status(201).json({ message: 'Service request submitted successfully!', id: requestRef.id });
   } catch (error) {
     console.error('Error submitting service request:', error);
     res.status(500).json({ message: 'Failed to submit service request. An internal server error occurred.', error: error.message });
   }
 });
 
-// ==================== CALENDER EVENTS ROUTES ====================
+// ==================== CALENDAR EVENTS ROUTES ====================
 
 // GET /api/calendar/events - Get all calendar events for current user
 app.get('/api/calendar/events', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Get enrolled courses
-    const enrollmentsQuery = query(collection(db, 'enrollments'), where('user_id', '==', userId), where('status', '==', 'active'));
-    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
-    const courseIds = enrollmentsSnapshot.docs.map(e => e.data().course_id);
+    const enrollmentsCollection = collection(db, 'enrollments');
+    const coursesCollection = collection(db, 'courses');
+    const assignmentsCollection = collection(db, 'assignments');
+    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
+    const customCalendarEventsCollection = collection(db, 'custom_calendar_events');
 
-    // Get courses
-    const coursesQuery = query(collection(db, 'courses'), where('__name__', 'in', courseIds.length ? courseIds : ['dummy']));
-    const coursesSnapshot = await getDocs(coursesQuery);
-    const courseEvents = coursesSnapshot.docs.map(c => {
-      const data = c.data();
-      return {
-        id: c.id,
-        title: data.title,
-        description: data.description,
-        date: data.created_at,
+    // Get course start/end dates for enrolled courses
+    const enrollmentsQuery = query(enrollmentsCollection, where('user_id', '==', userId), where('status', '==', 'active'));
+    const enrollmentsSnap = await getDocs(enrollmentsQuery);
+
+    const courseEvents = [];
+    for (const docSnapshot of enrollmentsSnap.docs) {
+      const e = docSnapshot.data();
+      const courseDocRef = doc(coursesCollection, e.course_id);
+      const course = await getDoc(courseDocRef);
+      const c = course.data();
+      courseEvents.push({
+        id: course.id,
+        title: c.title,
+        description: c.description,
+        date: c.created_at,
         type: 'course_start',
-        course_id: c.id,
-        course_title: data.title,
-        course_category: data.category
-      };
-    });
-
-    // Get assignments
-    const assignmentsQuery = query(collection(db, 'assignments'), where('course_id', 'in', courseIds.length ? courseIds : ['dummy']));
-    const assignmentsSnapshot = await getDocs(assignmentsQuery);
-    const assignments = assignmentsSnapshot.docs.map(a => ({id: a.id, ...a.data()}));
-
-    // Get submissions
-    const submissionsQuery = query(collection(db, 'assignment_submissions'), where('user_id', '==', userId));
-    const submissionsSnapshot = await getDocs(submissionsQuery);
-    const submissionsMap = {};
-    submissionsSnapshot.docs.forEach(s => {
-      const data = s.data();
-      submissionsMap[data.assignment_id] = data;
-    });
-
-    const assignmentEvents = assignments.map(a => {
-      const course = coursesSnapshot.docs.find(c => c.id === a.course_id)?.data();
-      const submission = submissionsMap[a.id];
-      let status = 'pending';
-      if (submission && submission.status === 'graded') status = 'completed';
-      else if (a.due_date.toDate() < new Date() && !submission) status = 'overdue';
-
-      return {
-        id: a.id,
-        title: a.title,
-        description: a.description,
-        date: a.due_date,
-        type: 'assignment',
-        course_id: a.course_id,
-        course_title: course?.title,
-        course_category: course?.category,
-        status
-      };
-    });
-
-    // Get custom events
-    let customEvents = [];
-    try {
-      const customQuery = query(collection(db, 'custom_calendar_events'), where('user_id', '==', userId), where('event_date', '>=', Timestamp.fromDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))), orderBy('event_date', 'asc'));
-      const customSnapshot = await getDocs(customQuery);
-      customEvents = customSnapshot.docs.map(c => {
-        const data = c.data();
-        return {
-          id: c.id,
-          title: data.title,
-          description: data.description,
-          date: data.event_date,
-          time: data.event_time,
-          type: data.event_type,
-          color: 'custom'
-        };
+        course_id: course.id,
+        course_title: c.title,
+        course_category: c.category
       });
-    } catch (error) {
-      console.log('Custom events not found, skipping...');
     }
 
-    // Format and combine
-    const formattedCourseEvents = courseEvents.map(event => ({
-      id: `course-${event.id}`,
-      title: `Course: ${event.title}`,
-      description: event.description || 'Course enrollment',
-      date: event.date,
-      type: 'course_start',
-      course: {
-        id: event.course_id,
-        title: event.course_title,
-        category: event.course_category
-      },
-      color: 'blue'
-    }));
+    // Get assignment deadlines
+    const assignmentEvents = [];
+    for (const docSnapshot of enrollmentsSnap.docs) {
+      const e = docSnapshot.data();
+      const assignmentsQuery = query(assignmentsCollection, where('course_id', '==', e.course_id));
+      const assignmentsSnap = await getDocs(assignmentsQuery);
+      for (const aDoc of assignmentsSnap.docs) {
+        const a = aDoc.data();
+        const submissionQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', aDoc.id), where('user_id', '==', userId));
+        const submissionSnap = await getDocs(submissionQuery);
+        let status = 'pending';
+        if (!submissionSnap.empty) {
+          if (submissionSnap.docs[0].data().status === 'graded') status = 'completed';
+        } else if (a.due_date.toDate() < new Date()) {
+          status = 'overdue';
+        }
+        const courseDocRef = doc(coursesCollection, e.course_id);
+        const course = await getDoc(courseDocRef);
+        const c = course.data();
+        assignmentEvents.push({
+          id: aDoc.id,
+          title: a.title,
+          description: a.description,
+          date: a.due_date,
+          type: 'assignment',
+          course_id: e.course_id,
+          course_title: c.title,
+          course_category: c.category,
+          status
+        });
+      }
+    }
 
-    const formattedAssignmentEvents = assignmentEvents.map(assignment => ({
-      id: `assignment-${assignment.id}`,
-      title: assignment.title,
-      description: assignment.description || 'Assignment due',
-      date: assignment.date,
-      type: 'assignment',
-      course: {
-        id: assignment.course_id,
-        title: assignment.course_title,
-        category: assignment.course_category
-      },
-      status: assignment.status,
-      color: assignment.status === 'completed' ? 'green' :
-             assignment.status === 'overdue' ? 'red' : 'orange'
-    }));
+    // Get custom calendar events
+    const thirtyDaysAgo = new Date(new Date().getTime() - 30 * 24 * 60 * 60 * 1000);
+    const customEventsQuery = query(customCalendarEventsCollection, where('user_id', '==', userId), where('event_date', '>=', Timestamp.fromDate(thirtyDaysAgo)), orderBy('event_date'));
+    const customEventsSnap = await getDocs(customEventsQuery);
 
-    const formattedCustomEvents = customEvents.map(event => ({
-      id: `custom-${event.id}`,
-      title: event.title,
-      description: event.description || '',
-      date: event.date,
-      time: event.time,
-      type: event.type || 'custom',
-      color: 'purple'
-    }));
+    const customEvents = customEventsSnap.docs.map(docSnapshot => {
+      const event = docSnapshot.data();
+      return {
+        id: docSnapshot.id,
+        title: event.title,
+        description: event.description,
+        date: event.event_date,
+        time: event.event_time,
+        type: event.event_type,
+        color: 'purple'
+      };
+    });
 
-    const allEvents = [...formattedCourseEvents, ...formattedAssignmentEvents, ...formattedCustomEvents];
+    // Combine all events
+    const allEvents = [...courseEvents, ...assignmentEvents, ...customEvents];
 
     res.json(allEvents);
   } catch (error) {
@@ -1363,94 +1335,94 @@ app.get('/api/calendar/events/date/:date', authenticateToken, async (req, res) =
       return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
     }
 
-    const parsedDate = new Date(date);
+    const targetDate = new Date(date);
+    // For Firestore queries, we need to define the start and end of the day
+    const startOfDay = new Date(targetDate.setHours(0, 0, 0, 0));
+    const endOfDay = new Date(targetDate.setHours(23, 59, 59, 999));
 
-    // Get enrolled courses
-    const enrollmentsQuery = query(collection(db, 'enrollments'), where('user_id', '==', userId), where('status', '==', 'active'));
-    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
-    const courseIds = enrollmentsSnapshot.docs.map(e => e.data().course_id);
+    const enrollmentsCollection = collection(db, 'enrollments');
+    const coursesCollection = collection(db, 'courses');
+    const assignmentsCollection = collection(db, 'assignments');
+    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
+    const customCalendarEventsCollection = collection(db, 'custom_calendar_events');
 
-    // Get assignments on this date
-    const assignmentsQuery = query(collection(db, 'assignments'), where('course_id', 'in', courseIds.length ? courseIds : ['dummy']));
-    const assignmentsSnapshot = await getDocs(assignmentsQuery);
-    const assignments = assignmentsSnapshot.docs.map(a => ({id: a.id, ...a.data()} )).filter(a => a.due_date.toDate().toDateString() === parsedDate.toDateString());
+    const enrollmentsQuery = query(enrollmentsCollection, where('user_id', '==', userId), where('status', '==', 'active'));
+    const enrollmentsSnap = await getDocs(enrollmentsQuery);
 
-    // Get courses started on this date
-    const coursesQuery = query(collection(db, 'courses'), where('__name__', 'in', courseIds.length ? courseIds : ['dummy']));
-    const coursesSnapshot = await getDocs(coursesQuery);
-    const courses = coursesSnapshot.docs.map(c => ({id: c.id, ...c.data()} )).filter(c => c.created_at.toDate().toDateString() === parsedDate.toDateString());
+    const eventsResult = [];
+    for (const docSnapshot of enrollmentsSnap.docs) {
+      const e = docSnapshot.data();
+      const courseDocRef = doc(coursesCollection, e.course_id);
+      const course = await getDoc(courseDocRef);
+      const c = course.data();
 
-    // Get submissions
-    const submissionIds = assignments.map(a => a.id);
-    const submissionsQuery = query(collection(db, 'assignment_submissions'), where('assignment_id', 'in', submissionIds.length ? submissionIds : ['dummy']), where('user_id', '==', userId));
-    const submissionsSnapshot = await getDocs(submissionsQuery);
-    const submissionsMap = {};
-    submissionsSnapshot.docs.forEach(s => {
-      const data = s.data();
-      submissionsMap[data.assignment_id] = data;
-    });
+      if (c.created_at.toDate().toISOString().split('T')[0] === date) {
+        eventsResult.push({
+          event_type: 'course_start',
+          id: course.id,
+          title: `Course: ${c.title}`,
+          description: c.description,
+          date: c.created_at,
+          time: null,
+          course_id: course.id,
+          course_title: c.title,
+          course_category: c.category,
+          status: 'active'
+        });
+      }
 
-    const assignmentEvents = assignments.map(a => {
-      const course = coursesSnapshot.docs.find(c => c.id === a.course_id)?.data() || {};
-      const submission = submissionsMap[a.id];
-      let status = 'pending';
-      if (submission && submission.status === 'graded') status = 'completed';
-      else if (a.due_date.toDate() < new Date() && !submission) status = 'overdue';
+      const assignmentsQuery = query(assignmentsCollection, where('course_id', '==', e.course_id));
+      const assignmentsSnap = await getDocs(assignmentsQuery);
+      for (const aDoc of assignmentsSnap.docs) {
+        const a = aDoc.data();
+        if (a.due_date.toDate().toISOString().split('T')[0] === date) {
+          const submissionQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', aDoc.id), where('user_id', '==', userId));
+          const submissionSnap = await getDocs(submissionQuery);
+          let status = 'pending';
+          if (!submissionSnap.empty) {
+            if (submissionSnap.docs[0].data().status === 'graded') status = 'completed';
+          } else if (a.due_date.toDate() < new Date()) {
+            status = 'overdue';
+          }
+          eventsResult.push({
+            event_type: 'assignment',
+            id: aDoc.id,
+            title: a.title,
+            description: a.description,
+            date: a.due_date,
+            time: null,
+            course_id: e.course_id,
+            course_title: c.title,
+            course_category: c.category,
+            status
+          });
+        }
+      }
+    }
 
+    // Custom events
+    const customQuery = query(customCalendarEventsCollection, where('user_id', '==', userId), where('event_date', '>=', Timestamp.fromDate(startOfDay)), where('event_date', '<=', Timestamp.fromDate(endOfDay)));
+    const customResult = await getDocs(customQuery);
+
+    const customEvents = customResult.docs.map(docSnapshot => {
+      const event = docSnapshot.data();
       return {
-        event_type: 'assignment',
-        id: a.id,
-        title: a.title,
-        description: a.description,
-        date: a.due_date,
-        time: null,
-        course_id: a.course_id,
-        course_title: course.title,
-        course_category: course.category,
-        status
+        event_type: 'custom',
+        id: docSnapshot.id,
+        title: event.title,
+        description: event.description,
+        date: event.event_date,
+        time: event.event_time,
+        course_id: null,
+        course_title: null,
+        course_category: null,
+        status: 'pending'
       };
     });
 
-    const courseEvents = courses.map(c => ({
-      event_type: 'course_start',
-      id: c.id,
-      title: `Course: ${c.title}`,
-      description: c.description,
-      date: c.created_at,
-      time: null,
-      course_id: c.id,
-      course_title: c.title,
-      course_category: c.category,
-      status: 'active'
-    }));
+    const allEvents = [...eventsResult, ...customEvents];
 
-    // Try to get custom events for the date
-    let customEvents = [];
-    try {
-      const customQuery = query(collection(db, 'custom_calendar_events'), where('user_id', '==', userId), where('event_date', '==', Timestamp.fromDate(parsedDate)));
-      const customSnapshot = await getDocs(customQuery);
-      customEvents = customSnapshot.docs.map(c => {
-        const data = c.data();
-        return {
-          event_type: 'custom',
-          id: c.id,
-          title: data.title,
-          description: data.description,
-          date: data.event_date,
-          time: data.event_time,
-          course_id: null,
-          course_title: null,
-          course_category: null,
-          status: 'pending'
-        };
-      });
-    } catch (error) {
-      // Custom events table doesn't exist
-    }
-
-    const allEvents = [...assignmentEvents, ...courseEvents, ...customEvents];
-
-    const formattedEvents = allEvents.map(event => ({
+    const events = allEvents.map(event => ({
       id: `${event.event_type}-${event.id}`,
       title: event.title,
       description: event.description || '',
@@ -1465,7 +1437,7 @@ app.get('/api/calendar/events/date/:date', authenticateToken, async (req, res) =
       status: event.status
     }));
 
-    res.json(formattedEvents);
+    res.json(events);
   } catch (error) {
     console.error('Error fetching events for date:', error);
     res.status(500).json({ error: 'Failed to fetch events for specified date' });
@@ -1477,105 +1449,73 @@ app.get('/api/calendar/upcoming', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const today = new Date();
-    const sevenDaysLater = new Date(today);
-    sevenDaysLater.setDate(today.getDate() + 7);
+    const now = new Date();
+    const sevenDaysLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-    // Get enrolled courses
-    const enrollmentsQuery = query(collection(db, 'enrollments'), where('user_id', '==', userId), where('status', '==', 'active'));
-    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
-    const courseIds = enrollmentsSnapshot.docs.map(e => e.data().course_id);
+    const upcomingEvents = [];
 
-    // Get upcoming assignments
-    const assignmentsQuery = query(collection(db, 'assignments'), where('course_id', 'in', courseIds.length ? courseIds : ['dummy']));
-    const assignmentsSnapshot = await getDocs(assignmentsQuery);
-    const assignments = assignmentsSnapshot.docs.map(a => ({id: a.id, ...a.data()} )).filter(a => {
-      const dueDate = a.due_date.toDate();
-      return dueDate >= today && dueDate <= sevenDaysLater;
-    }).sort((a,b) => a.due_date.toDate() - b.due_date.toDate()).slice(0, 10);
+    const enrollmentsCollection = collection(db, 'enrollments');
+    const coursesCollection = collection(db, 'courses');
+    const assignmentsCollection = collection(db, 'assignments');
+    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
+    const customCalendarEventsCollection = collection(db, 'custom_calendar_events');
 
-    // Get submissions
-    const submissionIds = assignments.map(a => a.id);
-    const submissionsQuery = query(collection(db, 'assignment_submissions'), where('assignment_id', 'in', submissionIds.length ? submissionIds : ['dummy']), where('user_id', '==', userId));
-    const submissionsSnapshot = await getDocs(submissionsQuery);
-    const submissionsMap = {};
-    submissionsSnapshot.docs.forEach(s => {
-      const data = s.data();
-      submissionsMap[data.assignment_id] = data;
-    });
 
-    const coursesMap = {};
-    const coursesSnapshot = await getDocs(query(collection(db, 'courses'), where('__name__', 'in', courseIds.length ? courseIds : ['dummy'])));
-    coursesSnapshot.docs.forEach(c => {
-      coursesMap[c.id] = c.data();
-    });
+    const enrollmentsQuery = query(enrollmentsCollection, where('user_id', '==', userId), where('status', '==', 'active'));
+    const enrollmentsSnap = await getDocs(enrollmentsQuery);
 
-    const assignmentEvents = assignments.map(a => {
-      const course = coursesMap[a.course_id] || {};
-      const submission = submissionsMap[a.id];
-      let status = 'pending';
-      if (submission && submission.status === 'graded') status = 'completed';
-      else if (a.due_date.toDate() < today && !submission) status = 'overdue';
-
-      return {
-        event_type: 'assignment',
-        id: a.id,
-        title: a.title,
-        description: a.description,
-        date: a.due_date,
-        time: null,
-        course_id: a.course_id,
-        course_title: course.title,
-        course_category: course.category,
-        status
-      };
-    });
-
-    // Try to get upcoming custom events
-    let customUpcoming = [];
-    try {
-      const customQuery = query(collection(db, 'custom_calendar_events'), where('user_id', '==', userId), where('event_date', '>=', Timestamp.fromDate(today)), where('event_date', '<=', Timestamp.fromDate(sevenDaysLater)), orderBy('event_date', 'asc'), limit(5));
-      const customSnapshot = await getDocs(customQuery);
-      customUpcoming = customSnapshot.docs.map(c => {
-        const data = c.data();
-        return {
-          event_type: 'custom',
-          id: c.id,
-          title: data.title,
-          description: data.description,
-          date: data.event_date,
-          time: data.event_time,
-          course_id: null,
-          course_title: null,
-          course_category: null,
-          status: 'pending'
-        };
-      });
-    } catch (error) {
-      // Custom events table doesn't exist
+    for (const docSnapshot of enrollmentsSnap.docs) {
+      const e = docSnapshot.data();
+      const assignmentsQuery = query(assignmentsCollection, where('course_id', '==', e.course_id), where('due_date', '>=', Timestamp.fromDate(now)), where('due_date', '<=', Timestamp.fromDate(sevenDaysLater)), orderBy('due_date'), firebaseLimit(10));
+      const assignmentsSnap = await getDocs(assignmentsQuery);
+      for (const aDoc of assignmentsSnap.docs) {
+        const a = aDoc.data();
+        const courseDocRef = doc(coursesCollection, e.course_id);
+        const course = await getDoc(courseDocRef);
+        const c = course.data();
+        const submissionQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', aDoc.id), where('user_id', '==', userId));
+        const submissionSnap = await getDocs(submissionQuery);
+        let status = 'pending';
+        if (!submissionSnap.empty) {
+          if (submissionSnap.docs[0].data().status === 'graded') status = 'completed';
+        } else if (a.due_date.toDate() < new Date()) { // Compare with current date
+          status = 'overdue';
+        }
+        upcomingEvents.push({
+          id: aDoc.id,
+          title: a.title,
+          description: a.description,
+          date: a.due_date,
+          type: 'assignment',
+          course: {
+            id: e.course_id,
+            title: c.title,
+            category: c.category
+          },
+          status,
+          color: status === 'completed' ? 'green' : status === 'overdue' ? 'red' : 'orange'
+        });
+      }
     }
 
-    const allUpcoming = [...assignmentEvents, ...customUpcoming];
+    // Custom events
+    const customQuery = query(customCalendarEventsCollection, where('user_id', '==', userId), where('event_date', '>=', Timestamp.fromDate(now)), where('event_date', '<=', Timestamp.fromDate(sevenDaysLater)), orderBy('event_date'), firebaseLimit(5));
+    const customSnap = await getDocs(customQuery);
 
-    const formattedUpcoming = allUpcoming.map(event => ({
-      id: `${event.event_type}-${event.id}`,
-      title: event.title,
-      description: event.description || '',
-      date: event.date,
-      time: event.time,
-      type: event.event_type,
-      course: event.course_id ? {
-        id: event.course_id,
-        title: event.course_title,
-        category: event.course_category
-      } : null,
-      status: event.status,
-      color: event.status === 'completed' ? 'green' :
-             event.status === 'overdue' ? 'red' :
-               event.event_type === 'custom' ? 'purple' : 'orange'
-    }));
+    customSnap.docs.forEach(docSnapshot => {
+      const event = docSnapshot.data();
+      upcomingEvents.push({
+        id: docSnapshot.id,
+        title: event.title,
+        description: event.description,
+        date: event.event_date,
+        time: event.event_time,
+        type: event.event_type,
+        color: 'purple'
+      });
+    });
 
-    res.json(formattedUpcoming);
+    res.json(upcomingEvents);
   } catch (error) {
     console.error('Error fetching upcoming events:', error);
     res.status(500).json({ error: 'Failed to fetch upcoming events' });
@@ -1587,39 +1527,48 @@ app.get('/api/calendar/stats', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Get enrollments
-    const enrollmentsQuery = query(collection(db, 'enrollments'), where('user_id', '==', userId));
-    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
-    const enrollments = enrollmentsSnapshot.docs.map(e => e.data());
+    const enrollmentsCollection = collection(db, 'enrollments');
+    const assignmentsCollection = collection(db, 'assignments');
+    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
 
-    const courseIds = enrollments.map(e => e.course_id);
+    const enrollmentsQuery = query(enrollmentsCollection, where('user_id', '==', userId));
+    const enrollmentsSnap = await getDocs(enrollmentsQuery);
 
-    // Get assignments
-    const assignmentsQuery = query(collection(db, 'assignments'), where('course_id', 'in', courseIds.length ? courseIds : ['dummy']));
-    const assignmentsSnapshot = await getDocs(assignmentsQuery);
-    const assignments = assignmentsSnapshot.docs.map(a => a.id);
+    let totalAssignments = 0;
+    let pendingAssignments = 0;
+    let completedAssignments = 0;
+    let overdueAssignments = 0;
+    let activeCourses = 0;
+    let completedCourses = 0;
 
-    // Get submissions
-    const submissionsQuery = query(collection(db, 'assignment_submissions'), where('user_id', '==', userId), where('assignment_id', 'in', assignments.length ? assignments : ['dummy']));
-    const submissionsSnapshot = await getDocs(submissionsQuery);
-    const submissions = submissionsSnapshot.docs.map(s => s.data());
+    for (const docSnapshot of enrollmentsSnap.docs) {
+      const e = docSnapshot.data();
+      if (e.status === 'active') activeCourses++;
+      if (e.status === 'completed') completedCourses++;
 
-    const pendingAssignments = assignments.length - submissions.length;
-    const completedAssignments = submissions.filter(s => s.status === 'graded').length;
-    const overdueAssignments = assignmentsSnapshot.docs.filter(a => {
-      return a.data().due_date.toDate() < new Date() && !submissions.find(s => s.assignment_id === a.id);
-    }).length;
-
-    const activeCourses = enrollments.filter(e => e.status === 'active').length;
-    const completedCourses = enrollments.filter(e => e.status === 'completed').length;
+      const assignmentsQuery = query(assignmentsCollection, where('course_id', '==', e.course_id));
+      const assignmentsSnap = await getDocs(assignmentsQuery);
+      for (const aDoc of assignmentsSnap.docs) {
+        totalAssignments++;
+        const a = aDoc.data();
+        const submissionQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', aDoc.id), where('user_id', '==', userId));
+        const submissionSnap = await getDocs(submissionQuery);
+        if (!submissionSnap.empty) {
+          if (submissionSnap.docs[0].data().status === 'graded') completedAssignments++;
+        } else {
+          if (a.due_date.toDate() >= new Date()) pendingAssignments++;
+          else overdueAssignments++;
+        }
+      }
+    }
 
     res.json({
-      pending_assignments: pendingAssignments,
-      completed_assignments: completedAssignments,
-      overdue_assignments: overdueAssignments,
-      active_courses: activeCourses,
-      completed_courses: completedCourses,
-      total_assignments: pendingAssignments + completedAssignments + overdueAssignments
+      pendingAssignments,
+      completedAssignments,
+      overdueAssignments,
+      activeCourses,
+      completedCourses,
+      totalAssignments
     });
   } catch (error) {
     console.error('Error fetching calendar stats:', error);
@@ -1632,57 +1581,49 @@ app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) =
   try {
     const userId = req.user.id;
 
-    // Get enrollments
-    const enrollmentsQuery = query(collection(db, 'enrollments'), where('user_id', '==', userId), where('status', '==', 'active'));
-    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
-    const courseIds = enrollmentsSnapshot.docs.map(e => e.data().course_id);
+    const enrollmentsCollection = collection(db, 'enrollments');
+    const assignmentsCollection = collection(db, 'assignments');
+    const coursesCollection = collection(db, 'courses');
+    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
 
-    // Get assignments
-    const assignmentsQuery = query(collection(db, 'assignments'), where('course_id', 'in', courseIds.length ? courseIds : ['dummy']), orderBy('due_date', 'asc'));
-    const assignmentsSnapshot = await getDocs(assignmentsQuery);
-    const assignments = assignmentsSnapshot.docs.map(a => ({id: a.id, ...a.data()}));
+    const enrollmentsQuery = query(enrollmentsCollection, where('user_id', '==', userId), where('status', '==', 'active'));
+    const enrollmentsSnap = await getDocs(enrollmentsQuery);
 
-    // Get submissions
-    const assignmentIds = assignments.map(a => a.id);
-    const submissionsQuery = query(collection(db, 'assignment_submissions'), where('assignment_id', 'in', assignmentIds.length ? assignmentIds : ['dummy']), where('user_id', '==', userId));
-    const submissionsSnapshot = await getDocs(submissionsQuery);
-    const submissionsMap = {};
-    submissionsSnapshot.docs.forEach(s => {
-      const data = s.data();
-      submissionsMap[data.assignment_id] = {
-        id: s.id,
-        status: data.status,
-        grade: data.grade
-      };
-    });
+    const assignments = [];
+    for (const docSnapshot of enrollmentsSnap.docs) {
+      const e = docSnapshot.data();
+      const assignmentsQuery = query(assignmentsCollection, where('course_id', '==', e.course_id), orderBy('due_date'));
+      const assignmentsSnap = await getDocs(assignmentsQuery);
+      for (const aDoc of assignmentsSnap.docs) {
+        const a = aDoc.data();
+        const courseDocRef = doc(coursesCollection, e.course_id);
+        const course = await getDoc(courseDocRef);
+        const c = course.data();
+        const submissionQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', aDoc.id), where('user_id', '==', userId));
+        const submissionSnap = await getDocs(submissionQuery);
+        let submission = null;
+        if (!submissionSnap.empty) {
+          submission = submissionSnap.docs[0].data();
+        }
+        assignments.push({
+          id: aDoc.id,
+          course_id: e.course_id,
+          title: a.title,
+          description: a.description,
+          due_date: a.due_date,
+          max_points: a.max_points,
+          created_at: a.created_at,
+          course: {
+            id: e.course_id,
+            title: c.title,
+            category: c.category
+          },
+          submission
+        });
+      }
+    }
 
-    // Get courses
-    const coursesQuery = query(collection(db, 'courses'), where('__name__', 'in', courseIds.length ? courseIds : ['dummy']));
-    const coursesSnapshot = await getDocs(coursesQuery);
-    const coursesMap = {};
-    coursesSnapshot.docs.forEach(c => {
-      const data = c.data();
-      coursesMap[c.id] = {
-        title: data.title,
-        category: data.category
-      };
-    });
-
-    const formattedAssignments = assignments.map(assignment => ({
-      id: assignment.id,
-      title: assignment.title,
-      description: assignment.description,
-      due_date: assignment.due_date,
-      max_points: assignment.max_points,
-      course: {
-        id: assignment.course_id,
-        title: coursesMap[assignment.course_id]?.title,
-        category: coursesMap[assignment.course_id]?.category
-      },
-      submission: submissionsMap[assignment.id] || null
-    }));
-
-    res.json(formattedAssignments);
+    res.json(assignments);
   } catch (error) {
     console.error('Error fetching user assignments:', error);
     res.status(500).json({ error: 'Failed to fetch assignments' });
@@ -1706,15 +1647,17 @@ app.post('/api/calendar/events', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
     }
 
-    const eventRef = await addDoc(collection(db, 'custom_calendar_events'), {
+    const customCalendarEventsCollection = collection(db, 'custom_calendar_events');
+    const eventRef = doc(customCalendarEventsCollection);
+    await setDoc(eventRef, {
       user_id: userId,
-      title: title,
-      description: description,
-      event_date: Timestamp.fromDate(new Date(date)),
+      title,
+      description,
+      event_date: new Date(date), // Store as Date object
       event_time: time,
       event_type: type,
-      created_at: Timestamp.now(),
-      updated_at: Timestamp.now()
+      created_at: Timestamp.now(), // Client SDK Timestamp
+      updated_at: Timestamp.now() // Client SDK Timestamp
     });
 
     res.status(201).json({
@@ -1740,24 +1683,19 @@ app.put('/api/calendar/events/:id', authenticateToken, async (req, res) => {
     const { title, description, date, time, type } = req.body;
 
     const eventRef = doc(db, 'custom_calendar_events', id);
-    const eventSnap = await getDoc(eventRef);
+    const eventDoc = await getDoc(eventRef);
 
-    if (!eventSnap.exists()) {
+    if (!eventDoc.exists() || eventDoc.data().user_id !== userId) {
       return res.status(404).json({ error: 'Calendar event not found or unauthorized' });
     }
 
-    const eventData = eventSnap.data();
-    if (eventData.user_id !== userId) {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-
     await updateDoc(eventRef, {
-      title: title,
-      description: description,
-      event_date: Timestamp.fromDate(new Date(date)),
+      title,
+      description,
+      event_date: new Date(date), // Store as Date object
       event_time: time,
       event_type: type,
-      updated_at: Timestamp.now()
+      updated_at: Timestamp.now() // Client SDK Timestamp
     });
 
     res.json({ message: 'Calendar event updated successfully' });
@@ -1774,15 +1712,10 @@ app.delete('/api/calendar/events/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
 
     const eventRef = doc(db, 'custom_calendar_events', id);
-    const eventSnap = await getDoc(eventRef);
+    const eventDoc = await getDoc(eventRef);
 
-    if (!eventSnap.exists()) {
+    if (!eventDoc.exists() || eventDoc.data().user_id !== userId) {
       return res.status(404).json({ error: 'Calendar event not found or unauthorized' });
-    }
-
-    const eventData = eventSnap.data();
-    if (eventData.user_id !== userId) {
-      return res.status(403).json({ error: 'Unauthorized' });
     }
 
     await deleteDoc(eventRef);
@@ -1794,163 +1727,152 @@ app.delete('/api/calendar/events/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// GET /api/auth/me - Get current user info (for calendar frontend)
-app.get('/api/auth/me', authenticateToken, async (req, res) => {
-  try {
-    const user = req.user;
 
-    res.json({
-      id: user.id,
-      first_name: user.first_name,
-      last_name: user.last_name,
-      email: user.email,
-      account_type: user.account_type,
-      profile_image: user.profile_image,
-      company: user.company,
-      website: user.website,
-      bio: user.bio,
-      is_active: user.is_active,
-      email_verified: user.email_verified,
-      created_at: user.created_at,
-      last_login: user.last_login
-    });
-  } catch (error) {
-    console.error('Error fetching user info:', error);
-    res.status(500).json({ error: 'Failed to fetch user information' });
+// ==================== COURSE ENROLLMENT REQUESTS ====================
+app.post('/api/enroll-request',
+  authenticateToken,
+  paymentScreenshotUpload.single('paymentScreenshot'),
+  async (req, res) => {
+    try {
+      const userId = req.user ? req.user.id : null;
+      const {
+        courseId,
+        fullName,
+        email,
+        phone,
+        address,
+        city,
+        state,
+        pincode,
+        paymentMethod,
+        transactionId
+       } = req.body;
+
+      // Validate required fields
+      const requiredFields = ['courseId', 'fullName', 'email', 'phone', 'address',
+                             'city', 'state', 'pincode', 'paymentMethod', 'transactionId'];
+
+      const missingFields = requiredFields.filter(field => !req.body[field]);
+
+      if (missingFields.length > 0) {
+        return res.status(400).json({
+          error: `Missing required fields: ${missingFields.join(', ')}`,
+          missingFields
+        });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ error: 'Payment screenshot is required' });
+      }
+
+      const courseEnrollRequestsCollection = collection(db, 'course_enroll_requests');
+      const requestRef = doc(courseEnrollRequestsCollection);
+      await setDoc(requestRef, {
+        user_id: userId,
+        course_id: courseId,
+        full_name: fullName,
+        email,
+        phone,
+        address,
+        city,
+        state,
+        pincode,
+        payment_method: paymentMethod,
+        transaction_id: transactionId,
+        payment_screenshot: `/uploads/payments/${req.file.filename}`,
+        created_at: Timestamp.now(), // Client SDK Timestamp
+        status: 'pending' // Initial status
+      });
+
+      res.status(201).json({
+        message: 'Enrollment request submitted successfully',
+        requestId: requestRef.id
+      });
+
+    } catch (error) {
+      console.error('Enrollment request error:', error);
+      res.status(500).json({ error: 'Server error', details: error.message });
+    }
   }
-});
-
-// // ==================== COURSE ENROLLMENT REQUESTS ====================
-// app.post('/api/enroll-request', 
-//   authenticateToken, 
-//   paymentScreenshotUpload.single('paymentScreenshot'), 
-//   async (req, res) => {
-//     try {
-//       const userId = req.user ? req.user.id : null;
-//       const {
-//         courseId,
-//         fullName,
-//         email,
-//         phone,
-//         address,
-//         city,
-//         state,
-//         pincode,
-//         paymentMethod,
-//         transactionId
-//       } = req.body;
-
-//       // Validate required fields
-//       const requiredFields = ['courseId', 'fullName', 'email', 'phone', 'address', 
-//                              'city', 'state', 'pincode', 'paymentMethod', 'transactionId'];
-      
-//       const missingFields = requiredFields.filter(field => !req.body[field]);
-      
-//       if (missingFields.length > 0) {
-//         return res.status(400).json({ 
-//           error: `Missing required fields: ${missingFields.join(', ')}`,
-//           missingFields
-//         });
-//       }
-
-//       if (!req.file) {
-//         return res.status(400).json({ error: 'Payment screenshot is required' });
-//       }
-
-//       // Insert into database
-//       const requestRef = await addDoc(collection(db, 'course_enroll_requests'), {
-//         user_id: userId,
-//         course_id: courseId,
-//         full_name: fullName,
-//         email: email,
-//         phone: phone,
-//         address: address,
-//         city: city,
-//         state: state,
-//         pincode: pincode,
-//         payment_method: paymentMethod,
-//         transaction_id: transactionId,
-//         payment_screenshot: `/uploads/payments/${req.file.filename}`,
-//         created_at: Timestamp.now()
-//       });
-
-//       res.status(201).json({
-//         message: 'Enrollment request submitted successfully',
-//         requestId: requestRef.id
-//       });
-
-//     } catch (error) {
-//       console.error('Enrollment request error:', error);
-//       res.status(500).json({ error: 'Server error', details: error.message }); 
-//     }
-//   }
-// );
+);
 
 // ==================== COURSES ROUTES ====================
 
 // Replace the existing /api/courses endpoint
 app.get('/api/courses', async (req, res) => {
   try {
-    const coursesQuery = query(collection(db, 'courses'), where('is_active', '==', true), orderBy('created_at', 'desc'));
-    const coursesSnapshot = await getDocs(coursesQuery);
-    const courses = coursesSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+    const coursesCollection = collection(db, 'courses');
+    const coursesQuery = query(coursesCollection, where('is_active', '==', true), orderBy('created_at', 'desc'));
+    const coursesSnap = await getDocs(coursesQuery);
 
-    const formattedCourses = courses.map(course => ({
-      ...course,
-      price: course.price !== null ? `₹${parseFloat(course.price).toFixed(2)}` : '₹0.00'
-    }));
+    const formattedCourses = coursesSnap.docs.map(docSnapshot => {
+      const course = docSnapshot.data();
+      return {
+        id: docSnapshot.id,
+        title: course.title,
+        description: course.description,
+        instructorName: course.instructor_name,
+        durationWeeks: course.duration_weeks,
+        difficultyLevel: course.difficulty_level,
+        category: course.category,
+        price: course.price !== null ? `₹${parseFloat(course.price).toFixed(2)}` : '₹0.00',
+        thumbnail: course.thumbnail,
+        isActive: course.is_active
+      };
+    });
 
     res.json(formattedCourses);
 
   } catch (error) {
     console.error('Get courses error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Server error',
       details: error.message
     });
   }
 });
 
-// Get user's enrolled courses
+// Get user's enrolled courses (duplicate from above, but kept if clients use this path)
 app.get('/api/enrollments/my-courses', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const enrollmentsQuery = query(collection(db, 'enrollments'), where('user_id', '==', userId), where('status', '==', 'active'), orderBy('enrollment_date', 'desc'));
-    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
-    const enrollments = enrollmentsSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+    const enrollmentsCollection = collection(db, 'enrollments');
+    const coursesCollection = collection(db, 'courses');
 
-    const courseIds = enrollments.map(e => e.course_id);
-    const coursesQuery = query(collection(db, 'courses'), where('__name__', 'in', courseIds.length ? courseIds : ['dummy']));
-    const coursesSnapshot = await getDocs(coursesQuery);
-    const coursesMap = {};
-    coursesSnapshot.docs.forEach(c => {
-      coursesMap[c.id] = c.data();
-    });
+    const enrollmentsQuery = query(enrollmentsCollection, where('user_id', '==', userId), where('status', '==', 'active'), orderBy('enrollment_date', 'desc'));
+    const enrollmentsSnap = await getDocs(enrollmentsQuery);
 
-    const formattedEnrollments = enrollments.map(enrollment => ({
-      id: enrollment.id,
-      userId: enrollment.user_id,
-      courseId: enrollment.course_id,
-      progress: enrollment.progress,
-      enrollmentDate: enrollment.enrollment_date,
-      completionDate: enrollment.completion_date,
-      status: enrollment.status,
-      course: {
-        id: enrollment.course_id,
-        title: coursesMap[enrollment.course_id]?.title,
-        description: coursesMap[enrollment.course_id]?.description,
-        instructorName: coursesMap[enrollment.course_id]?.instructor_name,
-        durationWeeks: coursesMap[enrollment.course_id]?.duration_weeks,
-        difficultyLevel: coursesMap[enrollment.course_id]?.difficulty_level,
-        category: coursesMap[enrollment.course_id]?.category,
-        price: coursesMap[enrollment.course_id]?.price,
-        thumbnail: coursesMap[enrollment.course_id]?.thumbnail,
-        isActive: coursesMap[enrollment.course_id]?.is_active
-      }
-    }));
+    const myCourses = [];
+    for (const docSnapshot of enrollmentsSnap.docs) {
+      const e = docSnapshot.data();
+      const courseDocRef = doc(coursesCollection, e.course_id);
+      const course = await getDoc(courseDocRef);
+      const c = course.data();
+      myCourses.push({
+        id: docSnapshot.id,
+        userId: e.user_id,
+        courseId: e.course_id,
+        progress: e.progress,
+        enrollmentDate: e.enrollment_date,
+        completionDate: e.completion_date,
+        status: e.status,
+        course: {
+          id: e.course_id,
+          title: c.title,
+          description: c.description,
+          instructorName: c.instructor_name,
+          durationWeeks: c.duration_weeks,
+          difficultyLevel: c.difficulty_level,
+          category: c.category,
+          price: c.price,
+          thumbnail: c.thumbnail,
+          isActive: c.is_active
+        }
+      });
+    }
 
-    res.json(formattedEnrollments);
+    res.json(myCourses);
 
   } catch (error) {
     console.error('Get my courses error:', error);
@@ -1964,38 +1886,41 @@ app.post('/api/courses/enroll', authenticateToken, async (req, res) => {
     const { courseId } = req.body;
     const userId = req.user.id;
 
-    // Check if already enrolled
-    const enrollmentQuery = query(collection(db, 'enrollments'), where('user_id', '==', userId), where('course_id', '==', courseId));
-    const enrollmentSnapshot = await getDocs(enrollmentQuery);
+    const enrollmentsCollection = collection(db, 'enrollments');
+    const coursesCollection = collection(db, 'courses');
+    const userStatsCollection = collection(db, 'user_stats');
 
-    if (!enrollmentSnapshot.empty) {
+    // Check if already enrolled
+    const existingEnrollmentQuery = query(enrollmentsCollection, where('user_id', '==', userId), where('course_id', '==', courseId));
+    const existingEnrollmentSnap = await getDocs(existingEnrollmentQuery);
+
+    if (!existingEnrollmentSnap.empty) {
       return res.status(400).json({ error: 'Already enrolled in this course' });
     }
 
     // Check if course exists
-    const courseSnap = await getDoc(doc(db, 'courses', courseId));
-    if (!courseSnap.exists() || !courseSnap.data().is_active) {
+    const courseDocRef = doc(coursesCollection, courseId);
+    const course = await getDoc(courseDocRef);
+
+    if (!course.exists() || !course.data().is_active) {
       return res.status(404).json({ error: 'Course not found' });
     }
 
     // Create enrollment
-    await addDoc(collection(db, 'enrollments'), {
+    const enrollmentRef = doc(enrollmentsCollection);
+    await setDoc(enrollmentRef, {
       user_id: userId,
       course_id: courseId,
-      enrollment_date: Timestamp.now(),
+      enrollment_date: Timestamp.now(), // Client SDK Timestamp
       progress: 0,
-      status: 'active',
-      completion_date: null
+      status: 'active'
     });
 
     // Update user stats
-    const statsQuery = query(collection(db, 'user_stats'), where('user_id', '==', userId));
-    const statsSnapshot = await getDocs(statsQuery);
-    if (!statsSnapshot.empty) {
-      await updateDoc(statsSnapshot.docs[0].ref, {
-        courses_enrolled: increment(1)
-      });
-    }
+    const userStatsRef = doc(userStatsCollection, userId);
+    await updateDoc(userStatsRef, {
+      courses_enrolled: FieldValue.increment(1) // Client SDK FieldValue
+    });
 
     res.status(201).json({ message: 'Successfully enrolled in course' });
 
@@ -2005,73 +1930,100 @@ app.post('/api/courses/enroll', authenticateToken, async (req, res) => {
   }
 });
 
-// ==================== ASSIGNMENTS ROUTES ====================
+// Get enrolled courses (dedicated for dashboard, consistent with original structure)
+app.get('/api/courses/enrolled', authenticateToken, async (req, res) => {
+  try {
+    const enrollmentsCollection = collection(db, 'enrollments');
+    const coursesCollection = collection(db, 'courses');
 
-// GET /auth/me - Get current user info
-app.get('/auth/me', authenticateToken, (req, res) => {
-  const user = req.user;
-  res.json({
-    id: user.id,
-    first_name: user.first_name,
-    last_name: user.last_name,
-    email: user.email,
-    phone: user.phone,
-    account_type: user.account_type,
-    profile_image: user.profile_image,
-    company: user.company,
-    website: user.website,
-    bio: user.bio,
-    is_active: user.is_active,
-    email_verified: user.email_verified
-  });
+    const enrollmentsQuery = query(
+      enrollmentsCollection,
+      where('user_id', '==', req.user.id),
+      where('status', '==', 'active'),
+      orderBy('enrollment_date', 'desc')
+    );
+    const enrollmentsSnap = await getDocs(enrollmentsQuery);
+
+    const courses = [];
+    for (const docSnapshot of enrollmentsSnap.docs) {
+      const e = docSnapshot.data();
+      const courseDocRef = doc(coursesCollection, e.course_id);
+      const course = await getDoc(courseDocRef);
+      const c = course.data();
+      courses.push({
+        id: e.course_id,
+        title: c.title,
+        category: c.category,
+        difficulty_level: c.difficulty_level,
+        progress: e.progress,
+        isEnrolled: true
+      });
+    }
+
+    res.json(courses);
+  } catch (error) {
+    console.error('Error fetching enrolled courses:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
+
+
+// ==================== ASSIGNMENTS ROUTES ====================
 
 // GET /assignments/my-assignments - Get user's assignments
 app.get('/assignments/my-assignments', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Get enrollments
-    const enrollmentsQuery = query(collection(db, 'enrollments'), where('user_id', '==', userId), where('status', '==', 'active'));
-    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
-    const courseIds = enrollmentsSnapshot.docs.map(e => e.data().course_id);
+    const enrollmentsCollection = collection(db, 'enrollments');
+    const coursesCollection = collection(db, 'courses');
+    const assignmentsCollection = collection(db, 'assignments');
+    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
 
-    // Get assignments
-    const assignmentsQuery = query(collection(db, 'assignments'), where('course_id', 'in', courseIds.length ? courseIds : ['dummy']), orderBy('due_date', 'asc'));
-    const assignmentsSnapshot = await getDocs(assignmentsQuery);
-    const assignments = assignmentsSnapshot.docs.map(a => ({id: a.id, ...a.data()}));
+    const enrollmentsQuery = query(enrollmentsCollection, where('user_id', '==', userId));
+    const enrollmentsSnap = await getDocs(enrollmentsQuery);
 
-    // Get submissions
-    const assignmentIds = assignments.map(a => a.id);
-    const submissionsQuery = query(collection(db, 'assignment_submissions'), where('assignment_id', 'in', assignmentIds.length ? assignmentIds : ['dummy']), where('user_id', '==', userId));
-    const submissionsSnapshot = await getDocs(submissionsQuery);
-    const submissionsMap = {};
-    submissionsSnapshot.docs.forEach(s => {
-      const data = s.data();
-      submissionsMap[data.assignment_id] = {
-        id: s.id,
-        content: data.content,
-        file_path: data.file_path,
-        submitted_at: data.submitted_at,
-        grade: data.grade,
-        feedback: data.feedback,
-        status: data.status
-      };
-    });
+    const results = [];
+    for (const docSnapshot of enrollmentsSnap.docs) {
+      const e = docSnapshot.data();
+      const courseDocRef = doc(coursesCollection, e.course_id);
+      const course = await getDoc(courseDocRef);
+      const c = course.data();
+      if (c && c.is_active) { // Check if course exists and is active
+        const assignmentsQuery = query(assignmentsCollection, where('course_id', '==', e.course_id), orderBy('due_date'));
+        const assignmentsSnap = await getDocs(assignmentsQuery);
+        for (const aDoc of assignmentsSnap.docs) {
+          const a = aDoc.data();
+          const submissionQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', aDoc.id), where('user_id', '==', userId));
+          const submissionSnap = await getDocs(submissionQuery);
+          let sub = null;
+          if (!submissionSnap.empty) {
+            sub = submissionSnap.docs[0].data();
+          }
+          results.push({
+            id: aDoc.id,
+            course_id: e.course_id,
+            title: a.title,
+            description: a.description,
+            due_date: a.due_date,
+            max_points: a.max_points,
+            created_at: a.created_at,
+            course_title: c.title,
+            course_category: c.category,
+            submission_id: sub ? submissionSnap.docs[0].id : null,
+            submission_content: sub ? sub.content : null,
+            submission_file_path: sub ? sub.file_path : null,
+            submitted_at: sub ? sub.submitted_at : null,
+            grade: sub ? sub.grade : null,
+            feedback: sub ? sub.feedback : null,
+            submission_status: sub ? sub.status : null
+          });
+        }
+      }
+    }
 
-    // Get courses
-    const coursesQuery = query(collection(db, 'courses'), where('__name__', 'in', courseIds.length ? courseIds : ['dummy']));
-    const coursesSnapshot = await getDocs(coursesQuery);
-    const coursesMap = {};
-    coursesSnapshot.docs.forEach(c => {
-      const data = c.data();
-      coursesMap[c.id] = {
-        title: data.title,
-        category: data.category
-      };
-    });
-
-    const formattedAssignments = assignments.map(row => ({
+    // Format results
+    const assignments = results.map(row => ({
       id: row.id,
       course_id: row.course_id,
       title: row.title,
@@ -2081,67 +2033,69 @@ app.get('/assignments/my-assignments', authenticateToken, async (req, res) => {
       created_at: row.created_at,
       course: {
         id: row.course_id,
-        title: coursesMap[row.course_id]?.title,
-        category: coursesMap[row.course_id]?.category
+        title: row.course_title,
+        category: row.course_category
       },
-      submission: submissionsMap[row.id] || null
+      submission: row.submission_id ? {
+        id: row.submission_id,
+        content: row.submission_content,
+        file_path: row.submission_file_path,
+        submitted_at: row.submitted_at,
+        grade: row.grade,
+        feedback: row.feedback,
+        status: row.submission_status
+      } : null
     }));
 
-    res.json(formattedAssignments);
+    res.json(assignments);
   } catch (error) {
-    console.error('Error fetching assignments:', error);
+    console.error('Database error:', error);
     res.status(500).json({ error: 'Database error' });
   }
 });
 
 // GET /assignments/all - Get all assignments (admin only)
-app.get('/assignments/all', authenticateToken, async (req, res) => {
+app.get('/assignments/all', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    if (req.user.account_type !== 'admin') {
-      return res.status(403).json({ error: 'Access denied. Admin only.' });
-    }
+    const assignmentsCollection = collection(db, 'assignments');
+    const coursesCollection = collection(db, 'courses');
+    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
 
-    const assignmentsQuery = query(collection(db, 'assignments'), orderBy('due_date', 'asc'));
-    const assignmentsSnapshot = await getDocs(assignmentsQuery);
-    const assignments = assignmentsSnapshot.docs.map(a => ({id: a.id, ...a.data()}));
-
-    const courseIds = [...new Set(assignments.map(a => a.course_id))];
-    const coursesQuery = query(collection(db, 'courses'), where('__name__', 'in', courseIds.length ? courseIds : ['dummy']));
-    const coursesSnapshot = await getDocs(coursesQuery);
-    const coursesMap = {};
-    coursesSnapshot.docs.forEach(c => {
-      const data = c.data();
-      coursesMap[c.id] = {
-        title: data.title,
-        category: data.category
-      };
+    const assignmentsSnap = await getDocs(assignmentsCollection);
+    const results = [];
+    const promises = assignmentsSnap.docs.map(async (aDoc) => {
+      const a = aDoc.data();
+      const courseDocRef = doc(coursesCollection, a.course_id);
+      const course = await getDoc(courseDocRef);
+      const c = course.data();
+      if (c && c.is_active) {
+        const submissionsQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', aDoc.id));
+        const submissionsSnap = await getDocs(submissionsQuery);
+        let submission_count = submissionsSnap.size;
+        let graded_count = 0;
+        submissionsSnap.docs.forEach(s => {
+          if (s.data().status === 'graded') graded_count++;
+        });
+        results.push({
+          id: aDoc.id,
+          course_id: a.course_id,
+          title: a.title,
+          description: a.description,
+          due_date: a.due_date,
+          max_points: a.max_points,
+          created_at: a.created_at,
+          course_title: c.title,
+          course_category: c.category,
+          submission_count,
+          graded_count
+        });
+      }
     });
 
-    const assignmentIds = assignments.map(a => a.id);
-    const submissionsQuery = query(collection(db, 'assignment_submissions'), where('assignment_id', 'in', assignmentIds.length ? assignmentIds : ['dummy']));
-    const submissionsSnapshot = await getDocs(submissionsQuery);
-    const submissions = submissionsSnapshot.docs.map(s => s.data());
-
-    const formattedAssignments = assignments.map(row => ({
-      id: row.id,
-      course_id: row.course_id,
-      title: row.title,
-      description: row.description,
-      due_date: row.due_date,
-      max_points: row.max_points,
-      created_at: row.created_at,
-      course: {
-        id: row.course_id,
-        title: coursesMap[row.course_id]?.title,
-        category: coursesMap[row.course_id]?.category
-      },
-      submission_count: submissions.filter(s => s.assignment_id === row.id).length,
-      graded_count: submissions.filter(s => s.assignment_id === row.id && s.status === 'graded').length
-    }));
-
-    res.json(formattedAssignments);
-  } catch (error) {
-    console.error('Error fetching assignments:', error);
+    await Promise.all(promises);
+    res.json(results);
+  } catch (err) {
+    console.error('Database error:', err);
     res.status(500).json({ error: 'Database error' });
   }
 });
@@ -2160,40 +2114,42 @@ app.post('/assignments/submit', authenticateToken, assignmentUpload.single('file
   }
 
   try {
+    const assignmentsCollection = collection(db, 'assignments');
+    const enrollmentsCollection = collection(db, 'enrollments');
+    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
+
     // Check if assignment exists and user is enrolled
-    const assignmentSnap = await getDoc(doc(db, 'assignments', assignment_id));
-    if (!assignmentSnap.exists()) {
+    const assignmentDocRef = doc(assignmentsCollection, assignment_id);
+    const aDoc = await getDoc(assignmentDocRef);
+
+    if (!aDoc.exists()) {
       return res.status(404).json({ error: 'Assignment not found' });
     }
 
-    const assignment = assignmentSnap.data();
-    const courseId = assignment.course_id;
+    const course_id = aDoc.data().course_id;
 
-    const enrollmentQuery = query(collection(db, 'enrollments'), where('user_id', '==', req.user.id), where('course_id', '==', courseId));
-    const enrollmentSnapshot = await getDocs(enrollmentQuery);
+    const enrollmentQuery = query(enrollmentsCollection, where('course_id', '==', course_id), where('user_id', '==', req.user.id));
+    const enrollmentSnap = await getDocs(enrollmentQuery);
 
-    if (enrollmentSnapshot.empty) {
-      return res.status(404).json({ error: 'Not enrolled in course' });
+    if (enrollmentSnap.empty) {
+      return res.status(403).json({ error: 'User not enrolled in this course' });
     }
 
-    // Check if already submitted
-    const submissionQuery = query(collection(db, 'assignment_submissions'), where('assignment_id', '==', assignment_id), where('user_id', '==', req.user.id));
-    const submissionSnapshot = await getDocs(submissionQuery);
+    const existingSubmissionQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', assignment_id), where('user_id', '==', req.user.id));
+    const existingSubmissionSnap = await getDocs(existingSubmissionQuery);
 
-    if (!submissionSnapshot.empty) {
+    if (!existingSubmissionSnap.empty) {
       return res.status(400).json({ error: 'Assignment already submitted' });
     }
 
-    // Insert submission
-    const submissionRef = await addDoc(collection(db, 'assignment_submissions'), {
-      assignment_id: assignment_id,
+    const submissionRef = doc(assignmentSubmissionsCollection);
+    await setDoc(submissionRef, {
+      assignment_id,
       user_id: req.user.id,
       content: content || '',
-      file_path: file_path,
-      submitted_at: Timestamp.now(),
-      status: 'submitted',
-      grade: null,
-      feedback: null
+      file_path,
+      submitted_at: Timestamp.now(), // Client SDK Timestamp
+      status: 'submitted'
     });
 
     res.json({
@@ -2201,9 +2157,9 @@ app.post('/assignments/submit', authenticateToken, assignmentUpload.single('file
       message: 'Assignment submitted successfully',
       submission_id: submissionRef.id
     });
-  } catch (error) {
-    console.error('Error submitting assignment:', error);
-    res.status(500).json({ error: 'Server error' });
+  } catch (err) {
+    console.error('Database error:', err);
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
@@ -2212,41 +2168,40 @@ app.get('/assignments/download-submission/:id', authenticateToken, async (req, r
   const submissionId = req.params.id;
 
   try {
-    const submissionSnap = await getDoc(doc(db, 'assignment_submissions', submissionId));
-    if (!submissionSnap.exists()) {
+    const submissionDocRef = doc(db, 'assignment_submissions', submissionId);
+    const sDoc = await getDoc(submissionDocRef);
+
+    if (!sDoc.exists()) {
       return res.status(404).json({ error: 'Submission not found' });
     }
 
-    const submission = submissionSnap.data();
+    const s = sDoc.data();
 
-    const assignmentSnap = await getDoc(doc(db, 'assignments', submission.assignment_id));
-    const assignment = assignmentSnap.data();
+    const assignmentDocRef = doc(db, 'assignments', s.assignment_id);
+    await getDoc(assignmentDocRef); // Ensure assignment exists, though not used further
 
-    // Check permissions - user can download their own submission or admin can download any
-    if (submission.user_id !== req.user.id && req.user.account_type !== 'admin') {
+    if (s.user_id !== req.user.id && req.user.account_type !== 'admin') {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    if (!submission.file_path) {
+    if (!s.file_path) {
       return res.status(404).json({ error: 'No file attached to this submission' });
     }
 
-    const filePath = path.join(__dirname, 'uploads', 'assignments', submission.file_path);
+    const filePath = path.join(assignmentsDir, s.file_path); // Use the correct local directory
 
-    // Check if file exists
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'File not found' });
     }
 
-    // Set headers and send file
-    res.setHeader('Content-Disposition', `attachment; filename="${submission.file_path}"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${s.file_path}"`);
     res.setHeader('Content-Type', 'application/octet-stream');
 
     const fileStream = fs.createReadStream(filePath);
     fileStream.pipe(res);
-  } catch (error) {
-    console.error('Error downloading submission:', error);
-    res.status(500).json({ error: 'Server error' });
+  } catch (err) {
+    console.error('Database error:', err);
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
@@ -2255,39 +2210,55 @@ app.get('/assignments/course/:courseId', authenticateToken, async (req, res) => 
   const courseId = req.params.courseId;
 
   try {
-    // Check if user is enrolled or admin
-    const enrollmentQuery = query(collection(db, 'enrollments'), where('user_id', '==', req.user.id), where('course_id', '==', courseId));
-    const enrollmentSnapshot = await getDocs(enrollmentQuery);
+    const enrollmentsCollection = collection(db, 'enrollments');
+    const assignmentsCollection = collection(db, 'assignments');
+    const coursesCollection = collection(db, 'courses');
+    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
 
-    if (enrollmentSnapshot.empty && req.user.account_type !== 'admin') {
+    const enrollmentQuery = query(enrollmentsCollection, where('course_id', '==', courseId), where('user_id', '==', req.user.id));
+    const enrollmentSnap = await getDocs(enrollmentQuery);
+
+    if (enrollmentSnap.empty && req.user.account_type !== 'admin') {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const assignmentsQuery = query(collection(db, 'assignments'), where('course_id', '==', courseId), orderBy('due_date', 'asc'));
-    const assignmentsSnapshot = await getDocs(assignmentsQuery);
-    const assignments = assignmentsSnapshot.docs.map(a => ({id: a.id, ...a.data()}));
+    const assignmentsQuery = query(assignmentsCollection, where('course_id', '==', courseId), orderBy('due_date'));
+    const assignmentsSnap = await getDocs(assignmentsQuery);
 
-    const courseSnap = await getDoc(doc(db, 'courses', courseId));
-    const course = courseSnap.data();
-
-    const assignmentIds = assignments.map(a => a.id);
-    const submissionsQuery = query(collection(db, 'assignment_submissions'), where('assignment_id', 'in', assignmentIds.length ? assignmentIds : ['dummy']), where('user_id', '==', req.user.id));
-    const submissionsSnapshot = await getDocs(submissionsQuery);
-    const submissionsMap = {};
-    submissionsSnapshot.docs.forEach(s => {
-      const data = s.data();
-      submissionsMap[data.assignment_id] = {
-        id: s.id,
-        content: data.content,
-        file_path: data.file_path,
-        submitted_at: data.submitted_at,
-        grade: data.grade,
-        feedback: data.feedback,
-        status: data.status
-      };
+    const results = [];
+    const promises = assignmentsSnap.docs.map(async (aDoc) => {
+      const a = aDoc.data();
+      const submissionQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', aDoc.id), where('user_id', '==', req.user.id));
+      const submissionSnap = await getDocs(submissionQuery);
+      let sub = null;
+      if (!submissionSnap.empty) {
+        sub = submissionSnap.docs[0].data();
+      }
+      const courseDocRef = doc(coursesCollection, courseId);
+      const course = await getDoc(courseDocRef);
+      const c = course.data();
+      results.push({
+        id: aDoc.id,
+        course_id: courseId,
+        title: a.title,
+        description: a.description,
+        due_date: a.due_date,
+        max_points: a.max_points,
+        created_at: a.created_at,
+        course_title: c.title,
+        course_category: c.category,
+        submission_id: sub ? submissionSnap.docs[0].id : null,
+        submission_content: sub ? sub.content : null,
+        submission_file_path: sub ? sub.file_path : null,
+        submitted_at: sub ? sub.submitted_at : null,
+        grade: sub ? sub.grade : null,
+        feedback: sub ? sub.feedback : null,
+        submission_status: sub ? sub.status : null
+      });
     });
 
-    const formattedAssignments = assignments.map(row => ({
+    await Promise.all(promises);
+    const assignments = results.map(row => ({
       id: row.id,
       course_id: row.course_id,
       title: row.title,
@@ -2297,138 +2268,358 @@ app.get('/assignments/course/:courseId', authenticateToken, async (req, res) => 
       created_at: row.created_at,
       course: {
         id: row.course_id,
-        title: course.title,
-        category: course.category
+        title: row.course_title,
+        category: row.course_category
       },
-      submission: submissionsMap[row.id] || null
+      submission: row.submission_id ? {
+        id: row.submission_id,
+        content: row.submission_content,
+        file_path: row.submission_file_path,
+        submitted_at: row.submitted_at,
+        grade: row.grade,
+        feedback: row.feedback,
+        status: row.submission_status
+      } : null
     }));
 
-    res.json(formattedAssignments);
-  } catch (error) {
-    console.error('Error fetching assignments for course:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.json(assignments);
+  } catch (err) {
+    console.error('Database error:', err);
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
 // PUT /assignments/grade/:submissionId - Grade assignment (admin/instructor only)
-app.put('/assignments/grade/:submissionId', authenticateToken, async (req, res) => {
+app.put('/assignments/grade/:submissionId', authenticateToken, requireAdmin, async (req, res) => {
   const submissionId = req.params.submissionId;
   const { grade, feedback } = req.body;
 
+  // Validate grade
+  if (grade < 0 || grade > 100) {
+    return res.status(400).json({ error: 'Grade must be between 0 and 100' });
+  }
+
   try {
-    if (req.user.account_type !== 'admin') {
-      return res.status(403).json({ error: 'Access denied. Admin only.' });
-    }
-
-    // Validate grade
-    if (grade < 0 || grade > 100) {
-      return res.status(400).json({ error: 'Grade must be between 0 and 100' });
-    }
-
     const submissionRef = doc(db, 'assignment_submissions', submissionId);
-    const submissionSnap = await getDoc(submissionRef);
-
-    if (!submissionSnap.exists()) {
-      return res.status(404).json({ error: 'Submission not found' });
-    }
-
     await updateDoc(submissionRef, {
-      grade: grade,
+      grade,
       feedback: feedback || '',
       status: 'graded'
     });
-
     res.json({
       success: true,
       message: 'Assignment graded successfully'
     });
+  } catch (err) {
+    console.error('Database error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// ==================== INTERNSHIPS SECTION ROUTES ====================
+
+// GET /api/internships - Fetch all internships
+app.get('/api/internships', async (req, res) => {
+  try {
+    const internshipsCollection = collection(db, 'internships');
+    const internshipsQuery = query(internshipsCollection, orderBy('posted_at', 'desc'));
+    const internshipsSnap = await getDocs(internshipsQuery);
+
+    const data = internshipsSnap.docs.map(docSnapshot => {
+      const i = docSnapshot.data();
+      return {
+        id: docSnapshot.id,
+        title: i.title,
+        company: i.company,
+        location: i.location,
+        duration: i.duration,
+        type: i.type,
+        level: i.level,
+        description: i.description,
+        requirements: i.requirements,
+        benefits: i.benefits,
+        posted_at: i.posted_at,
+        applications_count: i.applications_count,
+        spots_available: i.spots_available
+      };
+    });
+
+    res.json(data);
   } catch (error) {
-    console.error('Error grading assignment:', error);
+    console.error('Error fetching internships:', error);
+    res.status(500).json({ message: 'Internal server error while fetching internships.' });
+  }
+});
+
+// GET /api/user/internship-applications - Fetch applications for the authenticated user
+app.get('/api/user/internship-applications', authenticateToken, async (req, res) => {
+  const userId = req.user.id;
+
+  if (!userId) {
+    return res.status(400).json({ message: 'User ID not found in token.' });
+  }
+
+  try {
+    const internshipSubmissionsCollection = collection(db, 'internship_submissions');
+    const internshipsCollection = collection(db, 'internships');
+
+    const applicationsQuery = query(internshipSubmissionsCollection, where('user_id', '==', userId), orderBy('submitted_at', 'desc'));
+    const applicationsSnap = await getDocs(applicationsQuery);
+
+    const parsedApplications = [];
+    for (const docSnapshot of applicationsSnap.docs) {
+      const app = docSnapshot.data();
+      const internshipDocRef = doc(internshipsCollection, app.internship_id);
+      const internship = await getDoc(internshipDocRef);
+      const i = internship.data();
+      parsedApplications.push({
+        id: docSnapshot.id,
+        internship_id: app.internship_id,
+        status: app.status,
+        submitted_at: app.submitted_at,
+        resume_url: app.resume_url,
+        cover_letter: app.cover_letter,
+        title: i.title,
+        company: i.company,
+        location: i.location,
+        duration: i.duration,
+        type: i.type,
+        level: i.level,
+        description: i.description,
+        requirements: i.requirements || '[]',
+        benefits: i.benefits || '[]',
+        applications_count: i.applications_count,
+        spots_available: i.spots_available,
+        internship_posted_at: i.posted_at
+      });
+    }
+
+    res.json(parsedApplications);
+  } catch (error) {
+    console.error('Error fetching user internship applications:', error);
+    res.status(500).json({ message: 'Internal server error while fetching your applications.' });
+  }
+});
+
+// POST /api/internships/:id/apply - Apply for an internship
+app.post('/api/internships/:id/apply', authenticateToken, async (req, res) => {
+  const { id: internshipId } = req.params;
+  const { full_name, email, phone, resume_url, cover_letter } = req.body;
+  const userId = req.user.id;
+
+  if (!full_name || !email || !resume_url) {
+    return res.status(400).json({ message: 'Full name, email, and resume link are required.' });
+  }
+
+  try {
+    const internshipsCollection = collection(db, 'internships');
+    const internshipSubmissionsCollection = collection(db, 'internship_submissions');
+
+    const internshipDocRef = doc(internshipsCollection, internshipId);
+    const internship = await getDoc(internshipDocRef);
+
+    if (!internship.exists()) {
+      return res.status(404).json({ message: 'Internship not found.' });
+    }
+
+    const i = internship.data();
+
+    if (i.spots_available <= 0) {
+      return res.status(400).json({ message: 'No available spots left for this internship.' });
+    }
+
+    const existingApplicationQuery = query(internshipSubmissionsCollection, where('internship_id', '==', internshipId), where('user_id', '==', userId));
+    const existingApplicationSnap = await getDocs(existingApplicationQuery);
+
+    if (!existingApplicationSnap.empty) {
+      return res.status(409).json({ message: 'You have already applied for this internship.' });
+    }
+
+    const newSubmissionRef = doc(internshipSubmissionsCollection); // Auto-generate ID
+    await setDoc(newSubmissionRef, {
+      internship_id: internshipId,
+      user_id: userId,
+      full_name,
+      email,
+      phone: phone || null,
+      resume_url,
+      cover_letter: cover_letter || null,
+      submitted_at: Timestamp.now(), // Client SDK Timestamp
+      status: 'pending'
+    });
+
+    await updateDoc(internshipDocRef, {
+      spots_available: FieldValue.increment(-1), // Client SDK FieldValue
+      applications_count: FieldValue.increment(1) // Client SDK FieldValue
+    });
+
+    res.status(201).json({ message: 'Internship application submitted successfully!' });
+
+  } catch (error) {
+    console.error('Error submitting internship application:', error);
+    res.status(500).json({ message: 'Internal server error during application submission.' });
+  }
+});
+
+// ==================== SERVICES ROUTES ====================
+
+// Get service categories
+app.get('/api/services/categories', async (req, res) => {
+  try {
+    const serviceCategoriesCollection = collection(db, 'service_categories');
+    const serviceSubcategoriesCollection = collection(db, 'service_subcategories');
+
+    const categoriesQuery = query(serviceCategoriesCollection, where('is_active', '==', true), orderBy('name'));
+    const categoriesSnap = await getDocs(categoriesQuery);
+
+    const categoriesWithSubs = [];
+    for (const docSnapshot of categoriesSnap.docs) {
+      const category = docSnapshot.data();
+      const subsQuery = query(serviceSubcategoriesCollection, where('category_id', '==', docSnapshot.id), where('is_active', '==', true), orderBy('name'));
+      const subsSnap = await getDocs(subsQuery);
+      categoriesWithSubs.push({
+        id: docSnapshot.id,
+        name: category.name,
+        description: category.description,
+        icon: category.icon,
+        subcategories: subsSnap.docs.map(sDoc => ({
+          id: sDoc.id,
+          categoryId: sDoc.data().category_id,
+          name: sDoc.data().name,
+          description: sDoc.data().description,
+          basePrice: sDoc.data().base_price
+        }))
+      });
+    }
+
+    res.json(categoriesWithSubs);
+
+  } catch (error) {
+    console.error('Get service categories error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Error handling middleware for multer
-app.use((error, req, res, next) => {
-  if (error instanceof multer.MulterError) {
-    if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'File too large. Maximum size is 10MB.' });
-    }
-  }
-  if (error.message.includes('Invalid file type')) {
-    return res.status(400).json({ error: error.message });
-  }
-  next(error);
-});
-
-// ==================== RESOURCES ROUTES ======================
-// GET resources for current user
-app.get('/api/resources', authenticateToken, async (req, res) => {
+// Submit service request
+app.post('/api/services/requests', authenticateToken, async (req, res) => {
   try {
+    const {
+      subcategoryId, fullName, email, phone, company, website,
+      projectDetails, budgetRange, timeline, contactMethod, additionalRequirements
+    } = req.body;
     const userId = req.user.id;
-    
-    const accountType = req.user.account_type;
-    
-    // Get all resources
-    const resourcesQuery = query(collection(db, 'resources'), orderBy('created_at', 'desc'));
-    const resourcesSnapshot = await getDocs(resourcesQuery);
-    const resources = resourcesSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
 
-    // Filter by allowed_account_types
-    const filteredResources = resources.filter(resource => {
-      const allowedTypes = JSON.parse(resource.allowed_account_types || '[]');
-      return allowedTypes.includes(accountType);
+    // Validate required fields
+    if (!subcategoryId || !fullName || !email || !phone || !projectDetails || !budgetRange || !timeline || !contactMethod) {
+      return res.status(400).json({ error: 'All required fields must be provided' });
+    }
+
+    // Check if subcategory exists
+    const subcategoryDocRef = doc(db, 'service_subcategories', subcategoryId);
+    const subcategory = await getDoc(subcategoryDocRef);
+
+    if (!subcategory.exists() || !subcategory.data().is_active) {
+      return res.status(404).json({ error: 'Service subcategory not found' });
+    }
+
+    // Create service request
+    const serviceRequestsCollection = collection(db, 'service_requests');
+    const requestRef = doc(serviceRequestsCollection);
+    await setDoc(requestRef, {
+      user_id: userId,
+      subcategory_id: subcategoryId,
+      full_name: fullName,
+      email,
+      phone,
+      company,
+      website,
+      project_details: projectDetails,
+      budget_range: budgetRange,
+      timeline,
+      contact_method: contactMethod,
+      additional_requirements: additionalRequirements,
+      created_at: Timestamp.now(), // Client SDK Timestamp
+      status: 'pending'
     });
 
-    res.json(filteredResources);
+    res.status(201).json({
+      message: 'Service request submitted successfully',
+      requestId: requestRef.id
+    });
+
   } catch (error) {
-    console.error('Error fetching resources:', error);
-    res.status(500).json({ error: 'Failed to fetch resources' });
+    console.error('Service request error:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-// GET resource download
-app.get('/api/resources/:id/download', authenticateToken, async (req, res) => {
+// Get user's service requests
+app.get('/api/services/my-requests', authenticateToken, async (req, res) => {
   try {
-    const { id } = req.params;
     const userId = req.user.id;
-    
-    const resourceSnap = await getDoc(doc(db, 'resources', id));
-    if (!resourceSnap.exists()) {
-      return res.status(404).json({ error: 'Resource not found' });
+
+    const serviceRequestsCollection = collection(db, 'service_requests');
+    const serviceSubcategoriesCollection = collection(db, 'service_subcategories');
+    const serviceCategoriesCollection = collection(db, 'service_categories');
+
+    const requestsQuery = query(serviceRequestsCollection, where('user_id', '==', userId), orderBy('created_at', 'desc'));
+    const requestsSnap = await getDocs(requestsQuery);
+
+    const formattedRequests = [];
+    for (const docSnapshot of requestsSnap.docs) {
+      const r = docSnapshot.data();
+      const subcategoryDocRef = doc(serviceSubcategoriesCollection, r.subcategory_id);
+      const subcategory = await getDoc(subcategoryDocRef);
+      const ss = subcategory.data();
+      const categoryDocRef = doc(serviceCategoriesCollection, ss.category_id);
+      const category = await getDoc(categoryDocRef);
+      const sc = category.data();
+      formattedRequests.push({
+        id: docSnapshot.id,
+        user_id: r.user_id,
+        subcategory_id: r.subcategory_id,
+        full_name: r.full_name,
+        email: r.email,
+        phone: r.phone,
+        company: r.company,
+        website: r.website,
+        project_details: r.project_details,
+        budget_range: r.budget_range,
+        timeline: r.timeline,
+        contact_method: r.contact_method,
+        additional_requirements: r.additional_requirements,
+        status: r.status,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+        category_name: sc.name,
+        subcategory_name: ss.name
+      });
     }
 
-    const resource = resourceSnap.data();
-    const allowedTypes = JSON.parse(resource.allowed_account_types || '[]');
-    if (!allowedTypes.includes(req.user.account_type)) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
+    res.json(formattedRequests.map(request => ({
+      id: request.id,
+      userId: request.user_id,
+      subcategoryId: request.subcategory_id,
+      fullName: request.full_name,
+      email: request.email,
+      phone: request.phone,
+      company: request.company,
+      website: request.website,
+      projectDetails: request.project_details,
+      budgetRange: request.budget_range,
+      timeline: request.timeline,
+      contactMethod: request.contact_method,
+      additionalRequirements: request.additional_requirements,
+      status: request.status,
+      createdAt: request.created_at,
+      updatedAt: request.updated_at,
+      categoryName: request.category_name,
+      subcategoryName: request.subcategory_name
+    })));
 
-    // Check if resource is premium and user doesn't have access
-    if (resource.is_premium && !['professional', 'business', 'agency', 'admin'].includes(req.user.account_type)) {
-      return res.status(403).json({ error: 'Premium resource requires upgraded account' });
-    }
-
-    // For demo purposes, we'll return a simple text file
-    // In a real application, you would serve the actual file
-    res.setHeader('Content-Disposition', `attachment; filename="${resource.title}.txt"`);
-    res.setHeader('Content-Type', 'text/plain');
-    
-    // Create a simple text file with resource details
-    const fileContent = `
-      Resource: ${resource.title}
-      Description: ${resource.description}
-      Type: ${resource.type}
-      Category: ${resource.category}
-      Access Level: ${resource.is_premium ? 'Premium' : 'Free'}
-      
-      This is a demo download. In a real application, this would be the actual resource file.
-    `;
-    
-    res.send(fileContent);
   } catch (error) {
-    console.error('Error downloading resource:', error);
-    res.status(500).json({ error: 'Failed to download resource' });
+    console.error('Get service requests error:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -2439,65 +2630,55 @@ app.get('/api/certificates/my-certificates', authenticateToken, async (req, res)
   try {
     const userId = req.user.id;
 
-    const certificatesQuery = query(collection(db, 'certificates'), where('user_id', '==', userId), orderBy('issued_date', 'desc'));
-    const certificatesSnapshot = await getDocs(certificatesQuery);
-    const certificates = certificatesSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+    const certificatesCollection = collection(db, 'certificates');
+    const coursesCollection = collection(db, 'courses');
+    const enrollmentsCollection = collection(db, 'enrollments');
+    const assignmentsCollection = collection(db, 'assignments');
+    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
 
-    const courseIds = certificates.map(c => c.course_id);
-    const coursesQuery = query(collection(db, 'courses'), where('__name__', 'in', courseIds.length ? courseIds : ['dummy']));
-    const coursesSnapshot = await getDocs(coursesQuery);
-    const coursesMap = {};
-    coursesSnapshot.docs.forEach(c => {
-      coursesMap[c.id] = c.data();
-    });
-
-    const enrollmentQuery = query(collection(db, 'enrollments'), where('user_id', '==', userId), where('course_id', 'in', courseIds.length ? courseIds : ['dummy']));
-    const enrollmentSnapshot = await getDocs(enrollmentQuery);
-    const enrollmentsMap = {};
-    enrollmentSnapshot.docs.forEach(e => {
-      const data = e.data();
-      enrollmentsMap[data.course_id] = data;
-    });
-
-    const assignmentIds = await getDocs(query(collection(db, 'assignments'), where('course_id', 'in', courseIds.length ? courseIds : ['dummy'])));
-    const assignmentMap = {};
-    assignmentIds.docs.forEach(a => {
-      if (!assignmentMap[a.data().course_id]) assignmentMap[a.data().course_id] = [];
-      assignmentMap[a.data().course_id].push(a.id);
-    });
+    const certificatesQuery = query(certificatesCollection, where('user_id', '==', userId), orderBy('issued_date', 'desc'));
+    const certificatesSnap = await getDocs(certificatesQuery);
 
     const formattedCertificates = [];
-    for (let cert of certificates) {
-      const course = coursesMap[cert.course_id] || {};
-      const enrollment = enrollmentsMap[cert.course_id] || {};
+    for (const docSnapshot of certificatesSnap.docs) {
+      const c = docSnapshot.data();
+      const courseDocRef = doc(coursesCollection, c.course_id);
+      const course = await getDoc(courseDocRef);
+      const co = course.data();
+      const enrollmentQuery = query(enrollmentsCollection, where('user_id', '==', userId), where('course_id', '==', c.course_id));
+      const enrollmentSnap = await getDocs(enrollmentQuery);
+      const e = enrollmentSnap.docs[0].data(); // Assuming one enrollment per user/course
 
-      // Get average grade
-      let finalGrade = 0;
-      if (assignmentMap[cert.course_id]) {
-        const subQuery = query(collection(db, 'assignment_submissions'), where('assignment_id', 'in', assignmentMap[cert.course_id]), where('user_id', '==', userId));
-        const subSnapshot = await getDocs(subQuery);
-        const grades = subSnapshot.docs.map(s => s.data().grade).filter(g => g != null);
-        finalGrade = grades.length ? grades.reduce((a, b) => a + b, 0) / grades.length : 0;
+      const assignmentsQuery = query(assignmentsCollection, where('course_id', '==', c.course_id));
+      const assignmentsSnap = await getDocs(assignmentsQuery);
+      let avgGrade = 0;
+      let count = 0;
+      for (const aDoc of assignmentsSnap.docs) {
+        const submissionQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', aDoc.id), where('user_id', '==', userId));
+        const submissionSnap = await getDocs(submissionQuery);
+        if (!submissionSnap.empty) {
+          avgGrade += submissionSnap.docs[0].data().grade || 0;
+          count++;
+        }
       }
-
       formattedCertificates.push({
-        id: cert.id,
-        userId: cert.user_id,
-        courseId: cert.course_id,
-        certificateUrl: cert.certificate_url,
-        issuedDate: cert.issued_date,
+        id: docSnapshot.id,
+        userId: c.user_id,
+        courseId: c.course_id,
+        certificateUrl: c.certificate_url,
+        issuedDate: c.issued_date,
         course: {
-          id: cert.course_id,
-          title: course.title,
-          description: course.description,
-          instructorName: course.instructor_name,
-          category: course.category,
-          difficultyLevel: course.difficulty_level
+          id: c.course_id,
+          title: co.title,
+          description: co.description,
+          instructorName: co.instructor_name,
+          category: co.category,
+          difficultyLevel: co.difficulty_level
         },
         enrollment: {
-          completionDate: enrollment.completion_date,
-          finalGrade: Math.round(finalGrade),
-          status: enrollment.status
+          completionDate: e.completion_date,
+          finalGrade: Math.round(avgGrade / count || 0),
+          status: e.status
         }
       });
     }
@@ -2516,29 +2697,33 @@ app.get('/api/certificates/:certificateId/download', authenticateToken, async (r
     const userId = req.user.id;
 
     // Verify the certificate belongs to the user
-    const certificateSnap = await getDoc(doc(db, 'certificates', certificateId));
-    if (!certificateSnap.exists() || certificateSnap.data().user_id !== userId) {
+    const certificateDocRef = doc(db, 'certificates', certificateId);
+    const certificate = await getDoc(certificateDocRef);
+
+    if (!certificate.exists() || certificate.data().user_id !== userId) {
       return res.status(404).json({ error: 'Certificate not found' });
     }
 
-    const certificate = certificateSnap.data();
+    const cert = certificate.data();
 
-    const courseSnap = await getDoc(doc(db, 'courses', certificate.course_id));
-    const course = courseSnap.data();
+    const courseDocRef = doc(db, 'courses', cert.course_id);
+    const course = await getDoc(courseDocRef);
+    const co = course.data();
 
-    const userSnap = await getDoc(doc(db, 'users', userId));
-    const user = userSnap.data();
+    const userDocRef = doc(db, 'users', userId);
+    const user = await getDoc(userDocRef);
+    const u = user.data();
 
     // If certificate_url exists, redirect to it
-    if (certificate.certificate_url) {
-      return res.redirect(certificate.certificate_url);
+    if (cert.certificate_url) {
+      return res.redirect(cert.certificate_url);
     }
 
-    // Otherwise, generate a simple JSON response (PDF generation can be added later)
+    // Otherwise, generate a simple PDF certificate
     const certificateData = {
-      recipientName: `${user.first_name} ${user.last_name}`,
-      courseName: course.title,
-      completionDate: certificate.issued_date,
+      recipientName: `${u.first_name} ${u.last_name}`,
+      courseName: co.title,
+      completionDate: cert.issued_date,
       certificateId: certificateId
     };
 
@@ -2555,62 +2740,51 @@ app.get('/api/certificates/:certificateId/download', authenticateToken, async (r
 });
 
 // Get all certificates (admin only)
-app.get('/api/certificates', authenticateToken, async (req, res) => {
+app.get('/api/certificates', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    if (req.user.account_type !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
+    const certificatesCollection = collection(db, 'certificates');
+    const coursesCollection = collection(db, 'courses');
+    const usersCollection = collection(db, 'users');
+    const enrollmentsCollection = collection(db, 'enrollments');
+
+    const certificatesQuery = query(certificatesCollection, orderBy('issued_date', 'desc'));
+    const certificatesSnap = await getDocs(certificatesQuery);
+
+    const formattedCertificates = [];
+    for (const docSnapshot of certificatesSnap.docs) {
+      const c = docSnapshot.data();
+      const courseDocRef = doc(coursesCollection, c.course_id);
+      const course = await getDoc(courseDocRef);
+      const co = course.data();
+      const userDocRef = doc(usersCollection, c.user_id);
+      const user = await getDoc(userDocRef);
+      const u = user.data();
+      const enrollmentQuery = query(enrollmentsCollection, where('user_id', '==', c.user_id), where('course_id', '==', c.course_id));
+      const enrollmentSnap = await getDocs(enrollmentQuery);
+      const e = enrollmentSnap.docs[0].data();
+      formattedCertificates.push({
+        id: docSnapshot.id,
+        userId: c.user_id,
+        courseId: c.course_id,
+        certificateUrl: c.certificate_url,
+        issuedDate: c.issued_date,
+        course: {
+          id: c.course_id,
+          title: co.title,
+          instructorName: co.instructor_name,
+          category: co.category,
+          difficultyLevel: co.difficulty_level
+        },
+        user: {
+          firstName: u.first_name,
+          lastName: u.last_name,
+          email: u.email
+        },
+        enrollment: {
+          completionDate: e.completion_date
+        }
+      });
     }
-
-    const certificatesQuery = query(collection(db, 'certificates'), orderBy('issued_date', 'desc'));
-    const certificatesSnapshot = await getDocs(certificatesQuery);
-    const certificates = certificatesSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
-
-    const courseIds = certificates.map(c => c.course_id);
-    const coursesQuery = query(collection(db, 'courses'), where('__name__', 'in', courseIds.length ? courseIds : ['dummy']));
-    const coursesSnapshot = await getDocs(coursesQuery);
-    const coursesMap = {};
-    coursesSnapshot.docs.forEach(c => {
-      coursesMap[c.id] = c.data();
-    });
-
-    const userIds = certificates.map(c => c.user_id);
-    const usersQuery = query(collection(db, 'users'), where('__name__', 'in', userIds.length ? userIds : ['dummy']));
-    const usersSnapshot = await getDocs(usersQuery);
-    const usersMap = {};
-    usersSnapshot.docs.forEach(u => {
-      usersMap[u.id] = u.data();
-    });
-
-    const enrollmentQuery = query(collection(db, 'enrollments'), where('course_id', 'in', courseIds.length ? courseIds : ['dummy']));
-    const enrollmentSnapshot = await getDocs(enrollmentQuery);
-    const enrollmentsMap = {};
-    enrollmentSnapshot.docs.forEach(e => {
-      const data = e.data();
-      enrollmentsMap[`${data.user_id}-${data.course_id}`] = data;
-    });
-
-    const formattedCertificates = certificates.map(cert => ({
-      id: cert.id,
-      userId: cert.user_id,
-      courseId: cert.course_id,
-      certificateUrl: cert.certificate_url,
-      issuedDate: cert.issued_date,
-      course: {
-        id: cert.course_id,
-        title: coursesMap[cert.course_id]?.title,
-        instructorName: coursesMap[cert.course_id]?.instructor_name,
-        category: coursesMap[cert.course_id]?.category,
-        difficultyLevel: coursesMap[cert.course_id]?.difficulty_level
-      },
-      user: {
-        firstName: usersMap[cert.user_id]?.first_name,
-        lastName: usersMap[cert.user_id]?.last_name,
-        email: usersMap[cert.user_id]?.email
-      },
-      enrollment: {
-        completionDate: enrollmentsMap[`${cert.user_id}-${cert.course_id}`]?.completion_date
-      }
-    }));
 
     res.json(formattedCertificates);
   } catch (error) {
@@ -2620,54 +2794,52 @@ app.get('/api/certificates', authenticateToken, async (req, res) => {
 });
 
 // Issue new certificate (admin only)
-app.post('/api/certificates', authenticateToken, async (req, res) => {
+app.post('/api/certificates', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    if (req.user.account_type !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
     const { userId, courseId, certificateUrl } = req.body;
 
     if (!userId || !courseId) {
       return res.status(400).json({ error: 'User ID and Course ID are required' });
     }
 
-    // Check if user has completed the course
-    const enrollmentQuery = query(collection(db, 'enrollments'), where('user_id', '==', userId), where('course_id', '==', courseId), where('status', '==', 'completed'));
-    const enrollmentSnapshot = await getDocs(enrollmentQuery);
+    const enrollmentsCollection = collection(db, 'enrollments');
+    const certificatesCollection = collection(db, 'certificates');
+    const userStatsCollection = collection(db, 'user_stats');
 
-    if (enrollmentSnapshot.empty) {
+    // Check if user has completed the course
+    const enrollmentsQuery = query(enrollmentsCollection, where('user_id', '==', userId), where('course_id', '==', courseId), where('status', '==', 'completed'));
+    const enrollmentsSnap = await getDocs(enrollmentsQuery);
+
+    if (enrollmentsSnap.empty) {
       return res.status(400).json({ error: 'User has not completed this course' });
     }
 
     // Check if certificate already exists
-    const certificateQuery = query(collection(db, 'certificates'), where('user_id', '==', userId), where('course_id', '==', courseId));
-    const certificateSnapshot = await getDocs(certificateQuery);
+    const existingCertificatesQuery = query(certificatesCollection, where('user_id', '==', userId), where('course_id', '==', courseId));
+    const existingCertificatesSnap = await getDocs(existingCertificatesQuery);
 
-    if (!certificateSnapshot.empty) {
+    if (!existingCertificatesSnap.empty) {
       return res.status(400).json({ error: 'Certificate already exists for this user and course' });
     }
 
     // Create new certificate
-    const result = await addDoc(collection(db, 'certificates'), {
+    const certRef = doc(certificatesCollection);
+    await setDoc(certRef, {
       user_id: userId,
       course_id: courseId,
       certificate_url: certificateUrl || null,
-      issued_date: Timestamp.now()
+      issued_date: Timestamp.now() // Client SDK Timestamp
     });
 
     // Update user stats
-    const statsQuery = query(collection(db, 'user_stats'), where('user_id', '==', userId));
-    const statsSnapshot = await getDocs(statsQuery);
-    if (!statsSnapshot.empty) {
-      await updateDoc(statsSnapshot.docs[0].ref, {
-        certificates_earned: increment(1)
-      });
-    }
+    const userStatsRef = doc(userStatsCollection, userId);
+    await updateDoc(userStatsRef, {
+      certificates_earned: FieldValue.increment(1) // Client SDK FieldValue
+    });
 
     res.status(201).json({
       message: 'Certificate issued successfully',
-      certificateId: result.id
+      certificateId: certRef.id
     });
   } catch (error) {
     console.error('Error issuing certificate:', error);
@@ -2676,19 +2848,15 @@ app.post('/api/certificates', authenticateToken, async (req, res) => {
 });
 
 // Update certificate
-app.put('/api/certificates/:certificateId', authenticateToken, async (req, res) => {
+app.put('/api/certificates/:certificateId', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    if (req.user.account_type !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
     const { certificateId } = req.params;
     const { certificateUrl } = req.body;
 
     const certificateRef = doc(db, 'certificates', certificateId);
     await updateDoc(certificateRef, {
       certificate_url: certificateUrl,
-      issued_date: Timestamp.now()
+      issued_date: Timestamp.now() // Client SDK Timestamp
     });
 
     res.json({ message: 'Certificate updated successfully' });
@@ -2699,32 +2867,31 @@ app.put('/api/certificates/:certificateId', authenticateToken, async (req, res) 
 });
 
 // Delete certificate (admin only)
-app.delete('/api/certificates/:certificateId', authenticateToken, async (req, res) => {
+app.delete('/api/certificates/:certificateId', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    if (req.user.account_type !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
     const { certificateId } = req.params;
 
-    const certificateSnap = await getDoc(doc(db, 'certificates', certificateId));
-    if (!certificateSnap.exists()) {
+    const certificatesCollection = collection(db, 'certificates');
+    const userStatsCollection = collection(db, 'user_stats');
+
+    // Get certificate details before deletion
+    const certificateRef = doc(certificatesCollection, certificateId);
+    const certificate = await getDoc(certificateRef);
+
+    if (!certificate.exists()) {
       return res.status(404).json({ error: 'Certificate not found' });
     }
 
-    const certificate = certificateSnap.data();
+    const cert = certificate.data();
 
-    await deleteDoc(doc(db, 'certificates', certificateId));
+    // Delete certificate
+    await deleteDoc(certificateRef);
 
     // Update user stats
-    const statsQuery = query(collection(db, 'user_stats'), where('user_id', '==', certificate.user_id));
-    const statsSnapshot = await getDocs(statsQuery);
-    if (!statsSnapshot.empty) {
-      const current = statsSnapshot.docs[0].data().certificates_earned;
-      await updateDoc(statsSnapshot.docs[0].ref, {
-        certificates_earned: Math.max(current - 1, 0)
-      });
-    }
+    const userStatsRef = doc(userStatsCollection, cert.user_id);
+    await updateDoc(userStatsRef, {
+      certificates_earned: FieldValue.increment(-1) // Client SDK FieldValue
+    });
 
     res.json({ message: 'Certificate deleted successfully' });
   } catch (error) {
@@ -2863,52 +3030,7 @@ const getDefaultResources = (accountType) => {
   );
 };
 
-// Get user profile
-app.get('/api/user/profile', authenticateToken, async (req, res) => {
-  try {
-    res.json(req.user);
-  } catch (error) {
-    console.error('Error fetching user profile:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Get user stats
-app.get('/api/user/stats', authenticateToken, async (req, res) => {
-  try {
-    const statsQuery = query(collection(db, 'user_stats'), where('user_id', '==', req.user.id));
-    const statsSnapshot = await getDocs(statsQuery);
-
-    let stats;
-    if (statsSnapshot.empty) {
-      // Create default stats if none exist
-      await addDoc(collection(db, 'user_stats'), {
-        user_id: req.user.id,
-        courses_enrolled: 0,
-        courses_completed: 0,
-        certificates_earned: 0,
-        learning_streak: 0,
-        last_activity: Timestamp.now()
-      });
-
-      stats = {
-        courses_enrolled: 0,
-        courses_completed: 0,
-        certificates_earned: 0,
-        learning_streak: 0
-      };
-    } else {
-      stats = statsSnapshot.docs[0].data();
-    }
-
-    res.json(stats);
-  } catch (error) {
-    console.error('Error fetching user stats:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Get resources
+// Get resources for current user
 app.get('/api/resources', authenticateToken, async (req, res) => {
   try {
     const resources = getDefaultResources(req.user.account_type);
@@ -2935,11 +3057,12 @@ app.get('/api/resources/:id/download', authenticateToken, async (req, res) => {
     }
 
     // Log the download
-    await addDoc(collection(db, 'download_logs'), {
+    const downloadLogsCollection = collection(db, 'download_logs');
+    await setDoc(doc(downloadLogsCollection), { // Auto-ID document
       user_id: req.user.id,
       resource_id: resourceId,
       resource_name: resource.title,
-      created_at: Timestamp.now()
+      downloaded_at: Timestamp.now()
     });
 
     // Create a mock file buffer for download
@@ -2961,329 +3084,53 @@ app.get('/api/resources/:id/download', authenticateToken, async (req, res) => {
   }
 });
 
-// Get enrolled courses
-app.get('/api/courses/enrolled', authenticateToken, async (req, res) => {
-  try {
-    const enrollmentsQuery = query(collection(db, 'enrollments'), where('user_id', '==', req.user.id), orderBy('enrollment_date', 'desc'));
-    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
-    const enrollments = enrollmentsSnapshot.docs.map(d => d.data());
-
-    const courseIds = enrollments.map(e => e.course_id);
-    const coursesQuery = query(collection(db, 'courses'), where('__name__', 'in', courseIds.length ? courseIds : ['dummy']));
-    const coursesSnapshot = await getDocs(coursesQuery);
-    const courses = coursesSnapshot.docs.map(c => ({id: c.id, ...c.data()}));
-
-    const formattedCourses = courses.map(course => ({
-      id: course.id,
-      title: course.title,
-      category: course.category,
-      difficulty_level: course.difficulty_level,
-      progress: enrollments.find(e => e.course_id === course.id)?.progress || 0,
-      isEnrolled: true
-    }));
-
-    res.json(formattedCourses);
-  } catch (error) {
-    console.error('Error fetching enrolled courses:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// ==================== INTERNSHIPS SECTION ROUTES ====================
-
-// GET /api/internships - Fetch all internships
-app.get('/api/internships', async (req, res) => {
-  try {
-    const internshipsQuery = query(collection(db, 'internships'), orderBy('posted_at', 'desc'));
-    const internshipsSnapshot = await getDocs(internshipsQuery);
-    const internships = internshipsSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
-
-    const parsedInternships = internships.map(intern => ({
-      ...intern,
-      requirements: intern.requirements ? JSON.parse(intern.requirements) : [],
-      benefits: intern.benefits ? JSON.parse(intern.benefits) : []
-    }));
-
-    res.json(parsedInternships);
-  } catch (error) {
-    console.error('Error fetching internships:', error);
-    res.status(500).json({ message: 'Internal server error while fetching internships.' });
-  }
-});
-
-// GET /api/user/internship-applications - Fetch applications for the authenticated user
-app.get('/api/user/internship-applications', authenticateToken, async (req, res) => {
-  const userId = req.user.id; 
-
-  if (!userId) {
-    return res.status(400).json({ message: 'User ID not found in token.' });
-  }
-
-  try {
-    const applicationsQuery = query(collection(db, 'internship_submissions'), where('user_id', '==', userId), orderBy('submitted_at', 'desc'));
-    const applicationsSnapshot = await getDocs(applicationsQuery);
-    const applications = applicationsSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
-
-    const internshipIds = applications.map(app => app.internship_id);
-    const internshipsQuery = query(collection(db, 'internships'), where('__name__', 'in', internshipIds.length ? internshipIds : ['dummy']));
-    const internshipsSnapshot = await getDocs(internshipsQuery);
-    const internshipsMap = {};
-    internshipsSnapshot.docs.forEach(i => {
-      const data = i.data();
-      internshipsMap[i.id] = data;
-    });
-
-    const parsedApplications = applications.map(app => ({
-      ...app,
-      requirements: internshipsMap[app.internship_id]?.requirements ? JSON.parse(internshipsMap[app.internship_id].requirements) : [],
-      benefits: internshipsMap[app.internship_id]?.benefits ? JSON.parse(internshipsMap[app.internship_id].benefits) : [],
-      internshipTitle: internshipsMap[app.internship_id]?.title,
-      companyName: internshipsMap[app.internship_id]?.company,
-      internship_posted_at: internshipsMap[app.internship_id]?.posted_at
-    }));
-
-    res.json(parsedApplications);
-  } catch (error) {
-    console.error('Error fetching user internship applications:', error);
-    res.status(500).json({ message: 'Internal server error while fetching your applications.' });
-  }
-});
-
-// POST /api/internships/:id/apply - Apply for an internship
-app.post('/api/internships/:id/apply', authenticateToken, async (req, res) => {
-  const { id: internshipId } = req.params;
-  const { full_name, email, phone, resume_url, cover_letter } = req.body;
-  const userId = req.user.id;
-
-  if (!full_name || !email || !resume_url) {
-    return res.status(400).json({ message: 'Full name, email, and resume link are required.' });
-  }
-
-  try {
-    const internshipRef = doc(db, 'internships', internshipId);
-    const internshipSnap = await getDoc(internshipRef);
-
-    if (!internshipSnap.exists()) {
-      return res.status(404).json({ message: 'Internship not found.' });
-    }
-
-    const internship = internshipSnap.data();
-    if (internship.spots_available <= 0) {
-      return res.status(400).json({ message: 'No available spots left for this internship.' });
-    }
-
-    const existingQuery = query(collection(db, 'internship_submissions'), where('internship_id', '==', internshipId), where('user_id', '==', userId));
-    const existingSnapshot = await getDocs(existingQuery);
-    if (!existingSnapshot.empty) {
-      return res.status(409).json({ message: 'You have already applied for this internship.' });
-    }
-
-    await addDoc(collection(db, 'internship_submissions'), {
-      internship_id: internshipId,
-      user_id: userId,
-      full_name: full_name,
-      email: email,
-      phone: phone || null,
-      resume_url: resume_url,
-      cover_letter: cover_letter || null,
-      status: 'pending',
-      submitted_at: Timestamp.now()
-    });
-
-    await updateDoc(internshipRef, {
-      spots_available: increment(-1),
-      applications_count: increment(1)
-    });
-
-    res.status(201).json({ message: 'Internship application submitted successfully!' });
-
-  } catch (error) {
-    console.error('Error submitting internship application:', error);
-    res.status(500).json({ message: 'Internal server error during application submission.' });
-  }
-});
-
-// ==================== SERVICES ROUTES ====================
-
-// Get service categories
-app.get('/api/services/categories', async (req, res) => {
-  try {
-    const categoriesQuery = query(collection(db, 'service_categories'), where('is_active', '==', true), orderBy('name'));
-    const categoriesSnapshot = await getDocs(categoriesQuery);
-    const categories = categoriesSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
-
-    const categoriesWithSubs = await Promise.all(categories.map(async (category) => {
-      const subcategoriesQuery = query(collection(db, 'service_subcategories'), where('category_id', '==', category.id), where('is_active', '==', true), orderBy('name'));
-      const subcategoriesSnapshot = await getDocs(subcategoriesQuery);
-      const subcategories = subcategoriesSnapshot.docs.map(sub => ({id: sub.id, ...sub.data()}));
-
-      return {
-        id: category.id,
-        name: category.name,
-        description: category.description,
-        icon: category.icon,
-        subcategories: subcategories.map(sub => ({
-          id: sub.id,
-          categoryId: sub.category_id,
-          name: sub.name,
-          description: sub.description,
-          basePrice: sub.base_price
-        }))
-      };
-    }));
-
-    res.json(categoriesWithSubs);
-
-  } catch (error) {
-    console.error('Get service categories error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Submit service request
-app.post('/api/services/requests', authenticateToken, async (req, res) => {
-  try {
-    const {
-      subcategoryId, fullName, email, phone, company, website,
-      projectDetails, budgetRange, timeline, contactMethod, additionalRequirements
-    } = req.body;
-    const userId = req.user.id;
-
-    // Validate required fields
-    if (!subcategoryId || !fullName || !email || !phone || !projectDetails || !budgetRange || !timeline || !contactMethod) {
-      return res.status(400).json({ error: 'All required fields must be provided' });
-    }
-
-    // Check if subcategory exists
-    const subcategorySnap = await getDoc(doc(db, 'service_subcategories', subcategoryId));
-    if (!subcategorySnap.exists() || !subcategorySnap.data().is_active) {
-      return res.status(404).json({ error: 'Service subcategory not found' });
-    }
-
-    // Create service request
-    const result = await addDoc(collection(db, 'service_requests'), {
-      user_id: userId,
-      subcategory_id: subcategoryId,
-      full_name: fullName,
-      email: email,
-      phone: phone,
-      company: company,
-      website: website,
-      project_details: projectDetails,
-      budget_range: budgetRange,
-      timeline: timeline,
-      contact_method: contactMethod,
-      additional_requirements: additionalRequirements,
-      status: 'pending',
-      created_at: Timestamp.now(),
-      updated_at: Timestamp.now()
-    });
-
-    res.status(201).json({
-      message: 'Service request submitted successfully',
-      requestId: result.id
-    });
-
-  } catch (error) {
-    console.error('Service request error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Get user's service requests
-app.get('/api/services/my-requests', authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.id;
-
-    const requestsQuery = query(collection(db, 'service_requests'), where('user_id', '==', userId), orderBy('created_at', 'desc'));
-    const requestsSnapshot = await getDocs(requestsQuery);
-    const requests = requestsSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
-
-    const subcategoryIds = requests.map(r => r.subcategory_id);
-    const subcategoriesQuery = query(collection(db, 'service_subcategories'), where('__name__', 'in', subcategoryIds.length ? subcategoryIds : ['dummy']));
-    const subcategoriesSnapshot = await getDocs(subcategoriesQuery);
-    const subcategoriesMap = {};
-    subcategoriesSnapshot.docs.forEach(ss => {
-      subcategoriesMap[ss.id] = ss.data().name;
-    });
-
-    const categoryIds = subcategoriesSnapshot.docs.map(ss => ss.data().category_id);
-    const categoriesQuery = query(collection(db, 'service_categories'), where('__name__', 'in', categoryIds.length ? categoryIds : ['dummy']));
-    const categoriesSnapshot = await getDocs(categoriesQuery);
-    const categoriesMap = {};
-    categoriesSnapshot.docs.forEach(sc => {
-      categoriesMap[sc.id] = sc.data().name;
-    });
-
-    const formattedRequests = requests.map(request => ({
-      id: request.id,
-      userId: request.user_id,
-      subcategoryId: request.subcategory_id,
-      fullName: request.full_name,
-      email: request.email,
-      phone: request.phone,
-      company: request.company,
-      website: request.website,
-      projectDetails: request.project_details,
-      budgetRange: request.budget_range,
-      timeline: request.timeline,
-      contactMethod: request.contact_method,
-      additionalRequirements: request.additional_requirements,
-      status: request.status,
-      createdAt: request.created_at,
-      updatedAt: request.updated_at,
-      categoryName: categoriesMap[request.subcategory_id ? subcategoriesSnapshot.docs.find(ss => ss.id === request.subcategory_id)?.data().category_id : null],
-      subcategoryName: subcategoriesMap[request.subcategory_id]
-    }));
-
-    res.json(formattedRequests);
-
-  } catch (error) {
-    console.error('Get service requests error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
 
 // ==================== ADMIN DASHBOARD ROUTES ====================
 
 // Admin Dashboard Stats
-app.get('/api/admin/dashboard-stats', authenticateToken, async (req, res) => {
+app.get('/api/admin/dashboard-stats', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const usersQuery = query(collection(db, 'users'), where('is_active', '==', true));
-    const usersSnapshot = await getDocs(usersQuery);
-    const totalUsers = usersSnapshot.size;
+    const usersCollection = collection(db, 'users');
+    const coursesCollection = collection(db, 'courses');
+    const enrollmentsCollection = collection(db, 'enrollments');
+    const contactMessagesCollection = collection(db, 'contact_messages');
+    const serviceRequestsCollection = collection(db, 'service_requests');
 
-    const coursesQuery = query(collection(db, 'courses'), where('is_active', '==', true));
-    const coursesSnapshot = await getDocs(coursesQuery);
-    const totalCourses = coursesSnapshot.size;
+    const usersQuery = query(usersCollection, where('is_active', '==', true));
+    const usersSnap = await getDocs(usersQuery);
+    const totalUsers = usersSnap.size;
 
-    const enrollmentsQuery = query(collection(db, 'enrollments'));
-    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
-    const totalEnrollments = enrollmentsSnapshot.size;
+    const coursesQuery = query(coursesCollection, where('is_active', '==', true));
+    const coursesSnap = await getDocs(coursesQuery);
+    const totalCourses = coursesSnap.size;
+
+    const enrollmentsSnap = await getDocs(enrollmentsCollection);
+    const totalEnrollments = enrollmentsSnap.size;
 
     let totalRevenue = 0;
-    for (let e of enrollmentsSnapshot.docs) {
-      const data = e.data();
-      if (data.status === 'completed') {
-        const courseSnap = await getDoc(doc(db, 'courses', data.course_id));
-        if (courseSnap.exists()) totalRevenue += courseSnap.data().price || 0;
+    for (const docSnapshot of enrollmentsSnap.docs) {
+      const e = docSnapshot.data();
+      if (e.status === 'completed') {
+        const courseDocRef = doc(coursesCollection, e.course_id);
+        const course = await getDoc(courseDocRef);
+        totalRevenue += course.data() ? (course.data().price || 0) : 0; // Handle missing course or price
       }
     }
 
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const contactsQuery = query(collection(db, 'contact_messages'), where('created_at', '>=', Timestamp.fromDate(sevenDaysAgo)));
-    const contactsSnapshot = await getDocs(contactsQuery);
-    const pendingContacts = contactsSnapshot.size;
+    const sevenDaysAgo = new Date(new Date().getTime() - 7 * 24 * 60 * 60 * 1000);
+    const contactsQuery = query(contactMessagesCollection, where('created_at', '>=', Timestamp.fromDate(sevenDaysAgo)));
+    const contactsSnap = await getDocs(contactsQuery);
+    const pendingContacts = contactsSnap.size;
 
-    const serviceRequestsQuery = query(collection(db, 'service_requests'), where('status', '==', 'pending'));
-    const serviceRequestsSnapshot = await getDocs(serviceRequestsQuery);
-    const pendingServiceRequests = serviceRequestsSnapshot.size;
+    const serviceRequestsQuery = query(serviceRequestsCollection, where('status', '==', 'pending'));
+    const serviceRequestsSnap = await getDocs(serviceRequestsQuery);
+    const pendingServiceRequests = serviceRequestsSnap.size;
 
     res.json({
       totalUsers,
       totalCourses,
       totalEnrollments,
-      totalRevenue,
+      totalRevenue: totalRevenue.toString(),
       pendingContacts,
       pendingServiceRequests
     });
@@ -3294,23 +3141,25 @@ app.get('/api/admin/dashboard-stats', authenticateToken, async (req, res) => {
 });
 
 // Recent Users
-app.get('/api/admin/recent-users', authenticateToken, async (req, res) => {
+app.get('/api/admin/recent-users', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const usersQuery = query(collection(db, 'users'), where('is_active', '==', true), orderBy('created_at', 'desc'), fsLimit(5));
-    const usersSnapshot = await getDocs(usersQuery);
-    const users = usersSnapshot.docs.map(u => {
-      const data = u.data();
+    const usersCollection = collection(db, 'users');
+    const usersQuery = query(usersCollection, where('is_active', '==', true), orderBy('created_at', 'desc'), firebaseLimit(5)); // Assuming 'is_active' is boolean
+    const usersSnap = await getDocs(usersQuery);
+
+    const recentUsers = usersSnap.docs.map(docSnapshot => {
+      const u = docSnapshot.data();
       return {
-        id: u.id,
-        first_name: data.first_name,
-        last_name: data.last_name,
-        email: data.email,
-        account_type: data.account_type,
-        join_date: data.created_at.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+        id: docSnapshot.id,
+        first_name: u.first_name,
+        last_name: u.last_name,
+        email: u.email,
+        account_type: u.account_type,
+        join_date: u.created_at.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
       };
     });
 
-    res.json(users);
+    res.json(recentUsers);
   } catch (error) {
     console.error('Error fetching recent users:', error);
     res.status(500).json({ error: 'Failed to fetch recent users', details: error.message });
@@ -3318,37 +3167,34 @@ app.get('/api/admin/recent-users', authenticateToken, async (req, res) => {
 });
 
 // Recent Enrollments
-app.get('/api/admin/recent-enrollments', authenticateToken, async (req, res) => {
+app.get('/api/admin/recent-enrollments', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const enrollmentsQuery = query(collection(db, 'enrollments'), orderBy('enrollment_date', 'desc'), fsLimit(5));
-    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
-    const enrollments = enrollmentsSnapshot.docs.map(e => e.data());
+    const enrollmentsCollection = collection(db, 'enrollments');
+    const usersCollection = collection(db, 'users');
+    const coursesCollection = collection(db, 'courses');
 
-    const userIds = enrollments.map(e => e.user_id);
-    const usersQuery = query(collection(db, 'users'), where('__name__', 'in', userIds.length ? userIds : ['dummy']));
-    const usersSnapshot = await getDocs(usersQuery);
-    const usersMap = {};
-    usersSnapshot.docs.forEach(u => {
-      usersMap[u.id] = `${u.data().first_name} ${u.data().last_name}`;
-    });
+    const enrollmentsQuery = query(enrollmentsCollection, orderBy('enrollment_date', 'desc'), firebaseLimit(5));
+    const enrollmentsSnap = await getDocs(enrollmentsQuery);
 
-    const courseIds = enrollments.map(e => e.course_id);
-    const coursesQuery = query(collection(db, 'courses'), where('__name__', 'in', courseIds.length ? courseIds : ['dummy']));
-    const coursesSnapshot = await getDocs(coursesQuery);
-    const coursesMap = {};
-    coursesSnapshot.docs.forEach(c => {
-      coursesMap[c.id] = c.data().title;
-    });
+    const recentEnrollments = [];
+    for (const docSnapshot of enrollmentsSnap.docs) {
+      const e = docSnapshot.data();
+      const userDocRef = doc(usersCollection, e.user_id);
+      const user = await getDoc(userDocRef);
+      const u = user.data();
+      const courseDocRef = doc(coursesCollection, e.course_id);
+      const course = await getDoc(courseDocRef);
+      const c = course.data();
+      recentEnrollments.push({
+        id: docSnapshot.id,
+        user_name: u ? `${u.first_name} ${u.last_name}` : 'N/A',
+        course_name: c ? c.title : 'N/A',
+        date: e.enrollment_date.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+        status: e.status
+      });
+    }
 
-    const formattedEnrollments = enrollments.map(e => ({
-      id: e.id,
-      user_name: usersMap[e.user_id],
-      course_name: coursesMap[e.course_id],
-      date: e.enrollment_date.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-      status: e.status
-    }));
-
-    res.json(formattedEnrollments);
+    res.json(recentEnrollments);
   } catch (error) {
     console.error('Error fetching recent enrollments:', error);
     res.status(500).json({ error: 'Failed to fetch recent enrollments', details: error.message });
@@ -3376,18 +3222,20 @@ app.post('/api/contact', async (req, res) => {
     }
 
     // Insert contact form data into database
-    const result = await addDoc(collection(db, 'contact_messages'), {
+    const contactMessagesCollection = collection(db, 'contact_messages');
+    const contactRef = doc(contactMessagesCollection); // Auto-generate ID
+    await setDoc(contactRef, {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       email: email.trim(),
       phone: phone || null,
       company: company || null,
       message: message.trim(),
-      created_at: Timestamp.now()
+      created_at: Timestamp.now() // Client SDK Timestamp
     });
 
     console.log('Contact message saved successfully:', {
-      id: result.id,
+      id: contactRef.id,
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       email: email.trim()
@@ -3395,7 +3243,7 @@ app.post('/api/contact', async (req, res) => {
 
     res.status(201).json({
       message: 'Contact message sent successfully',
-      contactId: result.id
+      contactId: contactRef.id
     });
 
   } catch (error) {
@@ -3409,51 +3257,53 @@ app.post('/api/contact', async (req, res) => {
 // Get analytics data (admin only)
 app.get('/api/admin/analytics', authenticateToken, requireAdmin, async (req, res) => {
   try {
+    const sixMonthsAgo = new Date(new Date().getTime() - 6 * 30 * 24 * 60 * 60 * 1000);
+
+    const usersCollection = collection(db, 'users');
+    const coursesCollection = collection(db, 'courses');
+    const enrollmentsCollection = collection(db, 'enrollments');
+
     // User growth data (last 6 months)
-    const sixMonthsAgo = new Date(Date.now() - 6 * 30 * 24 * 60 * 60 * 1000);
-    const usersQuery = query(collection(db, 'users'), where('created_at', '>=', Timestamp.fromDate(sixMonthsAgo)));
-    const usersSnapshot = await getDocs(usersQuery);
+    const usersQuery = query(usersCollection, where('created_at', '>=', Timestamp.fromDate(sixMonthsAgo)));
+    const usersSnap = await getDocs(usersQuery);
     const userGrowth = {};
-    usersSnapshot.docs.forEach(u => {
-      const month = u.data().created_at.toDate().toISOString().slice(0,7);
+    usersSnap.docs.forEach(docSnapshot => {
+      const created = docSnapshot.data().created_at.toDate();
+      const month = created.toISOString().slice(0, 7);
       userGrowth[month] = (userGrowth[month] || 0) + 1;
     });
 
-    const userGrowthArray = Object.entries(userGrowth).map(([month, count]) => ({month, count}));
-
     // Course enrollment data
-    const coursesQuery = query(collection(db, 'courses'), where('is_active', '==', true));
-    const coursesSnapshot = await getDocs(coursesQuery);
+    const coursesQuery = query(coursesCollection, where('is_active', '==', true));
+    const coursesSnap = await getDocs(coursesQuery);
     const courseEnrollments = [];
-    for (let c of coursesSnapshot.docs) {
-      const data = c.data();
-      const enrollQuery = query(collection(db, 'enrollments'), where('course_id', '==', c.id));
-      const enrollSnapshot = await getDocs(enrollQuery);
+    for (const docSnapshot of coursesSnap.docs) {
+      const enrollmentsQuery = query(enrollmentsCollection, where('course_id', '==', docSnapshot.id));
+      const enrollmentsSnap = await getDocs(enrollmentsQuery);
       courseEnrollments.push({
-        title: data.title,
-        enrollments: enrollSnapshot.size
+        title: docSnapshot.data().title,
+        enrollments: enrollmentsSnap.size
       });
     }
-    courseEnrollments.sort((a, b) => b.enrollments - a.enrollments).slice(0,10);
+    courseEnrollments.sort((a, b) => b.enrollments - a.enrollments);
+    const top10 = courseEnrollments.slice(0, 10);
 
     // Revenue by month
-    const enrollmentsQuery = query(collection(db, 'enrollments'), where('enrollment_date', '>=', Timestamp.fromDate(sixMonthsAgo)));
-    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
+    const enrollmentsQueryForRevenue = query(enrollmentsCollection, where('enrollment_date', '>=', Timestamp.fromDate(sixMonthsAgo)));
+    const enrollmentsSnapForRevenue = await getDocs(enrollmentsQueryForRevenue);
     const revenueData = {};
-    for (let e of enrollmentsSnapshot.docs) {
-      const data = e.data();
-      const month = data.enrollment_date.toDate().toISOString().slice(0,7);
-      const courseSnap = await getDoc(doc(db, 'courses', data.course_id));
-      const price = courseSnap.data()?.price || 0;
-      revenueData[month] = (revenueData[month] || 0) + price;
+    for (const docSnapshot of enrollmentsSnapForRevenue.docs) {
+      const e = docSnapshot.data();
+      const month = e.enrollment_date.toDate().toISOString().slice(0, 7);
+      const courseDocRef = doc(coursesCollection, e.course_id);
+      const course = await getDoc(courseDocRef);
+      revenueData[month] = (revenueData[month] || 0) + (course.data() ? course.data().price : 0); // Handle potential missing course data
     }
 
-    const revenueArray = Object.entries(revenueData).map(([month, revenue]) => ({month, revenue}));
-
     res.json({
-      userGrowth: userGrowthArray,
-      courseEnrollments,
-      revenueData: revenueArray
+      userGrowth: Object.entries(userGrowth).map(([month, count]) => ({ month, count })),
+      courseEnrollments: top10,
+      revenueData: Object.entries(revenueData).map(([month, revenue]) => ({ month, revenue }))
     });
 
   } catch (error) {
@@ -3465,60 +3315,111 @@ app.get('/api/admin/analytics', authenticateToken, requireAdmin, async (req, res
 // ==================== ADMIN USER MANAGEMENT ENDPOINTS ====================
 
 // GET /api/admin/users - Get all users with pagination and filtering
+// For `search`, Firestore doesn't support 'OR' queries across multiple fields directly.
+// The current implementation for 'search' fetches all matching documents for each field and merges.
+// For pagination, `offset` is simulated by fetching `offset + limit` documents and slicing.
 app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
-    const pageSize = parseInt(req.query.limit) || 10;
-    const offset = (page - 1) * pageSize;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
     const accountType = req.query.accountType;
     const status = req.query.status;
     const search = req.query.search;
 
-    let usersQuery = query(collection(db, 'users'), orderBy('created_at', 'desc'));
+    const usersCollection = collection(db, 'users');
+    let baseQuery = query(usersCollection, orderBy('created_at', 'desc'));
+    let totalQuery = query(usersCollection); // For total count
 
     if (accountType && accountType !== 'all') {
-      usersQuery = query(usersQuery, where('account_type', '==', accountType));
+      baseQuery = query(baseQuery, where('account_type', '==', accountType));
+      totalQuery = query(totalQuery, where('account_type', '==', accountType));
     }
 
     if (status && status !== 'all') {
       const isActive = status === 'active' ? true : false;
-      usersQuery = query(usersQuery, where('is_active', '==', isActive));
+      baseQuery = query(baseQuery, where('is_active', '==', isActive));
+      totalQuery = query(totalQuery, where('is_active', '==', isActive));
     }
 
-    // Fetch all matching users (no limit to avoid function error)
-    const allUsersSnapshot = await getDocs(usersQuery);
-    let users = allUsersSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+    let allUsersDocs = [];
 
-    // Apply search filter in memory if provided
     if (search) {
-      users = users.filter(u => 
-        u.first_name.toLowerCase().includes(search.toLowerCase()) || 
-        u.last_name.toLowerCase().includes(search.toLowerCase()) || 
-        u.email.toLowerCase().includes(search.toLowerCase())
-      );
+      // Simulate OR search by fetching and merging results
+      const searchLower = search.toLowerCase();
+
+      // For first_name
+      const firstNameQuery = query(usersCollection, orderBy('first_name'), startAfter(searchLower), firebaseLimit(100)); // Limit to prevent massive fetches
+      const firstNameSnap = await getDocs(firstNameQuery);
+      firstNameSnap.docs.filter(d => d.data().first_name.toLowerCase().startsWith(searchLower)).forEach(doc => allUsersDocs.push(doc));
+
+      // For last_name
+      const lastNameQuery = query(usersCollection, orderBy('last_name'), startAfter(searchLower), firebaseLimit(100));
+      const lastNameSnap = await getDocs(lastNameQuery);
+      lastNameSnap.docs.filter(d => d.data().last_name.toLowerCase().startsWith(searchLower)).forEach(doc => allUsersDocs.push(doc));
+
+      // For email
+      const emailQuery = query(usersCollection, orderBy('email'), startAfter(searchLower), firebaseLimit(100));
+      const emailSnap = await getDocs(emailQuery);
+      emailSnap.docs.filter(d => d.data().email.toLowerCase().startsWith(searchLower)).forEach(doc => allUsersDocs.push(doc));
+
+      // Deduplicate results
+      const uniqueUserMap = new Map();
+      allUsersDocs.forEach(doc => uniqueUserMap.set(doc.id, doc));
+      allUsersDocs = Array.from(uniqueUserMap.values());
+
+      // Apply other filters to the in-memory results
+      allUsersDocs = allUsersDocs.filter(doc => {
+        const u = doc.data();
+        let matches = true;
+        if (accountType && accountType !== 'all' && u.account_type !== accountType) matches = false;
+        if (status && status !== 'all') {
+          const isActive = status === 'active' ? true : false;
+          if (u.is_active !== isActive) matches = false;
+        }
+        return matches;
+      });
+
+      // Sort in memory for search results
+      allUsersDocs.sort((a, b) => {
+        const dateA = a.data().created_at.toDate();
+        const dateB = b.data().created_at.toDate();
+        return dateB.getTime() - dateA.getTime(); // Descending order
+      });
+
+      const total = allUsersDocs.length;
+      const paginatedUsers = allUsersDocs.slice(offset, offset + limit);
+
+      res.json({
+        users: paginatedUsers.map(docSnapshot => ({ id: docSnapshot.id, ...docSnapshot.data() })),
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(total / limit),
+          totalUsers: total,
+          hasNextPage: page < Math.ceil(total / limit),
+          hasPreviousPage: page > 1
+        }
+      });
+      return;
     }
 
-    const totalUsers = users.length;
+    // Normal pagination (without search)
+    const totalSnap = await getDocs(totalQuery);
+    const total = totalSnap.size;
 
-    // Paginate in memory
-    users = users.slice(offset, offset + pageSize);
+    // Simulate offset by fetching more and slicing locally
+    const usersQueryWithOffset = query(baseQuery, firebaseLimit(offset + limit));
+    const usersSnap = await getDocs(usersQueryWithOffset);
 
-    // Format join_date safely (handle if created_at is not Timestamp)
-    const formattedUsers = users.map(user => ({
-      ...user,
-      join_date: user.created_at 
-        ? (user.created_at.toDate ? user.created_at.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) 
-          : new Date(user.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })) 
-        : 'Invalid Date'  // Fallback for invalid dates
-    }));
+    const data = usersSnap.docs.slice(offset).map(docSnapshot => ({ id: docSnapshot.id, ...docSnapshot.data() }));
 
     res.json({
-      users: formattedUsers,
+      users: data,
       pagination: {
         currentPage: page,
-        totalPages: Math.ceil(totalUsers / pageSize),
-        totalUsers,
-        hasNextPage: page < Math.ceil(totalUsers / pageSize),
+        totalPages: Math.ceil(total / limit),
+        totalUsers: total,
+        hasNextPage: page < Math.ceil(total / limit),
         hasPreviousPage: page > 1
       }
     });
@@ -3532,17 +3433,19 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
 // GET /api/admin/users/:id - Get a specific user
 app.get('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const userId = req.params.id;
+    const { id } = req.params;
 
-    const userSnap = await getDoc(doc(db, 'users', userId));
-    if (!userSnap.exists()) {
+    const userDocRef = doc(db, 'users', id);
+    const user = await getDoc(userDocRef);
+
+    if (!user.exists()) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const user = userSnap.data();
-    user.id = userId;
+    const data = user.data();
+    data.id = id;
 
-    res.json(user);
+    res.json(data);
   } catch (error) {
     console.error('Get user error:', error);
     res.status(500).json({ error: 'Server error' });
@@ -3573,9 +3476,11 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
     }
 
     // Check if email exists
-    const q = query(collection(db, 'users'), where('email', '==', email));
-    const querySnapshot = await getDocs(q);
-    if (!querySnapshot.empty) {
+    const usersCollection = collection(db, 'users');
+    const existingUserQuery = query(usersCollection, where('email', '==', email));
+    const existingSnap = await getDocs(existingUserQuery);
+
+    if (!existingSnap.empty) {
       return res.status(400).json({ error: 'Email already exists' });
     }
 
@@ -3584,57 +3489,42 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     // Insert new user
-    const userRef = await addDoc(collection(db, 'users'), {
+    const userRef = doc(usersCollection); // Auto-generate ID
+    await setDoc(userRef, {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       email: email.trim(),
       phone: phone || null,
       password_hash: hashedPassword,
       account_type: accountType || 'student',
-      is_active: isActive !== undefined ? isActive : true,
       company: company || null,
       website: website || null,
       bio: bio || null,
-      created_at: Timestamp.now(),
-      updated_at: Timestamp.now(),
-      profile_image: null,
-      email_verified: false
+      is_active: isActive !== undefined ? isActive : true,
+      email_verified: true,
+      created_at: Timestamp.now(), // Client SDK Timestamp
+      updated_at: Timestamp.now() // Client SDK Timestamp
     });
 
-    const newUserId = userRef.id;
-
     // Create user stats entry
-    await addDoc(collection(db, 'user_stats'), {
-      user_id: newUserId,
+    const userStatsRef = doc(db, 'user_stats', userRef.id);
+    await setDoc(userStatsRef, {
       courses_enrolled: 0,
       courses_completed: 0,
       certificates_earned: 0,
       learning_streak: 0,
-      last_activity: Timestamp.now()
+      last_activity: Timestamp.now() // Client SDK Timestamp
     });
 
-    console.log('User created successfully by admin:', { userId: newUserId, email });
+    console.log('User created successfully by admin:', { userId: userRef.id, email });
 
-    const newUser = {
-      id: newUserId,
-      first_name: firstName.trim(),
-      last_name: lastName.trim(),
-      email: email.trim(),
-      phone: phone || null,
-      account_type: accountType || 'student',
-      profile_image: null,
-      company: company || null,
-      website: website || null,
-      bio: bio || null,
-      is_active: isActive !== undefined ? isActive : true,
-      email_verified: false,
-      created_at: Timestamp.now(),
-      updated_at: Timestamp.now()
-    };
+    const newUserDoc = await getDoc(userRef);
+    const data = newUserDoc.data();
+    data.id = userRef.id;
 
     res.status(201).json({
       message: 'User created successfully',
-      user: newUser
+      user: data
     });
 
   } catch (error) {
@@ -3646,53 +3536,56 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
 // PUT /api/admin/users/:id - Update a user
 app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const userId = req.params.id;
+    const { id } = req.params;
     const { firstName, lastName, email, phone, accountType, isActive, company, website, bio } = req.body;
 
-    const userRef = doc(db, 'users', userId);
-    const userSnap = await getDoc(userRef);
+    const userRef = doc(db, 'users', id);
+    const user = await getDoc(userRef);
 
-    if (!userSnap.exists()) {
+    if (!user.exists()) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const currentUser = userSnap.data();
+    const u = user.data();
 
-    // Validate email if changed
-    if (email && email !== currentUser.email) {
+    if (email && email !== u.email) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
         return res.status(400).json({ error: 'Please provide a valid email address' });
       }
 
-      const existingQuery = query(collection(db, 'users'), where('email', '==', email));
-      const existingSnapshot = await getDocs(existingQuery);
-      if (!existingSnapshot.empty && existingSnapshot.docs[0].id !== userId) {
-        return res.status(400).json({ error: 'Email already exists' });
+      // Check for existing email for other users
+      const usersCollection = collection(db, 'users');
+      const existingEmailQuery = query(usersCollection, where('email', '==', email));
+      const existingEmailSnap = await getDocs(existingEmailQuery);
+
+      for (const docSnapshot of existingEmailSnap.docs) {
+        if (docSnapshot.id !== id) {
+          return res.status(400).json({ error: 'Email already exists for another user' });
+        }
       }
     }
 
-    // Update user
     await updateDoc(userRef, {
-      first_name: firstName || currentUser.first_name,
-      last_name: lastName || currentUser.last_name,
-      email: email || currentUser.email,
-      phone: phone || currentUser.phone,
-      account_type: accountType || currentUser.account_type,
-      is_active: isActive !== undefined ? isActive : currentUser.is_active,
-      company: company || currentUser.company,
-      website: website || currentUser.website,
-      bio: bio || currentUser.bio,
-      updated_at: Timestamp.now()
+      first_name: firstName || u.first_name,
+      last_name: lastName || u.last_name,
+      email: email || u.email,
+      phone: phone || u.phone,
+      account_type: accountType || u.account_type,
+      is_active: isActive !== undefined ? isActive : u.is_active,
+      company: company || u.company,
+      website: website || u.website,
+      bio: bio || u.bio,
+      updated_at: Timestamp.now() // Client SDK Timestamp
     });
 
-    const updatedSnap = await getDoc(userRef);
-    const updatedUser = updatedSnap.data();
-    updatedUser.id = userId;
+    const updatedDoc = await getDoc(userRef);
+    const data = updatedDoc.data();
+    data.id = id;
 
     res.json({
       message: 'User updated successfully',
-      user: updatedUser
+      user: data
     });
 
   } catch (error) {
@@ -3701,41 +3594,40 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
   }
 });
 
-// DELETE /api/admin/users/:id - Delete a user
+// DELETE /api/admin/users/:id - Delete a user (soft delete)
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const userId = req.params.id;
+    const { id } = req.params;
     const adminId = req.user.id;
 
-    if (userId === adminId) {
+    if (id === adminId) {
       return res.status(400).json({ error: 'You cannot delete your own account' });
     }
 
-    const userRef = doc(db, 'users', userId);
-    const userSnap = await getDoc(userRef);
+    const userRef = doc(db, 'users', id);
+    const user = await getDoc(userRef);
 
-    if (!userSnap.exists()) {
+    if (!user.exists()) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Soft delete
     await updateDoc(userRef, {
       is_active: false,
-      updated_at: Timestamp.now()
+      updated_at: Timestamp.now() // Client SDK Timestamp
     });
 
-    res.json({ message: 'User deleted successfully' });
+    res.json({ message: 'User deactivated successfully' }); // Changed message to reflect soft delete
 
   } catch (error) {
     console.error('Delete user error:', error);
-    res.status(500).json({ error: 'Server error while deleting user' });
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
 // PUT /api/admin/users/:id/password - Reset user password (admin only)
 app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const userId = req.params.id;
+    const { id } = req.params;
     const { password } = req.body;
 
     if (!password) {
@@ -3746,21 +3638,18 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
       return res.status(400).json({ error: 'Password must be at least 6 characters long' });
     }
 
-    const userRef = doc(db, 'users', userId);
-    const userSnap = await getDoc(userRef);
+    const userRef = doc(db, 'users', id);
+    const user = await getDoc(userRef);
 
-    if (!userSnap.exists()) {
+    if (!user.exists()) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Hash new password
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Update password
     await updateDoc(userRef, {
       password_hash: hashedPassword,
-      updated_at: Timestamp.now()
+      updated_at: Timestamp.now() // Client SDK Timestamp
     });
 
     res.json({ message: 'Password reset successfully' });
@@ -3773,9 +3662,9 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
 
 // ===================== ADMIN PAYMENTS MANAGEMENT ENDPOINT ======================
 
-app.post('/api/payments/upload-proof', authenticateToken, paymentProofUpload.single('file'), async (req, res) => {
+app.post('/api/payments/upload-proof', authenticateToken, paymentProofUpload.single('proof'), async (req, res) => {
   try {
-    const { transaction_id, payment_method, resource_id, plan, amount, user_id } = req.body;
+    const { transaction_id, payment_method, resource_id, plan, amount, user_id } = req.body; // user_id might be from token or body
 
     if (!req.file) {
       return res.status(400).json({ error: 'Payment proof file is required' });
@@ -3785,23 +3674,27 @@ app.post('/api/payments/upload-proof', authenticateToken, paymentProofUpload.sin
       return res.status(400).json({ error: 'Transaction ID is required' });
     }
 
+    const effectiveUserId = user_id || req.user.id; // Use user from token if not provided in body
+
     // Save payment record to database
-    const result = await addDoc(collection(db, 'payments'), {
-      user_id: user_id,
+    const paymentsCollection = collection(db, 'payments');
+    const paymentRef = doc(paymentsCollection); // Auto-generate ID
+    await setDoc(paymentRef, {
+      user_id: effectiveUserId,
       resource_id: resource_id || null,
-      plan: plan,
-      amount: amount,
-      payment_method: payment_method,
-      transaction_id: transaction_id,
+      plan,
+      amount: parseFloat(amount) || 0, // Ensure amount is number
+      payment_method,
+      transaction_id,
       proof_file: req.file.filename,
       status: 'pending',
-      created_at: Timestamp.now(),
-      verified_at: null
+      created_at: Timestamp.now(), // Client SDK Timestamp
+      // No updated_at for payments unless it's changed
     });
 
-    res.json({ 
-      message: 'Payment proof uploaded successfully', 
-      paymentId: result.id 
+    res.json({
+      message: 'Payment proof uploaded successfully',
+      paymentId: paymentRef.id
     });
   } catch (error) {
     console.error('Error uploading payment proof:', error);
@@ -3812,40 +3705,38 @@ app.post('/api/payments/upload-proof', authenticateToken, paymentProofUpload.sin
 // Admin payment management endpoint
 app.get('/api/admin/payments', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const paymentsQuery = query(collection(db, 'payments'), orderBy('created_at', 'desc'));
-    const paymentsSnapshot = await getDocs(paymentsQuery);
-    const payments = paymentsSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+    const paymentsCollection = collection(db, 'payments');
+    const usersCollection = collection(db, 'users');
+    const resourcesCollection = collection(db, 'resources');
 
-    const userIds = payments.map(p => p.user_id);
-    const usersQuery = query(collection(db, 'users'), where('__name__', 'in', userIds.length ? userIds : ['dummy']));
-    const usersSnapshot = await getDocs(usersQuery);
-    const usersMap = {};
-    usersSnapshot.docs.forEach(u => {
-      const data = u.data();
-      usersMap[u.id] = {
-        first_name: data.first_name,
-        last_name: data.last_name,
-        email: data.email
-      };
-    });
+    const paymentsQuery = query(paymentsCollection, orderBy('created_at', 'desc'));
+    const paymentsSnap = await getDocs(paymentsQuery);
 
-    const resourceIds = payments.map(p => p.resource_id).filter(r => r);
-    const resourcesQuery = query(collection(db, 'resources'), where('__name__', 'in', resourceIds.length ? resourceIds : ['dummy']));
-    const resourcesSnapshot = await getDocs(resourcesQuery);
-    const resourcesMap = {};
-    resourcesSnapshot.docs.forEach(r => {
-      resourcesMap[r.id] = r.data().title;
-    });
+    const data = [];
+    for (const docSnapshot of paymentsSnap.docs) {
+      const p = docSnapshot.data();
+      const userDocRef = doc(usersCollection, p.user_id);
+      const user = await getDoc(userDocRef);
+      const u = user.data();
+      let rTitle = null;
+      if (p.resource_id) {
+        const resourceDocRef = doc(resourcesCollection, p.resource_id);
+        const resource = await getDoc(resourceDocRef);
+        if (resource.exists()) {
+          rTitle = resource.data().title;
+        }
+      }
+      data.push({
+        ...p,
+        id: docSnapshot.id,
+        first_name: u ? u.first_name : 'N/A', // Handle case where user might be deleted
+        last_name: u ? u.last_name : 'N/A',
+        email: u ? u.email : 'N/A',
+        resource_title: rTitle
+      });
+    }
 
-    const formattedPayments = payments.map(p => ({
-      ...p,
-      first_name: usersMap[p.user_id]?.first_name,
-      last_name: usersMap[p.user_id]?.last_name,
-      email: usersMap[p.user_id]?.email,
-      resource_title: resourcesMap[p.resource_id] || null
-    }));
-
-    res.json(formattedPayments);
+    res.json(data);
   } catch (error) {
     console.error('Error fetching payments:', error);
     res.status(500).json({ error: 'Failed to fetch payments' });
@@ -3861,25 +3752,28 @@ app.put('/api/admin/payments/:id/verify', authenticateToken, requireAdmin, async
     const paymentRef = doc(db, 'payments', id);
     await updateDoc(paymentRef, {
       status: status,
-      verified_at: Timestamp.now()
+      verified_at: Timestamp.now() // Client SDK Timestamp
     });
 
     // If payment is approved, grant access to the resource
     if (status === 'approved') {
-      const paymentSnap = await getDoc(paymentRef);
-      const payment = paymentSnap.data();
+      const payment = await getDoc(paymentRef);
+      const p = payment.data();
 
-      if (payment.plan === 'individual' && payment.resource_id) {
+      if (p.plan === 'individual' && p.resource_id) {
         // Grant access to specific resource
-        await addDoc(collection(db, 'user_resources'), {
-          user_id: payment.user_id,
-          resource_id: payment.resource_id
+        const userResourcesCollection = collection(db, 'user_resources');
+        await setDoc(doc(userResourcesCollection), { // Auto-generate ID
+          user_id: p.user_id,
+          resource_id: p.resource_id,
+          granted_at: Timestamp.now()
         });
-      } else if (payment.plan === 'premium') {
+      } else if (p.plan === 'premium') {
         // Upgrade user to premium
-        const userRef = doc(db, 'users', payment.user_id);
+        const userRef = doc(db, 'users', p.user_id);
         await updateDoc(userRef, {
-          subscription_plan: "premium"
+          subscription_plan: "premium",
+          updated_at: Timestamp.now()
         });
       }
     }
@@ -3896,39 +3790,36 @@ app.put('/api/admin/payments/:id/verify', authenticateToken, requireAdmin, async
 // GET all enrollments (admin only)
 app.get('/api/admin/enrollments', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const enrollmentsQuery = query(collection(db, 'enrollments'), orderBy('enrollment_date', 'desc'));
-    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
-    const enrollments = enrollmentsSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+    const enrollmentsCollection = collection(db, 'enrollments');
+    const usersCollection = collection(db, 'users');
+    const coursesCollection = collection(db, 'courses');
 
-    const userIds = enrollments.map(e => e.user_id);
-    const usersQuery = query(collection(db, 'users'), where('__name__', 'in', userIds.length ? userIds : ['dummy']));
-    const usersSnapshot = await getDocs(usersQuery);
-    const usersMap = {};
-    usersSnapshot.docs.forEach(u => {
-      usersMap[u.id] = `${u.data().first_name} ${u.data().last_name}`;
-    });
+    const enrollmentsQuery = query(enrollmentsCollection, orderBy('enrollment_date', 'desc'));
+    const enrollmentsSnap = await getDocs(enrollmentsQuery);
 
-    const courseIds = enrollments.map(e => e.course_id);
-    const coursesQuery = query(collection(db, 'courses'), where('__name__', 'in', courseIds.length ? courseIds : ['dummy']));
-    const coursesSnapshot = await getDocs(coursesQuery);
-    const coursesMap = {};
-    coursesSnapshot.docs.forEach(c => {
-      coursesMap[c.id] = c.data().title;
-    });
+    const data = [];
+    for (const docSnapshot of enrollmentsSnap.docs) {
+      const e = docSnapshot.data();
+      const userDocRef = doc(usersCollection, e.user_id);
+      const user = await getDoc(userDocRef);
+      const u = user.data();
+      const courseDocRef = doc(coursesCollection, e.course_id);
+      const course = await getDoc(courseDocRef);
+      const c = course.data();
+      data.push({
+        id: docSnapshot.id,
+        user_id: e.user_id,
+        user_name: u ? `${u.first_name} ${u.last_name}` : 'N/A', // Handle potential missing user
+        course_id: e.course_id,
+        course_name: c ? c.title : 'N/A', // Handle potential missing course
+        progress: e.progress,
+        status: e.status,
+        enrollment_date: e.enrollment_date,
+        completion_date: e.completion_date
+      });
+    }
 
-    const formattedEnrollments = enrollments.map(e => ({
-      id: e.id,
-      user_id: e.user_id,
-      user_name: usersMap[e.user_id],
-      course_id: e.course_id,
-      course_name: coursesMap[e.course_id],
-      progress: e.progress,
-      status: e.status,
-      enrollment_date: e.enrollment_date,
-      completion_date: e.completion_date
-    }));
-
-    res.json(formattedEnrollments);
+    res.json(data);
   } catch (error) {
     console.error('Error fetching enrollments:', error);
     res.status(500).json({ error: 'Failed to fetch enrollments' });
@@ -3945,7 +3836,7 @@ app.put('/api/admin/enrollments/:id', authenticateToken, requireAdmin, async (re
     await updateDoc(enrollmentRef, {
       status: status,
       progress: progress,
-      completion_date: status === 'completed' ? (completion_date ? Timestamp.fromDate(new Date(completion_date)) : Timestamp.now()) : null
+      completion_date: status === 'completed' ? (completion_date || Timestamp.now()) : null // Client SDK Timestamp
     });
 
     res.json({ message: 'Enrollment updated successfully' });
@@ -3960,7 +3851,8 @@ app.delete('/api/admin/enrollments/:id', authenticateToken, requireAdmin, async 
   try {
     const { id } = req.params;
 
-    await deleteDoc(doc(db, 'enrollments', id));
+    const enrollmentRef = doc(db, 'enrollments', id);
+    await deleteDoc(enrollmentRef);
 
     res.json({ message: 'Enrollment deleted successfully' });
   } catch (error) {
@@ -3974,11 +3866,29 @@ app.delete('/api/admin/enrollments/:id', authenticateToken, requireAdmin, async 
 // GET all courses (admin only)
 app.get('/api/admin/courses', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const coursesQuery = query(collection(db, 'courses'), orderBy('created_at', 'desc'));
-    const coursesSnapshot = await getDocs(coursesQuery);
-    const courses = coursesSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+    const coursesCollection = collection(db, 'courses');
+    const coursesQuery = query(coursesCollection, orderBy('created_at', 'desc'));
+    const coursesSnap = await getDocs(coursesQuery);
 
-    res.json(courses);
+    const data = coursesSnap.docs.map(docSnapshot => {
+      const c = docSnapshot.data();
+      return {
+        id: docSnapshot.id,
+        title: c.title,
+        description: c.description,
+        instructor_name: c.instructor_name,
+        duration_weeks: c.duration_weeks,
+        difficulty_level: c.difficulty_level,
+        category: c.category,
+        price: c.price,
+        thumbnail: c.thumbnail,
+        is_active: c.is_active,
+        created_at: c.created_at,
+        updated_at: c.updated_at
+      };
+    });
+
+    res.json(data);
   } catch (error) {
     console.error('Error fetching courses:', error);
     res.status(500).json({ error: 'Failed to fetch courses' });
@@ -3999,28 +3909,28 @@ app.post('/api/admin/courses', authenticateToken, requireAdmin, async (req, res)
       is_active
     } = req.body;
 
-    // Validate required fields
     if (!title || !instructor_name || !duration_weeks || !difficulty_level || !category || !price) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const result = await addDoc(collection(db, 'courses'), {
+    const coursesCollection = collection(db, 'courses');
+    const courseRef = doc(coursesCollection); // Auto-generate ID
+    await setDoc(courseRef, {
       title,
       description,
       instructor_name,
-      duration_weeks,
+      duration_weeks: parseInt(duration_weeks), // Ensure numeric type
       difficulty_level,
       category,
-      price,
-      thumbnail: null,
-      is_active: is_active || true,
-      created_at: Timestamp.now(),
-      updated_at: Timestamp.now()
+      price: parseFloat(price), // Ensure numeric type
+      is_active: is_active || true, // Default to true if not provided
+      created_at: Timestamp.now(), // Client SDK Timestamp
+      updated_at: Timestamp.now() // Client SDK Timestamp
     });
 
-    res.status(201).json({ 
+    res.status(201).json({
       message: 'Course created successfully',
-      courseId: result.id
+      courseId: courseRef.id
     });
   } catch (error) {
     console.error('Error creating course:', error);
@@ -4043,7 +3953,6 @@ app.put('/api/admin/courses/:id', authenticateToken, requireAdmin, async (req, r
       is_active
     } = req.body;
 
-    // Validate required fields
     if (!title || !instructor_name || !duration_weeks || !difficulty_level || !category || !price) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -4053,12 +3962,12 @@ app.put('/api/admin/courses/:id', authenticateToken, requireAdmin, async (req, r
       title,
       description,
       instructor_name,
-      duration_weeks,
+      duration_weeks: parseInt(duration_weeks), // Ensure numeric type
       difficulty_level,
       category,
-      price,
+      price: parseFloat(price), // Ensure numeric type
       is_active,
-      updated_at: Timestamp.now()
+      updated_at: Timestamp.now() // Client SDK Timestamp
     });
 
     res.json({ message: 'Course updated successfully' });
@@ -4073,14 +3982,16 @@ app.delete('/api/admin/courses/:id', authenticateToken, requireAdmin, async (req
   try {
     const { id } = req.params;
 
-    // Check if course has enrollments
-    const enrollmentsQuery = query(collection(db, 'enrollments'), where('course_id', '==', id));
-    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
-    if (!enrollmentsSnapshot.empty) {
+    const enrollmentsCollection = collection(db, 'enrollments');
+    const enrollmentsQuery = query(enrollmentsCollection, where('course_id', '==', id));
+    const enrollmentsSnap = await getDocs(enrollmentsQuery);
+
+    if (!enrollmentsSnap.empty) {
       return res.status(400).json({ error: 'Cannot delete course with active enrollments' });
     }
 
-    await deleteDoc(doc(db, 'courses', id));
+    const courseRef = doc(db, 'courses', id);
+    await deleteDoc(courseRef);
 
     res.json({ message: 'Course deleted successfully' });
   } catch (error) {
@@ -4090,10 +4001,10 @@ app.delete('/api/admin/courses/:id', authenticateToken, requireAdmin, async (req
 });
 
 // Upload course thumbnail
-app.post('/api/admin/courses/:id/thumbnail', authenticateToken, requireAdmin, async (req, res) => {
+app.post('/api/admin/courses/:id/thumbnail', authenticateToken, requireAdmin, courseThumbnailUpload.single('thumbnail'), async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
@@ -4103,7 +4014,7 @@ app.post('/api/admin/courses/:id/thumbnail', authenticateToken, requireAdmin, as
     const courseRef = doc(db, 'courses', id);
     await updateDoc(courseRef, {
       thumbnail: thumbnailPath,
-      updated_at: Timestamp.now()
+      updated_at: Timestamp.now() // Client SDK Timestamp
     });
 
     res.json({ message: 'Thumbnail uploaded successfully', thumbnail: thumbnailPath });
@@ -4118,16 +4029,30 @@ app.post('/api/admin/courses/:id/thumbnail', authenticateToken, requireAdmin, as
 // GET all resources (admin only)
 app.get('/api/admin/resources', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const resourcesQuery = query(collection(db, 'resources'), orderBy('created_at', 'desc'));
-    const resourcesSnapshot = await getDocs(resourcesQuery);
-    const resources = resourcesSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+    const resourcesCollection = collection(db, 'resources');
+    const resourcesQuery = query(resourcesCollection, orderBy('created_at', 'desc'));
+    const resourcesSnap = await getDocs(resourcesQuery);
 
-    const parsedResources = resources.map(resource => ({
-      ...resource,
-      allowed_account_types: JSON.parse(resource.allowed_account_types || '[]')
-    }));
+    const data = resourcesSnap.docs.map(docSnapshot => {
+      const r = docSnapshot.data();
+      return {
+        id: docSnapshot.id,
+        title: r.title,
+        description: r.description,
+        type: r.type,
+        size: r.size,
+        url: r.url,
+        category: r.category,
+        icon_name: r.icon_name,
+        button_color: r.button_color,
+        allowed_account_types: r.allowed_account_types,
+        is_premium: r.is_premium,
+        created_at: r.created_at,
+        updated_at: r.updated_at
+      };
+    });
 
-    res.json(parsedResources);
+    res.json(data);
   } catch (error) {
     console.error('Error fetching resources:', error);
     res.status(500).json({ error: 'Failed to fetch resources' });
@@ -4150,19 +4075,15 @@ app.post('/api/admin/resources', authenticateToken, requireAdmin, async (req, re
       is_premium
     } = req.body;
 
-    // Validate required fields
     if (!title || !description || !type || !category || !icon_name || !button_color || !allowed_account_types) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Ensure allowed_account_types is an array and convert to JSON string
-    const accountTypesArray = Array.isArray(allowed_account_types) 
-      ? allowed_account_types 
-      : [allowed_account_types];
-    
-    const accountTypesJSON = JSON.stringify(accountTypesArray);
+    const accountTypesArray = Array.isArray(allowed_account_types) ? allowed_account_types : [allowed_account_types];
 
-    const result = await addDoc(collection(db, 'resources'), {
+    const resourcesCollection = collection(db, 'resources');
+    const resourceRef = doc(resourcesCollection); // Auto-generate ID
+    await setDoc(resourceRef, {
       title,
       description,
       type,
@@ -4171,15 +4092,15 @@ app.post('/api/admin/resources', authenticateToken, requireAdmin, async (req, re
       category,
       icon_name,
       button_color,
-      allowed_account_types: accountTypesJSON,
+      allowed_account_types: accountTypesArray,
       is_premium: is_premium || false,
-      created_at: Timestamp.now(),
-      updated_at: Timestamp.now()
+      created_at: Timestamp.now(), // Client SDK Timestamp
+      updated_at: Timestamp.now() // Client SDK Timestamp
     });
 
-    res.status(201).json({ 
+    res.status(201).json({
       message: 'Resource created successfully',
-      resourceId: result.id
+      resourceId: resourceRef.id
     });
   } catch (error) {
     console.error('Error creating resource:', error);
@@ -4204,17 +4125,11 @@ app.put('/api/admin/resources/:id', authenticateToken, requireAdmin, async (req,
       is_premium
     } = req.body;
 
-    // Validate required fields
     if (!title || !description || !type || !category || !icon_name || !button_color || !allowed_account_types) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Ensure allowed_account_types is an array and convert to JSON string
-    const accountTypesArray = Array.isArray(allowed_account_types) 
-      ? allowed_account_types 
-      : [allowed_account_types];
-    
-    const accountTypesJSON = JSON.stringify(accountTypesArray);
+    const accountTypesArray = Array.isArray(allowed_account_types) ? allowed_account_types : [allowed_account_types];
 
     const resourceRef = doc(db, 'resources', id);
     await updateDoc(resourceRef, {
@@ -4226,9 +4141,9 @@ app.put('/api/admin/resources/:id', authenticateToken, requireAdmin, async (req,
       category,
       icon_name,
       button_color,
-      allowed_account_types: accountTypesJSON,
+      allowed_account_types: accountTypesArray,
       is_premium,
-      updated_at: Timestamp.now()
+      updated_at: Timestamp.now() // Client SDK Timestamp
     });
 
     res.json({ message: 'Resource updated successfully' });
@@ -4243,7 +4158,8 @@ app.delete('/api/admin/resources/:id', authenticateToken, requireAdmin, async (r
   try {
     const { id } = req.params;
 
-    await deleteDoc(doc(db, 'resources', id));
+    const resourceRef = doc(db, 'resources', id);
+    await deleteDoc(resourceRef);
 
     res.json({ message: 'Resource deleted successfully' });
   } catch (error) {
@@ -4257,30 +4173,30 @@ app.delete('/api/admin/resources/:id', authenticateToken, requireAdmin, async (r
 // GET all assignments (admin only)
 app.get('/api/admin/assignments', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const assignmentsQuery = query(collection(db, 'assignments'), orderBy('created_at', 'desc'));
-    const assignmentsSnapshot = await getDocs(assignmentsQuery);
-    const assignments = assignmentsSnapshot.docs.map(a => ({id: a.id, ...a.data()}));
+    const assignmentsCollection = collection(db, 'assignments');
+    const coursesCollection = collection(db, 'courses');
 
-    const courseIds = [...new Set(assignments.map(a => a.course_id))];
-    const coursesQuery = query(collection(db, 'courses'), where('__name__', 'in', courseIds.length ? courseIds : ['dummy']));
-    const coursesSnapshot = await getDocs(coursesQuery);
-    const coursesMap = {};
-    coursesSnapshot.docs.forEach(c => {
-      coursesMap[c.id] = c.data().title;
-    });
+    const assignmentsQuery = query(assignmentsCollection, orderBy('created_at', 'desc'));
+    const assignmentsSnap = await getDocs(assignmentsQuery);
 
-    const formattedAssignments = assignments.map(a => ({
-      id: a.id,
-      course_id: a.course_id,
-      title: a.title,
-      description: a.description,
-      due_date: a.due_date,
-      max_points: a.max_points,
-      created_at: a.created_at,
-      course_title: coursesMap[a.course_id]
-    }));
+    const data = [];
+    for (const docSnapshot of assignmentsSnap.docs) {
+      const a = docSnapshot.data();
+      const courseDocRef = doc(coursesCollection, a.course_id);
+      const course = await getDoc(courseDocRef);
+      data.push({
+        id: docSnapshot.id,
+        course_id: a.course_id,
+        title: a.title,
+        description: a.description,
+        due_date: a.due_date,
+        max_points: a.max_points,
+        created_at: a.created_at,
+        course_title: course.data() ? course.data().title : 'N/A' // Handle potential missing course
+      });
+    }
 
-    res.json(formattedAssignments);
+    res.json(data);
   } catch (error) {
     console.error('Error fetching assignments:', error);
     res.status(500).json({ error: 'Failed to fetch assignments' });
@@ -4298,23 +4214,24 @@ app.post('/api/admin/assignments', authenticateToken, requireAdmin, async (req, 
       max_points
     } = req.body;
 
-    // Validate required fields
     if (!title || !course_id || !due_date || !max_points) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const result = await addDoc(collection(db, 'assignments'), {
+    const assignmentsCollection = collection(db, 'assignments');
+    const assignmentRef = doc(assignmentsCollection); // Auto-generate ID
+    await setDoc(assignmentRef, {
       title,
       course_id,
       description,
-      due_date: Timestamp.fromDate(new Date(due_date)),
-      max_points,
-      created_at: Timestamp.now()
+      due_date: new Date(due_date), // Store as Date object or convert to Timestamp
+      max_points: parseInt(max_points), // Ensure numeric
+      created_at: Timestamp.now() // Client SDK Timestamp
     });
 
-    res.status(201).json({ 
+    res.status(201).json({
       message: 'Assignment created successfully',
-      assignmentId: result.id
+      assignmentId: assignmentRef.id
     });
   } catch (error) {
     console.error('Error creating assignment:', error);
@@ -4334,7 +4251,6 @@ app.put('/api/admin/assignments/:id', authenticateToken, requireAdmin, async (re
       max_points
     } = req.body;
 
-    // Validate required fields
     if (!title || !course_id || !due_date || !max_points) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -4344,8 +4260,9 @@ app.put('/api/admin/assignments/:id', authenticateToken, requireAdmin, async (re
       title,
       course_id,
       description,
-      due_date: Timestamp.fromDate(new Date(due_date)),
-      max_points
+      due_date: new Date(due_date), // Store as Date object or convert to Timestamp
+      max_points: parseInt(max_points), // Ensure numeric
+      updated_at: Timestamp.now() // Client SDK Timestamp (if you want to track updates)
     });
 
     res.json({ message: 'Assignment updated successfully' });
@@ -4360,13 +4277,16 @@ app.delete('/api/admin/assignments/:id', authenticateToken, requireAdmin, async 
   try {
     const { id } = req.params;
 
-    const submissionsQuery = query(collection(db, 'assignment_submissions'), where('assignment_id', '==', id));
-    const submissionsSnapshot = await getDocs(submissionsQuery);
-    if (!submissionsSnapshot.empty) {
+    const assignmentSubmissionsCollection = collection(db, 'assignment_submissions');
+    const submissionsQuery = query(assignmentSubmissionsCollection, where('assignment_id', '==', id));
+    const submissionsSnap = await getDocs(submissionsQuery);
+
+    if (!submissionsSnap.empty) {
       return res.status(400).json({ error: 'Cannot delete assignment with existing submissions' });
     }
 
-    await deleteDoc(doc(db, 'assignments', id));
+    const assignmentRef = doc(db, 'assignments', id);
+    await deleteDoc(assignmentRef);
 
     res.json({ message: 'Assignment deleted successfully' });
   } catch (error) {
@@ -4375,47 +4295,48 @@ app.delete('/api/admin/assignments/:id', authenticateToken, requireAdmin, async 
   }
 });
 
-// Error handling middleware for multer
-app.use((error, req, res, next) => {
-  if (error instanceof multer.MulterError) {
-    if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'File too large. Maximum size is 10MB.' });
-    }
-  }
-  if (error.message.includes('Invalid file type')) {
-    return res.status(400).json({ error: error.message });
-  }
-  next(error);
-});
-
 // ==================== ADMIN CONTACT MESSAGES ENDPOINTS ====================
 
 // Get contact messages (admin only) - CORRECTED VERSION
 app.get('/api/admin/contact-messages', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
-    const pageSize = parseInt(req.query.limit) || 10;
-    const offset = (page - 1) * pageSize;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
 
-    const messagesQuery = query(collection(db, 'contact_messages'), orderBy('created_at', 'desc'));
-    const messagesSnapshot = await getDocs(messagesQuery);
-    let messages = messagesSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+    const contactMessagesCollection = collection(db, 'contact_messages');
 
-    const totalMessages = messages.length;
-    messages = messages.slice(offset, offset + pageSize);
+    // Get total for pagination
+    const totalSnap = await getDocs(contactMessagesCollection);
+    const total = totalSnap.size;
 
-    // Add default status if not present
-    messages.forEach(message => {
-      if (!message.status) message.status = 'pending';
+    // Simulate offset by fetching more and slicing locally
+    const messagesQuery = query(contactMessagesCollection, orderBy('created_at', 'desc'), firebaseLimit(offset + limit));
+    const messagesSnap = await getDocs(messagesQuery);
+
+    const data = messagesSnap.docs.slice(offset).map(docSnapshot => {
+      const m = docSnapshot.data();
+      return {
+        id: docSnapshot.id,
+        first_name: m.first_name,
+        last_name: m.last_name,
+        email: m.email,
+        phone: m.phone,
+        company: m.company,
+        message: m.message,
+        status: m.status || 'pending',
+        created_at: m.created_at
+      };
     });
 
+
     res.json({
-      messages,
+      messages: data,
       pagination: {
         currentPage: page,
-        totalPages: Math.ceil(totalMessages / pageSize),
-        totalMessages,
-        hasNextPage: page < Math.ceil(totalMessages / pageSize),
+        totalPages: Math.ceil(total / limit),
+        totalMessages: total,
+        hasNextPage: page < Math.ceil(total / limit),
         hasPreviousPage: page > 1
       }
     });
@@ -4432,13 +4353,14 @@ app.put('/api/admin/contact-messages/:id', authenticateToken, requireAdmin, asyn
     const { id } = req.params;
     const { status } = req.body;
 
-    if (!status || !['pending', 'contacted', 'resolved', 'closed'].includes(status)) {
+    if (!status || !['pending', 'resolved', 'contacted', 'closed'].includes(status)) {
       return res.status(400).json({ error: 'Invalid status value' });
     }
 
-    const messageRef = doc(db, 'contact_messages', id);
-    await updateDoc(messageRef, {
-      status: status
+    const contactMessageRef = doc(db, 'contact_messages', id);
+    await updateDoc(contactMessageRef, {
+      status: status,
+      updated_at: Timestamp.now() // Track when status was last updated
     });
 
     res.json({ message: 'Contact message updated successfully' });
@@ -4453,7 +4375,8 @@ app.delete('/api/admin/contact-messages/:id', authenticateToken, requireAdmin, a
   try {
     const { id } = req.params;
 
-    await deleteDoc(doc(db, 'contact_messages', id));
+    const contactMessageRef = doc(db, 'contact_messages', id);
+    await deleteDoc(contactMessageRef);
 
     res.json({ message: 'Contact message deleted successfully' });
   } catch (error) {
@@ -4462,98 +4385,489 @@ app.delete('/api/admin/contact-messages/:id', authenticateToken, requireAdmin, a
   }
 });
 
-// ==================== ADMIN SERVICE REQUEST MANAGEMENT PAGE ====================
+// ==================== ADMIN SERVICE MANAGEMENT ENDPOINTS ====================
 
-// Updated GET endpoint for service requests
-app.get('/api/admin/service-requests', authenticateToken, requireAdmin, async (req, res) => {
+// Get all services (admin only)
+app.get('/api/admin/services', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const requestsQuery = query(collection(db, 'service_requests'), orderBy('created_at', 'desc'));
-    const requestsSnapshot = await getDocs(requestsQuery);
-    const requests = requestsSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+    const servicesCollection = collection(db, 'services');
+    const serviceCategoriesCollection = collection(db, 'service_categories');
 
-    const subcategoryIds = requests.map(r => r.subcategory_id);
-    const subcategoriesQuery = query(collection(db, 'service_subcategories'), where('__name__', 'in', subcategoryIds.length ? subcategoryIds : ['dummy']));
-    const subcategoriesSnapshot = await getDocs(subcategoriesQuery);
-    const subcategoriesMap = {};
-    subcategoriesSnapshot.docs.forEach(sc => {
-      subcategoriesMap[sc.id] = sc.data().name;
+    const servicesQuery = query(servicesCollection, orderBy('created_at', 'desc'));
+    const servicesSnap = await getDocs(servicesQuery);
+
+    const data = [];
+    for (const docSnapshot of servicesSnap.docs) {
+      const s = docSnapshot.data();
+      const categoryDocRef = doc(serviceCategoriesCollection, s.category_id);
+      const category = await getDoc(categoryDocRef);
+      data.push({
+        id: docSnapshot.id,
+        name: s.name,
+        category_id: s.category_id,
+        category_name: category.data() ? category.data().name : 'N/A', // Handle potential missing category
+        description: s.description,
+        price: s.price,
+        duration: s.duration,
+        rating: s.rating,
+        reviews: s.reviews,
+        features: s.features,
+        popular: s.popular
+      });
+    }
+
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching services:', error);
+    res.status(500).json({ error: 'Failed to fetch services' });
+  }
+});
+
+// Get service by ID (admin only)
+app.get('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const serviceDocRef = doc(db, 'services', id);
+    const service = await getDoc(serviceDocRef);
+
+    if (!service.exists()) {
+      return res.status(404).json({ error: 'Service not found' });
+    }
+
+    const s = service.data();
+    const categoryDocRef = doc(db, 'service_categories', s.category_id);
+    const category = await getDoc(categoryDocRef);
+
+    res.json({
+      id: id,
+      name: s.name,
+      category_id: s.category_id,
+      category_name: category.data() ? category.data().name : 'N/A',
+      description: s.description,
+      price: s.price,
+      duration: s.duration,
+      rating: s.rating,
+      reviews: s.reviews,
+      features: s.features,
+      popular: s.popular,
+      is_active: s.is_active
+    });
+  } catch (error) {
+    console.error('Error fetching service:', error);
+    res.status(500).json({ error: 'Failed to fetch service' });
+  }
+});
+
+// Create new service (admin only)
+app.post('/api/admin/services', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const {
+      name,
+      category_id,
+      description,
+      price,
+      duration,
+      rating,
+      reviews,
+      features,
+      popular,
+      is_active
+    } = req.body;
+
+    // Basic validation
+    if (!name || !category_id || !description || price === undefined || duration === undefined) {
+      return res.status(400).json({ error: 'Missing required fields for service creation' });
+    }
+
+    const servicesCollection = collection(db, 'services');
+    const serviceRef = doc(servicesCollection); // Auto-generate ID
+    await setDoc(serviceRef, {
+      name,
+      category_id,
+      description,
+      price: parseFloat(price),
+      duration: parseInt(duration),
+      rating: rating || 0,
+      reviews: reviews || 0,
+      features: features || [], // Assuming features is an array or stringified JSON
+      popular: popular || false,
+      is_active: is_active || true,
+      created_at: Timestamp.now(), // Client SDK Timestamp
+      updated_at: Timestamp.now() // Client SDK Timestamp
     });
 
-    const userIds = requests.map(r => r.user_id);
-    const usersQuery = query(collection(db, 'users'), where('__name__', 'in', userIds.length ? userIds : ['dummy']));
-    const usersSnapshot = await getDocs(usersQuery);
-    const usersMap = {};
-    usersSnapshot.docs.forEach(u => {
-      const data = u.data();
-      usersMap[u.id] = {
-        first_name: data.first_name,
-        last_name: data.last_name,
-        account_type: data.account_type
-      };
+    res.status(201).json({
+      message: 'Service created successfully',
+      serviceId: serviceRef.id
+    });
+  } catch (error) {
+    console.error('Error creating service:', error);
+    res.status(500).json({ error: 'Failed to create service' });
+  }
+});
+
+// Update service (admin only)
+app.put('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      name,
+      category_id,
+      description,
+      price,
+      duration,
+      rating,
+      reviews,
+      features,
+      popular,
+      is_active
+    } = req.body;
+
+    // Basic validation
+    if (!name || !category_id || !description || price === undefined || duration === undefined) {
+      return res.status(400).json({ error: 'Missing required fields for service update' });
+    }
+
+    const serviceRef = doc(db, 'services', id);
+    await updateDoc(serviceRef, {
+      name,
+      category_id,
+      description,
+      price: parseFloat(price),
+      duration: parseInt(duration),
+      rating: rating,
+      reviews: reviews,
+      features: features,
+      popular: popular,
+      is_active: is_active,
+      updated_at: Timestamp.now() // Client SDK Timestamp
     });
 
-    const formattedRequests = requests.map(sr => ({
-      id: sr.id,
-      name: sr.full_name,
-      service: subcategoriesMap[sr.subcategory_id],
-      date: sr.created_at.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-      status: sr.status,
-      email: sr.email,
-      phone: sr.phone,
-      company: sr.company,
-      website: sr.website,
-      project_details: sr.project_details,
-      budget_range: sr.budget_range,
-      timeline: sr.timeline,
-      contact_method: sr.contact_method,
-      additional_requirements: sr.additional_requirements,
-      user_id: sr.user_id,
-      user_first_name: usersMap[sr.user_id]?.first_name,
-      user_last_name: usersMap[sr.user_id]?.last_name,
-      user_account_type: usersMap[sr.user_id]?.account_type
+    res.json({ message: 'Service updated successfully' });
+  } catch (error) {
+    console.error('Error updating service:', error);
+    res.status(500).json({ error: 'Failed to update service' });
+  }
+});
+
+// Delete service (admin only)
+app.delete('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const serviceRef = doc(db, 'services', id);
+    await deleteDoc(serviceRef);
+
+    res.json({ message: 'Service deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting service:', error);
+    res.status(500).json({ error: 'Failed to delete service' });
+  }
+});
+
+// Get service categories (admin only)
+app.get('/api/admin/service-categories', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const serviceCategoriesCollection = collection(db, 'service_categories');
+    const categoriesQuery = query(serviceCategoriesCollection, where('is_active', '==', true), orderBy('created_at'));
+    const categoriesSnap = await getDocs(categoriesQuery);
+
+    res.json(categoriesSnap.docs.map(docSnapshot => ({ id: docSnapshot.id, ...docSnapshot.data() }))); // Include ID in response
+  } catch (error) {
+    console.error('Error fetching service categories:', error);
+    res.status(500).json({ error: 'Failed to fetch service categories' });
+  }
+});
+
+// ==================== ADMIN CALENDAR MANAGEMENT ENDPOINTS ====================
+
+// Get all calendar events (admin only)
+app.get('/api/admin/calendar-events', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const customCalendarEventsCollection = collection(db, 'custom_calendar_events');
+    const usersCollection = collection(db, 'users');
+
+    const eventsQuery = query(customCalendarEventsCollection, orderBy('created_at', 'desc'));
+    const eventsSnap = await getDocs(eventsQuery);
+
+    const data = [];
+    for (const docSnapshot of eventsSnap.docs) {
+      const e = docSnapshot.data();
+      let userFirstName = 'N/A';
+      let userLastName = 'N/A';
+      let userEmail = 'N/A';
+
+      if (e.user_id) {
+        const userDocRef = doc(usersCollection, e.user_id);
+        const user = await getDoc(userDocRef);
+        const u = user.data();
+        if (u) {
+          userFirstName = u.first_name;
+          userLastName = u.last_name;
+          userEmail = u.email;
+        }
+      }
+
+      data.push({
+        ...e,
+        id: docSnapshot.id,
+        first_name: userFirstName,
+        last_name: userLastName,
+        email: userEmail
+      });
+    }
+
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching calendar events:', error);
+    res.status(500).json({ error: 'Failed to fetch calendar events' });
+  }
+});
+
+// Get calendar event by ID (admin only)
+app.get('/api/admin/calendar-events/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const eventDocRef = doc(db, 'custom_calendar_events', id);
+    const event = await getDoc(eventDocRef);
+
+    if (!event.exists()) {
+      return res.status(404).json({ error: 'Calendar event not found' });
+    }
+
+    const e = event.data();
+    let userFirstName = 'N/A';
+    let userLastName = 'N/A';
+    let userEmail = 'N/A';
+
+    if (e.user_id) {
+      const userDocRef = doc(db, 'users', e.user_id);
+      const user = await getDoc(userDocRef);
+      const u = user.data();
+      if (u) {
+        userFirstName = u.first_name;
+        userLastName = u.last_name;
+        userEmail = u.email;
+      }
+    }
+
+
+    res.json({
+      ...e,
+      id: id,
+      first_name: userFirstName,
+      last_name: userLastName,
+      email: userEmail
+    });
+  } catch (error) {
+    console.error('Error fetching calendar event:', error);
+    res.status(500).json({ error: 'Failed to fetch calendar event' });
+  }
+});
+
+// Create new calendar event (admin only)
+app.post('/api/admin/calendar-events', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const {
+      user_id,
+      title,
+      description,
+      event_date,
+      event_time,
+      event_type
+    } = req.body;
+
+    if (!title || !event_date) {
+      return res.status(400).json({ error: 'Title and date are required' });
+    }
+
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(event_date)) {
+      return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
+    }
+
+    const customCalendarEventsCollection = collection(db, 'custom_calendar_events');
+    const eventRef = doc(customCalendarEventsCollection); // Auto-generate ID
+    await setDoc(eventRef, {
+      user_id: user_id || null, // Can be null if it's a general admin event
+      title,
+      description: description || null,
+      event_date: new Date(event_date), // Store as Date object
+      event_time: event_time || null,
+      event_type: event_type || 'custom',
+      created_at: Timestamp.now(), // Client SDK Timestamp
+      updated_at: Timestamp.now() // Client SDK Timestamp
+    });
+
+    res.status(201).json({
+      message: 'Calendar event created successfully',
+      eventId: eventRef.id
+    });
+  } catch (error) {
+    console.error('Error creating calendar event:', error);
+    res.status(500).json({ error: 'Failed to create calendar event' });
+  }
+});
+
+// Update calendar event (admin only)
+app.put('/api/admin/calendar-events/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      user_id,
+      title,
+      description,
+      event_date,
+      event_time,
+      event_type
+    } = req.body;
+
+    if (event_date) {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(event_date)) {
+        return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
+      }
+    }
+
+    const eventRef = doc(db, 'custom_calendar_events', id);
+    await updateDoc(eventRef, {
+      user_id: user_id || null,
+      title,
+      description: description || null,
+      event_date: new Date(event_date), // Store as Date object
+      event_time: event_time || null,
+      event_type: event_type || 'custom',
+      updated_at: Timestamp.now() // Client SDK Timestamp
+    });
+
+    res.json({ message: 'Calendar event updated successfully' });
+  } catch (error) {
+    console.error('Error updating calendar event:', error);
+    res.status(500).json({ error: 'Failed to update calendar event' });
+  }
+});
+
+// Delete calendar event (admin only)
+app.delete('/api/admin/calendar-events/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const eventRef = doc(db, 'custom_calendar_events', id);
+    await deleteDoc(eventRef);
+
+    res.json({ message: 'Calendar event deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting calendar event:', error);
+    res.status(500).json({ error: 'Failed to delete calendar event' });
+  }
+});
+
+// Get all users for dropdown (admin only)
+// NOTE: This endpoint is duplicated (already one at /api/admin/users for full management)
+// Renaming this one to avoid conflict, typically such a specific endpoint would be '/api/admin/users/list-for-dropdown'
+app.get('/api/admin/users-for-dropdown', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const usersCollection = collection(db, 'users');
+    const usersQuery = query(usersCollection, where('is_active', '==', true), orderBy('first_name'), orderBy('last_name'));
+    const usersSnap = await getDocs(usersQuery);
+
+    const data = usersSnap.docs.map(docSnapshot => ({
+      id: docSnapshot.id,
+      first_name: docSnapshot.data().first_name,
+      last_name: docSnapshot.data().last_name
     }));
 
-    res.json(formattedRequests);
+    res.json(data);
+  } catch (error) {
+    console.error('Error fetching users for dropdown:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+// ==================== ADMIN SERVICE REQUEST MANAGEMENT PAGE ====================
+
+// GET /api/admin/service-requests
+app.get('/api/admin/service-requests', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const serviceRequestsCollection = collection(db, 'service_requests');
+    const serviceSubcategoriesCollection = collection(db, 'service_subcategories');
+    const usersCollection = collection(db, 'users');
+
+    const requestsQuery = query(serviceRequestsCollection, orderBy('created_at', 'desc'));
+    const requestsSnap = await getDocs(requestsQuery);
+
+    const data = [];
+    for (const docSnapshot of requestsSnap.docs) {
+      const sr = docSnapshot.data();
+
+      // Fetch subcategory
+      const subcategoryDocRef = doc(serviceSubcategoriesCollection, sr.subcategory_id);
+      const subcategorySnap = await getDoc(subcategoryDocRef);
+      const subcategoryName = subcategorySnap.exists() ? subcategorySnap.data().name : 'N/A';
+
+      // Fetch user details
+      let userFirstName = 'N/A';
+      let userLastName = 'N/A';
+      let userAccountType = 'N/A';
+      if (sr.user_id) {
+        const userDocRef = doc(usersCollection, sr.user_id);
+        const userSnap = await getDoc(userDocRef);
+        if (userSnap.exists()) {
+          const u = userSnap.data();
+          userFirstName = u.first_name;
+          userLastName = u.last_name;
+          userAccountType = u.account_type;
+        }
+      }
+
+      data.push({
+        id: docSnapshot.id,
+        name: sr.full_name,
+        service: subcategoryName,
+        date: sr.created_at.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+        status: sr.status,
+        email: sr.email,
+        phone: sr.phone,
+        company: sr.company,
+        website: sr.website,
+        project_details: sr.project_details,
+        budget_range: sr.budget_range,
+        timeline: sr.timeline,
+        contact_method: sr.contact_method,
+        additional_requirements: sr.additional_requirements,
+        user_id: sr.user_id,
+        user_first_name: userFirstName,
+        user_last_name: userLastName,
+        user_account_type: userAccountType
+      });
+    }
+
+    res.json(data);
   } catch (error) {
     console.error('Error fetching service requests:', error);
     res.status(500).json({ error: 'Failed to fetch service requests', details: error.message });
   }
 });
 
-// Updated PUT endpoint for service requests
+// PUT /api/admin/service-requests/:id - Update service request (both status and details)
+// NOTE: There were two PUT endpoints with the same path. Merged them into one.
 app.put('/api/admin/service-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { status, project_details, budget_range, timeline, additional_requirements } = req.body;
 
-    const requestRef = doc(db, 'service_requests', id);
-    await updateDoc(requestRef, {
-      status,
-      project_details,
-      budget_range,
-      timeline,
-      additional_requirements,
-      updated_at: Timestamp.now()
-    });
+    const updateData = { updated_at: Timestamp.now() }; // Client SDK Timestamp
 
-    res.json({ message: 'Service request updated successfully' });
-  } catch (error) {
-    console.error('Error updating service request:', error);
-    res.status(500).json({ error: 'Failed to update service request', details: error.message });
-  }
-});
+    if (status) updateData.status = status;
+    if (project_details !== undefined) updateData.project_details = project_details;
+    if (budget_range !== undefined) updateData.budget_range = budget_range;
+    if (timeline !== undefined) updateData.timeline = timeline;
+    if (additional_requirements !== undefined) updateData.additional_requirements = additional_requirements;
 
-// PUT /api/admin/service-requests/:id - Update service request status
-app.put('/api/admin/service-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
-
-    const requestRef = doc(db, 'service_requests', id);
-    await updateDoc(requestRef, {
-      status: status,
-      updated_at: Timestamp.now()
-    });
+    const serviceRequestRef = doc(db, 'service_requests', id);
+    await updateDoc(serviceRequestRef, updateData);
 
     res.json({ message: 'Service request updated successfully' });
   } catch (error) {
@@ -4567,7 +4881,8 @@ app.delete('/api/admin/service-requests/:id', authenticateToken, requireAdmin, a
   try {
     const { id } = req.params;
 
-    await deleteDoc(doc(db, 'service_requests', id));
+    const serviceRequestRef = doc(db, 'service_requests', id);
+    await deleteDoc(serviceRequestRef);
 
     res.json({ message: 'Service request deleted successfully' });
   } catch (error) {
@@ -4612,11 +4927,15 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err);
 
-  if (err.code === 'LIMIT_FILE_SIZE') {
-    return res.status(400).json({ error: 'File too large' });
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'File too large' });
+    }
   }
-
-  if (err.message === 'Only image files are allowed for avatar') {
+  if (err.message.includes('Only image files are allowed for avatar') ||
+      err.message.includes('Invalid file type') ||
+      err.message.includes('Only images and PDF files are allowed') ||
+      err.message.includes('Only image files are allowed for course thumbnails')) {
     return res.status(400).json({ error: err.message });
   }
 
@@ -4627,6 +4946,12 @@ app.use((err, req, res, next) => {
 });
 
 // ==================== SERVER STARTUP ====================
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('Received SIGINT. Graceful shutdown...');
+  process.exit(0);
+});
 
 // Start server
 app.listen(port, () => {
