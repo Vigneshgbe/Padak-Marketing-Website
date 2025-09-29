@@ -3057,6 +3057,17 @@ app.get('/api/admin/analytics', authenticateToken, requireAdmin, async (req, res
 
 // ==================== ADMIN USER MANAGEMENT ENDPOINTS ====================
 
+// Helper function to format user data
+const formatUser = (u) => {
+  if (u.created_at instanceof firebase.firestore.Timestamp) {
+    u.created_at = u.created_at.toDate().toISOString();
+  }
+  if (u.updated_at instanceof firebase.firestore.Timestamp) {
+    u.updated_at = u.updated_at.toDate().toISOString();
+  }
+  return u;
+};
+
 // GET /api/admin/users - Get all users with pagination and filtering
 app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -3079,7 +3090,17 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
 
     if (search) {
       // For search, we need to handle it differently since Firestore doesn't support OR queries directly
-      const usersRef = db.collection('users');
+      let usersRef = db.collection('users');
+
+      if (accountType && accountType !== 'all') {
+        usersRef = usersRef.where('account_type', '==', accountType);
+      }
+
+      if (status && status !== 'all') {
+        const isActive = status === 'active' ? true : false;
+        usersRef = usersRef.where('is_active', '==', isActive);
+      }
+
       const firstNameQuery = usersRef.where('first_name', '>=', search).where('first_name', '<=', search + '\uf8ff');
       const lastNameQuery = usersRef.where('last_name', '>=', search).where('last_name', '<=', search + '\uf8ff');
       const emailQuery = usersRef.where('email', '>=', search).where('email', '<=', search + '\uf8ff');
@@ -3098,11 +3119,17 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
         return acc;
       }, []);
 
-      const users = uniqueDocs.map(doc => {
+      let users = uniqueDocs.map(doc => {
         const data = doc.data();
         data.id = doc.id;
         return data;
       });
+
+      // Sort by created_at desc
+      users.sort((a, b) => b.created_at.toMillis() - a.created_at.toMillis());
+
+      // Format dates
+      users = users.map(formatUser);
 
       // Apply pagination manually for search results
       const startIndex = (page - 1) * limit;
@@ -3135,10 +3162,10 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
       usersSnapshot = await query.limit(limit).get();
     }
 
-    const users = usersSnapshot.docs.map(doc => {
+    let users = usersSnapshot.docs.map(doc => {
       const u = doc.data();
       u.id = doc.id;
-      return u;
+      return formatUser(u);
     });
 
     // Get total count
@@ -3175,6 +3202,7 @@ app.get('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
 
     const data = user.data();
     data.id = id;
+    formatUser(data);
 
     res.json(data);
   } catch (error) {
@@ -3249,6 +3277,7 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
     const newUser = await db.collection('users').doc(userRef.id).get();
     const data = newUser.data();
     data.id = userRef.id;
+    formatUser(data);
 
     res.status(201).json({
       message: 'User created successfully',
@@ -3289,21 +3318,22 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
     }
 
     await db.collection('users').doc(id).update({
-      first_name: firstName || u.first_name,
-      last_name: lastName || u.last_name,
-      email: email || u.email,
-      phone: phone || u.phone,
-      account_type: accountType || u.account_type,
+      first_name: firstName !== undefined ? firstName : u.first_name,
+      last_name: lastName !== undefined ? lastName : u.last_name,
+      email: email !== undefined ? email : u.email,
+      phone: phone !== undefined ? phone : u.phone,
+      account_type: accountType !== undefined ? accountType : u.account_type,
       is_active: isActive !== undefined ? isActive : u.is_active,
-      company: company || u.company,
-      website: website || u.website,
-      bio: bio || u.bio,
+      company: company !== undefined ? company : u.company,
+      website: website !== undefined ? website : u.website,
+      bio: bio !== undefined ? bio : u.bio,
       updated_at: firebase.firestore.Timestamp.now()
     });
 
     const updated = await db.collection('users').doc(id).get();
     const data = updated.data();
     data.id = id;
+    formatUser(data);
 
     res.json({
       message: 'User updated successfully',
