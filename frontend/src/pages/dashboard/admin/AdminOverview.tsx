@@ -15,14 +15,19 @@ const AdminOverview: React.FC = () => {
     pendingServiceRequests: 0
   });
 
-  const { data: recentUsers, loading: usersLoading, error: usersError } = useAdminData('/api/admin/recent-users');
-  const { data: recentEnrollments, loading: enrollmentsLoading, error: enrollmentsError } = useAdminData('/api/admin/recent-enrollments');
-  const { data: serviceRequests, loading: requestsLoading, error: requestsError } = useAdminData('/api/admin/service-requests');
+  const [recentUsers, setRecentUsers] = useState<RecentUser[]>([]);
+  const [recentEnrollments, setRecentEnrollments] = useState<RecentEnrollment[]>([]);
+  const [serviceRequests, setServiceRequests] = useState<ServiceRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
+  // Fetch dashboard data
   useEffect(() => {
-    // Fetch dashboard stats
-    const fetchDashboardStats = async () => {
+    const fetchDashboardData = async () => {
       try {
+        setLoading(true);
+        setError(null);
+
         const token = localStorage.getItem('token') || localStorage.getItem('authToken');
         const headers: HeadersInit = {
           'Content-Type': 'application/json'
@@ -32,63 +37,260 @@ const AdminOverview: React.FC = () => {
           headers['Authorization'] = `Bearer ${token}`;
         }
 
-        const baseURL = 'http://localhost:5000';
-        const response = await fetch(`${baseURL}/api/admin/dashboard-stats`, {
-          method: 'GET',
-          headers,
-          credentials: 'include'
-        });
+        const baseURL = window.location.origin;
 
-        if (response.ok) {
-          const statsData = await response.json();
-          
-          // Format revenue with Indian currency
-          const formattedRevenue = new Intl.NumberFormat('en-IN', {
-            style: 'currency',
-            currency: 'INR',
-            maximumFractionDigits: 0
-          }).format(statsData.totalRevenue || 0);
+        // Fetch dashboard stats
+        try {
+          const statsResponse = await fetch(`${baseURL}/api/admin/dashboard-stats`, {
+            method: 'GET',
+            headers,
+            credentials: 'include'
+          });
 
-          setAdminStats({
-            totalUsers: statsData.totalUsers || 0,
-            totalCourses: statsData.totalCourses || 0,
-            totalEnrollments: statsData.totalEnrollments || 0,
-            totalRevenue: formattedRevenue,
-            pendingContacts: statsData.pendingContacts || 0,
-            pendingServiceRequests: statsData.pendingServiceRequests || 0
-          });
-        } else {
-          // Use mock data for development
-          setAdminStats({
-            totalUsers: 125,
-            totalCourses: 15,
-            totalEnrollments: 342,
-            totalRevenue: "₹2,45,000",
-            pendingContacts: 8,
-            pendingServiceRequests: 5
-          });
+          if (statsResponse.ok) {
+            const statsData = await statsResponse.json();
+            
+            // Format revenue with Indian currency
+            const formattedRevenue = new Intl.NumberFormat('en-IN', {
+              style: 'currency',
+              currency: 'INR',
+              maximumFractionDigits: 0
+            }).format(statsData.totalRevenue || 0);
+
+            setAdminStats({
+              totalUsers: statsData.totalUsers || 0,
+              totalCourses: statsData.totalCourses || 0,
+              totalEnrollments: statsData.totalEnrollments || 0,
+              totalRevenue: formattedRevenue,
+              pendingContacts: statsData.pendingContacts || 0,
+              pendingServiceRequests: statsData.pendingServiceRequests || 0
+            });
+          } else {
+            console.warn('Failed to fetch dashboard stats, using mock data');
+            setMockData();
+          }
+        } catch (statsError) {
+          console.warn('Error fetching dashboard stats, using mock data:', statsError);
+          setMockData();
         }
+
+        // Fetch recent users
+        try {
+          const usersResponse = await fetch(`${baseURL}/api/admin/recent-users`, {
+            method: 'GET',
+            headers,
+            credentials: 'include'
+          });
+
+          if (usersResponse.ok) {
+            const usersData = await usersResponse.json();
+            setRecentUsers(usersData);
+          } else {
+            console.warn('Failed to fetch recent users, using mock data');
+            setMockRecentUsers();
+          }
+        } catch (usersError) {
+          console.warn('Error fetching recent users, using mock data:', usersError);
+          setMockRecentUsers();
+        }
+
+        // Fetch recent enrollments
+        try {
+          const enrollmentsResponse = await fetch(`${baseURL}/api/admin/recent-enrollments`, {
+            method: 'GET',
+            headers,
+            credentials: 'include'
+          });
+
+          if (enrollmentsResponse.ok) {
+            const enrollmentsData = await enrollmentsResponse.json();
+            setRecentEnrollments(enrollmentsData);
+          } else {
+            console.warn('Failed to fetch recent enrollments, using mock data');
+            setMockRecentEnrollments();
+          }
+        } catch (enrollmentsError) {
+          console.warn('Error fetching recent enrollments, using mock data:', enrollmentsError);
+          setMockRecentEnrollments();
+        }
+
+        // Fetch service requests
+        try {
+          const serviceRequestsResponse = await fetch(`${baseURL}/api/admin/service-requests`, {
+            method: 'GET',
+            headers,
+            credentials: 'include'
+          });
+
+          if (serviceRequestsResponse.ok) {
+            const serviceRequestsData = await serviceRequestsResponse.json();
+            // Transform the data to match the ServiceRequest type
+            const transformedRequests = serviceRequestsData.map((request: any) => ({
+              id: request.id,
+              name: request.name || `${request.user_first_name} ${request.user_last_name}`,
+              service: request.service,
+              date: request.date,
+              status: request.status,
+              email: request.email,
+              phone: request.phone,
+              company: request.company,
+              website: request.website,
+              project_details: request.project_details,
+              budget_range: request.budget_range,
+              timeline: request.timeline,
+              contact_method: request.contact_method,
+              additional_requirements: request.additional_requirements
+            }));
+            setServiceRequests(transformedRequests);
+          } else {
+            console.warn('Failed to fetch service requests, using mock data');
+            setMockServiceRequests();
+          }
+        } catch (serviceRequestsError) {
+          console.warn('Error fetching service requests, using mock data:', serviceRequestsError);
+          setMockServiceRequests();
+        }
+
       } catch (error) {
-        console.error('Error fetching dashboard stats:', error);
-        // Use mock data for development
-        setAdminStats({
-          totalUsers: 125,
-          totalCourses: 15,
-          totalEnrollments: 342,
-          totalRevenue: "₹2,45,000",
-          pendingContacts: 8,
-          pendingServiceRequests: 5
-        });
+        console.error('Error fetching dashboard data:', error);
+        setError('Failed to load dashboard data');
+        setMockData();
+      } finally {
+        setLoading(false);
       }
     };
 
-    fetchDashboardStats();
+    // Mock data functions
+    const setMockData = () => {
+      setAdminStats({
+        totalUsers: 125,
+        totalCourses: 15,
+        totalEnrollments: 342,
+        totalRevenue: "₹2,45,000",
+        pendingContacts: 8,
+        pendingServiceRequests: 5
+      });
+    };
+
+    const setMockRecentUsers = () => {
+      setRecentUsers([
+        {
+          id: '1',
+          first_name: 'John',
+          last_name: 'Doe',
+          email: 'john.doe@example.com',
+          account_type: 'student',
+          join_date: '15 Dec 2024'
+        },
+        {
+          id: '2',
+          first_name: 'Jane',
+          last_name: 'Smith',
+          email: 'jane.smith@example.com',
+          account_type: 'professional',
+          join_date: '14 Dec 2024'
+        },
+        {
+          id: '3',
+          first_name: 'Mike',
+          last_name: 'Johnson',
+          email: 'mike.johnson@example.com',
+          account_type: 'business',
+          join_date: '13 Dec 2024'
+        }
+      ]);
+    };
+
+    const setMockRecentEnrollments = () => {
+      setRecentEnrollments([
+        {
+          id: '1',
+          user_name: 'John Doe',
+          course_name: 'Web Development Fundamentals',
+          date: '15 Dec 2024',
+          status: 'active'
+        },
+        {
+          id: '2',
+          user_name: 'Jane Smith',
+          course_name: 'Data Science Essentials',
+          date: '14 Dec 2024',
+          status: 'completed'
+        },
+        {
+          id: '3',
+          user_name: 'Mike Johnson',
+          course_name: 'Digital Marketing Strategy',
+          date: '13 Dec 2024',
+          status: 'active'
+        }
+      ]);
+    };
+
+    const setMockServiceRequests = () => {
+      setServiceRequests([
+        {
+          id: '1',
+          name: 'Sarah Wilson',
+          service: 'Website Development',
+          date: '15 Dec 2024',
+          status: 'pending'
+        },
+        {
+          id: '2',
+          name: 'David Brown',
+          service: 'Mobile App Development',
+          date: '14 Dec 2024',
+          status: 'in-process'
+        },
+        {
+          id: '3',
+          name: 'Emily Davis',
+          service: 'Digital Marketing',
+          date: '13 Dec 2024',
+          status: 'completed'
+        }
+      ]);
+    };
+
+    fetchDashboardData();
   }, []);
 
   const handleManagementClick = (sectionId: string) => {
     // This would be handled by the parent component to change the active view
     console.log(`Navigate to ${sectionId}`);
+    // You can dispatch an event or use a state management solution here
+    // For now, we'll just log it
+    window.dispatchEvent(new CustomEvent('admin-navigation', { 
+      detail: { section: sectionId } 
+    }));
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6">
+        <div className="flex items-center mb-4">
+          <span className="text-red-500 mr-2">⚠️</span>
+          <h3 className="text-lg font-semibold text-red-700 dark:text-red-300">Error Loading Dashboard</h3>
+        </div>
+        <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -144,7 +346,7 @@ const AdminOverview: React.FC = () => {
                     <span className="inline-block px-2 py-1 text-xs rounded-full bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
                       {user.account_type}
                     </span>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{user.created_at}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{user.join_date}</p>
                   </div>
                 </div>
               ))

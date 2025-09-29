@@ -5321,8 +5321,6 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-// ... (The rest of the code is unchanged from the previous version. To fix the 'firebase.firestore is not a function' error, we used the compat mode imports (require('firebase/compat/app'); etc.). This allows using the v8 syntax in v9+ SDK. If you have further errors, check your package.json for firebase version and ensure it's installed: npm install firebase@9.23.0 or later.)
-
 // Start server
 app.listen(port, () => {
   console.log(`🚀 Server running on port ${port}`);
