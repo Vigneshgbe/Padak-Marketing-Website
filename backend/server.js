@@ -3170,6 +3170,33 @@ app.get('/api/admin/analytics', authenticateToken, requireAdmin, async (req, res
 
 // ==================== ADMIN USER MANAGEMENT ENDPOINTS ====================
 
+// Password validation helper function
+const validatePassword = (password) => {
+  const errors = [];
+  
+  if (password.length < 6) {
+    errors.push("Password must be at least 6 characters long");
+  }
+  
+  if (!/[A-Z]/.test(password)) {
+    errors.push("Password must contain at least one uppercase letter");
+  }
+  
+  if (!/[a-z]/.test(password)) {
+    errors.push("Password must contain at least one lowercase letter");
+  }
+  
+  if (!/[0-9]/.test(password)) {
+    errors.push("Password must contain at least one number");
+  }
+  
+  if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+    errors.push("Password must contain at least one special character");
+  }
+  
+  return errors;
+};
+
 // GET /api/admin/users - Get all users with filtering and search
 app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -3191,25 +3218,52 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
     
     let users = snapshot.docs.map(doc => {
       const user = doc.data();
+      
+      // Handle Firestore Timestamp conversion
+      let createdAt = 'N/A';
+      if (user.created_at) {
+        if (user.created_at.toDate) {
+          // Firestore Timestamp
+          createdAt = user.created_at.toDate().toISOString();
+        } else if (typeof user.created_at === 'string') {
+          // Already a string
+          createdAt = user.created_at;
+        } else if (user.created_at instanceof Date) {
+          // JavaScript Date
+          createdAt = user.created_at.toISOString();
+        }
+      }
+      
+      let updatedAt = 'N/A';
+      if (user.updated_at) {
+        if (user.updated_at.toDate) {
+          updatedAt = user.updated_at.toDate().toISOString();
+        } else if (typeof user.updated_at === 'string') {
+          updatedAt = user.updated_at;
+        } else if (user.updated_at instanceof Date) {
+          updatedAt = user.updated_at.toISOString();
+        }
+      }
+      
       return {
         id: doc.id,
-        first_name: user.first_name,
-        last_name: user.last_name,
-        email: user.email,
-        phone: user.phone,
-        account_type: user.account_type,
-        profile_image: user.profile_image,
-        company: user.company,
-        website: user.website,
-        bio: user.bio,
-        is_active: user.is_active,
-        email_verified: user.email_verified,
-        created_at: user.created_at,
-        updated_at: user.updated_at
+        first_name: user.first_name || '',
+        last_name: user.last_name || '',
+        email: user.email || '',
+        phone: user.phone || '',
+        account_type: user.account_type || 'student',
+        profile_image: user.profile_image || '',
+        company: user.company || '',
+        website: user.website || '',
+        bio: user.bio || '',
+        is_active: user.is_active !== undefined ? user.is_active : true,
+        email_verified: user.email_verified || false,
+        created_at: createdAt,
+        updated_at: updatedAt
       };
     });
 
-    // Apply search filter (client-side since Firestore has limited text search)
+    // Apply search filter
     if (search) {
       const searchLower = search.toLowerCase();
       users = users.filter(user => 
@@ -3219,8 +3273,12 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
       );
     }
 
-    // Sort by creation date
-    users.sort((a, b) => new Date(b.created_at?.toDate()) - new Date(a.created_at?.toDate()));
+    // Sort by creation date (newest first)
+    users.sort((a, b) => {
+      const dateA = new Date(a.created_at);
+      const dateB = new Date(b.created_at);
+      return dateB - dateA;
+    });
 
     res.json({
       users,
@@ -3251,13 +3309,14 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
       return res.status(400).json({ error: 'Please provide a valid email address' });
     }
 
-    // Validate password strength (same as registration)
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    // Validate password strength with detailed requirements
+    const passwordErrors = validatePassword(password);
+    if (passwordErrors.length > 0) {
+      return res.status(400).json({ error: passwordErrors[0] });
     }
 
     // Check if email exists
-    const existingUsers = await db.collection('users').where('email', '==', email).get();
+    const existingUsers = await db.collection('users').where('email', '==', email.trim()).get();
     if (!existingUsers.empty) {
       return res.status(400).json({ error: 'Email already exists' });
     }
@@ -3268,20 +3327,23 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
 
     // Create new user document
     const userRef = db.collection('users').doc();
+    const now = firebase.firestore.FieldValue.serverTimestamp();
+    
     const userData = {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
-      email: email.trim(),
-      phone: phone || '',
+      email: email.trim().toLowerCase(),
+      phone: phone ? phone.trim() : '',
       password_hash: hashedPassword,
       account_type: accountType || 'student',
       is_active: isActive !== undefined ? isActive : true,
-      company: company || '',
-      website: website || '',
-      bio: bio || '',
+      company: company ? company.trim() : '',
+      website: website ? website.trim() : '',
+      bio: bio ? bio.trim() : '',
       email_verified: false,
-      created_at: firebase.firestore.FieldValue.serverTimestamp(),
-      updated_at: firebase.firestore.FieldValue.serverTimestamp()
+      profile_image: '',
+      created_at: now,
+      updated_at: now
     };
 
     await userRef.set(userData);
@@ -3296,13 +3358,27 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
       last_activity: new Date().toISOString()
     });
 
-    console.log('User created by admin:', { userId: userRef.id, email, admin: req.user.email });
+    console.log('User created by admin:', { userId: userRef.id, email: email.trim(), admin: req.user.email });
 
+    // Fetch the created user to return with proper timestamp
+    const createdUserDoc = await userRef.get();
+    const createdUser = createdUserDoc.data();
+    
     res.status(201).json({
       message: 'User created successfully',
       user: {
         id: userRef.id,
-        ...userData
+        first_name: createdUser.first_name,
+        last_name: createdUser.last_name,
+        email: createdUser.email,
+        phone: createdUser.phone,
+        account_type: createdUser.account_type,
+        is_active: createdUser.is_active,
+        company: createdUser.company,
+        website: createdUser.website,
+        bio: createdUser.bio,
+        created_at: createdUser.created_at ? new Date().toISOString() : 'N/A',
+        updated_at: createdUser.updated_at ? new Date().toISOString() : 'N/A'
       }
     });
 
@@ -3318,6 +3394,11 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
     const userId = req.params.id;
     const { firstName, lastName, email, phone, accountType, isActive, company, website, bio } = req.body;
 
+    // Validate userId
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
     // Check if user exists
     const userDoc = await db.collection('users').doc(userId).get();
     if (!userDoc.exists) {
@@ -3325,6 +3406,11 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
     }
 
     const currentUser = userDoc.data();
+
+    // Validate required fields
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({ error: 'First name, last name, and email are required' });
+    }
 
     // Validate email if changed
     if (email && email !== currentUser.email) {
@@ -3334,37 +3420,72 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
       }
 
       // Check if new email already exists
-      const existingUsers = await db.collection('users').where('email', '==', email).get();
-      if (!existingUsers.empty) {
+      const existingUsers = await db.collection('users').where('email', '==', email.trim().toLowerCase()).get();
+      if (!existingUsers.empty && existingUsers.docs[0].id !== userId) {
         return res.status(400).json({ error: 'Email already exists' });
+      }
+    }
+
+    // Validate phone format if provided
+    if (phone && phone.trim()) {
+      const phoneRegex = /^\+?[\d\s\-()]+$/;
+      if (!phoneRegex.test(phone)) {
+        return res.status(400).json({ error: 'Please provide a valid phone number' });
+      }
+    }
+
+    // Validate website format if provided
+    if (website && website.trim()) {
+      const websiteRegex = /^https?:\/\/.+\..+/;
+      if (!websiteRegex.test(website)) {
+        return res.status(400).json({ error: 'Please provide a valid website URL (include http:// or https://)' });
       }
     }
 
     // Update user data
     const updateData = {
-      first_name: firstName || currentUser.first_name,
-      last_name: lastName || currentUser.last_name,
-      email: email || currentUser.email,
-      phone: phone || currentUser.phone,
-      account_type: accountType || currentUser.account_type,
+      first_name: firstName.trim(),
+      last_name: lastName.trim(),
+      email: email.trim().toLowerCase(),
+      phone: phone ? phone.trim() : '',
+      account_type: accountType || currentUser.account_type || 'student',
       is_active: isActive !== undefined ? isActive : currentUser.is_active,
-      company: company || currentUser.company,
-      website: website || currentUser.website,
-      bio: bio || currentUser.bio,
+      company: company ? company.trim() : '',
+      website: website ? website.trim() : '',
+      bio: bio ? bio.trim() : '',
       updated_at: firebase.firestore.FieldValue.serverTimestamp()
     };
 
     await db.collection('users').doc(userId).update(updateData);
 
-    // Get updated user
+    // Get updated user with proper timestamp handling
     const updatedUserDoc = await db.collection('users').doc(userId).get();
     const updatedUser = updatedUserDoc.data();
+    
+    let createdAt = 'N/A';
+    if (updatedUser.created_at) {
+      if (updatedUser.created_at.toDate) {
+        createdAt = updatedUser.created_at.toDate().toISOString();
+      } else if (typeof updatedUser.created_at === 'string') {
+        createdAt = updatedUser.created_at;
+      }
+    }
 
     res.json({
       message: 'User updated successfully',
       user: {
         id: userId,
-        ...updatedUser
+        first_name: updatedUser.first_name,
+        last_name: updatedUser.last_name,
+        email: updatedUser.email,
+        phone: updatedUser.phone,
+        account_type: updatedUser.account_type,
+        is_active: updatedUser.is_active,
+        company: updatedUser.company,
+        website: updatedUser.website,
+        bio: updatedUser.bio,
+        created_at: createdAt,
+        updated_at: new Date().toISOString()
       }
     });
 
@@ -3379,6 +3500,11 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
   try {
     const userId = req.params.id;
     const adminId = req.user.id;
+
+    // Validate userId
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
 
     // Prevent admin from deleting themselves
     if (userId === adminId) {
@@ -3398,7 +3524,10 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
 
     console.log('User soft deleted by admin:', { userId, admin: req.user.email });
 
-    res.json({ message: 'User deleted successfully' });
+    res.json({ 
+      message: 'User deleted successfully',
+      userId: userId
+    });
 
   } catch (error) {
     console.error('Delete user error:', error);
@@ -3412,12 +3541,19 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
     const userId = req.params.id;
     const { password } = req.body;
 
+    // Validate userId
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
     if (!password) {
       return res.status(400).json({ error: 'Password is required' });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters long' });
+    // Validate password strength with detailed requirements
+    const passwordErrors = validatePassword(password);
+    if (passwordErrors.length > 0) {
+      return res.status(400).json({ error: passwordErrors[0] });
     }
 
     const userDoc = await db.collection('users').doc(userId).get();
@@ -3437,7 +3573,10 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
 
     console.log('Password reset by admin for user:', userId);
 
-    res.json({ message: 'Password reset successfully' });
+    res.json({ 
+      message: 'Password reset successfully',
+      userId: userId
+    });
 
   } catch (error) {
     console.error('Reset password error:', error);

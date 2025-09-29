@@ -24,7 +24,7 @@ const UserManagement: React.FC = () => {
     lastName: '',
     email: '',
     phone: '',
-    password: '', // Only for create and password reset
+    password: '',
     accountType: 'student' as 'student' | 'professional' | 'business' | 'agency' | 'admin',
     isActive: true,
     company: '',
@@ -32,10 +32,8 @@ const UserManagement: React.FC = () => {
     bio: ''
   });
 
-  // Extract users from response data
   const users = usersData?.users || [];
 
-  // Reset form when modal closes
   useEffect(() => {
     if (!isModalOpen) {
       setFormData({
@@ -62,7 +60,7 @@ const UserManagement: React.FC = () => {
       lastName: user.last_name || '',
       email: user.email || '',
       phone: user.phone || '',
-      password: '', // Never populate password for edit
+      password: '',
       accountType: user.account_type as 'student' | 'professional' | 'business' | 'agency' | 'admin',
       isActive: user.is_active ?? true,
       company: user.company || '',
@@ -86,7 +84,7 @@ const UserManagement: React.FC = () => {
       lastName: user.last_name || '',
       email: user.email || '',
       phone: user.phone || '',
-      password: '', // Reset password field
+      password: '',
       accountType: user.account_type as 'student' | 'professional' | 'business' | 'agency' | 'admin',
       isActive: user.is_active ?? true,
       company: user.company || '',
@@ -121,7 +119,6 @@ const UserManagement: React.FC = () => {
       [field]: value
     }));
     
-    // Clear error when user starts typing
     if (formErrors[field]) {
       setFormErrors(prev => ({
         ...prev,
@@ -130,15 +127,59 @@ const UserManagement: React.FC = () => {
     }
   };
 
+  const validatePassword = (password: string): string[] => {
+    const errors: string[] = [];
+    
+    if (password.length < 6) {
+      errors.push("Password must be at least 6 characters long");
+    }
+    
+    if (!/[A-Z]/.test(password)) {
+      errors.push("Password must contain at least one uppercase letter");
+    }
+    
+    if (!/[a-z]/.test(password)) {
+      errors.push("Password must contain at least one lowercase letter");
+    }
+    
+    if (!/[0-9]/.test(password)) {
+      errors.push("Password must contain at least one number");
+    }
+    
+    if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+      errors.push("Password must contain at least one special character");
+    }
+    
+    return errors;
+  };
+
+  const getPasswordStrength = (password: string): { strength: string; color: string } => {
+    if (password.length === 0) return { strength: "", color: "" };
+    
+    const errors = validatePassword(password);
+    
+    if (errors.length === 0) {
+      return { strength: "Strong", color: "text-green-600 dark:text-green-400" };
+    } else if (errors.length <= 2) {
+      return { strength: "Medium", color: "text-yellow-600 dark:text-yellow-400" };
+    } else {
+      return { strength: "Weak", color: "text-red-600 dark:text-red-400" };
+    }
+  };
+
   const validateForm = () => {
     const errors: {[key: string]: string} = {};
     
     if (!formData.firstName.trim()) {
       errors.firstName = 'First name is required';
+    } else if (formData.firstName.trim().length < 2) {
+      errors.firstName = 'First name must be at least 2 characters';
     }
     
     if (!formData.lastName.trim()) {
       errors.lastName = 'Last name is required';
+    } else if (formData.lastName.trim().length < 2) {
+      errors.lastName = 'Last name must be at least 2 characters';
     }
     
     if (!formData.email.trim()) {
@@ -151,8 +192,11 @@ const UserManagement: React.FC = () => {
       errors.password = 'Password is required';
     }
     
-    if ((modalType === 'create' || modalType === 'password') && formData.password && formData.password.length < 6) {
-      errors.password = 'Password must be at least 6 characters long';
+    if ((modalType === 'create' || modalType === 'password') && formData.password) {
+      const passwordErrors = validatePassword(formData.password);
+      if (passwordErrors.length > 0) {
+        errors.password = passwordErrors[0];
+      }
     }
     
     if (formData.phone && !/^\+?[\d\s\-()]+$/.test(formData.phone)) {
@@ -168,19 +212,16 @@ const UserManagement: React.FC = () => {
   };
 
   const filteredUsers = users.filter((user: User) => {
-    // Apply search filter
     const searchText = `${user.first_name || ''} ${user.last_name || ''} ${user.email || ''}`.toLowerCase();
     if (searchTerm && !searchText.includes(searchTerm.toLowerCase())) {
       return false;
     }
     
-    // Apply status filter
     if (selectedFilter !== 'all') {
       if (selectedFilter === 'active' && !user.is_active) return false;
       if (selectedFilter === 'inactive' && user.is_active) return false;
     }
     
-    // Apply account type filter
     if (selectedAccountType !== 'all' && user.account_type !== selectedAccountType) {
       return false;
     }
@@ -209,11 +250,10 @@ const UserManagement: React.FC = () => {
     setIsSubmitting(true);
     
     try {
-      const baseURL = ''; // Use relative path
+      const baseURL = '';
       let url, method, body;
 
       if (modalType === 'create') {
-        // Create new user
         url = `${baseURL}/api/admin/users`;
         method = 'POST';
         body = JSON.stringify({
@@ -229,7 +269,6 @@ const UserManagement: React.FC = () => {
           bio: formData.bio
         });
       } else if (modalType === 'edit' && selectedUser) {
-        // Update existing user
         url = `${baseURL}/api/admin/users/${selectedUser.id}`;
         method = 'PUT';
         body = JSON.stringify({
@@ -244,7 +283,6 @@ const UserManagement: React.FC = () => {
           bio: formData.bio
         });
       } else if (modalType === 'password' && selectedUser) {
-        // Reset password
         url = `${baseURL}/api/admin/users/${selectedUser.id}/password`;
         method = 'PUT';
         body = JSON.stringify({
@@ -269,7 +307,6 @@ const UserManagement: React.FC = () => {
       setIsModalOpen(false);
       refetch();
       
-      // Show success message
       toast.success(`User ${modalType === 'create' ? 'created' : modalType === 'password' ? 'password reset' : 'updated'} successfully`);
       
     } catch (error) {
@@ -286,7 +323,7 @@ const UserManagement: React.FC = () => {
     setIsSubmitting(true);
     
     try {
-      const baseURL = ''; // Use relative path
+      const baseURL = '';
       
       const response = await fetch(`${baseURL}/api/admin/users/${selectedUser.id}`, {
         method: 'DELETE',
@@ -302,7 +339,6 @@ const UserManagement: React.FC = () => {
       setIsModalOpen(false);
       refetch();
       
-      // Show success message
       toast.success('User deleted successfully');
       
     } catch (error) {
@@ -325,6 +361,8 @@ const UserManagement: React.FC = () => {
   const capitalizeAccountType = (type: string) => {
     return type.charAt(0).toUpperCase() + type.slice(1);
   };
+
+  const passwordStrength = getPasswordStrength(formData.password);
 
   return (
     <div className="space-y-6">
@@ -578,12 +616,20 @@ const UserManagement: React.FC = () => {
                     ? 'border-red-500 dark:border-red-500' 
                     : 'border-gray-300 dark:border-gray-600'
                 }`}
-                placeholder="Enter password (minimum 6 characters)"
+                placeholder="Must include uppercase, lowercase, number, special character"
                 disabled={isSubmitting}
               />
+              {formData.password && passwordStrength.strength && (
+                <div className={`text-sm mt-1 ${passwordStrength.color}`}>
+                  Password strength: {passwordStrength.strength}
+                </div>
+              )}
               {formErrors.password && (
                 <p className="text-red-500 text-sm mt-1">{formErrors.password}</p>
               )}
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Requirements: 6+ characters, uppercase, lowercase, number, special character
+              </p>
             </div>
           )}
 
@@ -718,12 +764,20 @@ const UserManagement: React.FC = () => {
                   ? 'border-red-500 dark:border-red-500' 
                   : 'border-gray-300 dark:border-gray-600'
               }`}
-              placeholder="Enter new password (minimum 6 characters)"
+              placeholder="Must include uppercase, lowercase, number, special character"
               disabled={isSubmitting}
             />
+            {formData.password && passwordStrength.strength && (
+              <div className={`text-sm mt-1 ${passwordStrength.color}`}>
+                Password strength: {passwordStrength.strength}
+              </div>
+            )}
             {formErrors.password && (
               <p className="text-red-500 text-sm mt-1">{formErrors.password}</p>
             )}
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Requirements: 6+ characters, uppercase, lowercase, number, special character
+            </p>
           </div>
 
           <div className="flex justify-end gap-2 mt-6">
