@@ -335,32 +335,45 @@ const UserManagement: React.FC = () => {
     console.log('Response status:', response.status);
     
     if (!response.ok) {
-      // Try to get error message from response
       let errorMessage = `Server error (${response.status})`;
       
       try {
-        const errorData = await response.json();
-        errorMessage = errorData.error || errorMessage;
-      } catch (parseError) {
-        // If response is not JSON, try to get text
+        // Try to parse JSON error
+        const errorText = await response.text();
+        console.log('Error response text:', errorText);
+        
         try {
-          const textError = await response.text();
-          console.error('Non-JSON error response:', textError);
-        } catch (textError) {
-          console.error('Could not read error response');
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.error || errorMessage;
+        } catch {
+          // If not JSON, use the text as error message
+          errorMessage = errorText || errorMessage;
         }
+      } catch (textError) {
+        console.error('Could not read error response:', textError);
       }
       
       throw new Error(errorMessage);
     }
     
-    const result = await response.json();
-    console.log('Success response:', result);
+    // Try to parse successful response
+    try {
+      const result = await response.json();
+      console.log('Success response:', result);
 
-    setIsModalOpen(false);
-    await refetch();
-    
-    toast.success(`User ${modalType === 'create' ? 'created' : modalType === 'password' ? 'password reset' : 'updated'} successfully`);
+      setIsModalOpen(false);
+      await refetch();
+      
+      const successMessage = modalType === 'create' ? 'User created successfully' : 
+                           modalType === 'password' ? 'Password reset successfully' : 
+                           'User updated successfully';
+      toast.success(successMessage);
+    } catch (parseError) {
+      console.error('Error parsing response:', parseError);
+      setIsModalOpen(false);
+      await refetch();
+      toast.success('Operation completed successfully');
+    }
     
   } catch (error) {
     console.error(`Error ${modalType === 'create' ? 'creating' : modalType === 'password' ? 'resetting password' : 'updating'} user:`, error);
