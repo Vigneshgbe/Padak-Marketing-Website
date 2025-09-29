@@ -3459,26 +3459,47 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
 
     let usersQuery = query(collection(db, 'users'), orderBy('created_at', 'desc'));
 
+    // Build query conditions
+    const conditions = [];
+
     if (accountType && accountType !== 'all') {
-      usersQuery = query(usersQuery, where('account_type', '==', accountType));
+      conditions.push(where('account_type', '==', accountType));
     }
 
     if (status && status !== 'all') {
-      const isActive = status === 'active' ? true : false;
-      usersQuery = query(usersQuery, where('is_active', '==', isActive));
+      const isActive = status === 'active';
+      conditions.push(where('is_active', '==', isActive));
+    }
+
+    // Apply conditions to query
+    if (conditions.length > 0) {
+      usersQuery = query(usersQuery, ...conditions);
     }
 
     if (search) {
-      // Firestore doesn't support full text search, so client-side filter or use external search
-      // For simplicity, fetch all and filter
+      // For search, we need to handle it differently since Firestore doesn't support full text search
       const allUsersSnapshot = await getDocs(usersQuery);
-      let users = allUsersSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
-      users = users.filter(u => u.first_name.includes(search) || u.last_name.includes(search) || u.email.includes(search));
+      let users = allUsersSnapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data(),
+        // Convert timestamps to readable format
+        created_at: d.data().created_at?.toDate?.() || d.data().created_at,
+        updated_at: d.data().updated_at?.toDate?.() || d.data().updated_at
+      }));
+      
+      // Client-side filtering for search
+      const searchLower = search.toLowerCase();
+      users = users.filter(u => 
+        u.first_name?.toLowerCase().includes(searchLower) || 
+        u.last_name?.toLowerCase().includes(searchLower) || 
+        u.email?.toLowerCase().includes(searchLower)
+      );
+      
       const totalUsers = users.length;
-      users = users.slice(offset, offset + limit);
+      const paginatedUsers = users.slice(offset, offset + limit);
 
       res.json({
-        users,
+        users: paginatedUsers,
         pagination: {
           currentPage: page,
           totalPages: Math.ceil(totalUsers / limit),
@@ -3488,12 +3509,24 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
         }
       });
     } else {
-      usersQuery = query(usersQuery, limit(limit + offset));
-      const usersSnapshot = await getDocs(usersQuery);
-      let users = usersSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
-      const totalSnapshot = await getDocs(query(collection(db, 'users')));
+      // Get total count for pagination
+      const totalQuery = conditions.length > 0 ? 
+        query(collection(db, 'users'), ...conditions) : 
+        collection(db, 'users');
+      
+      const totalSnapshot = await getDocs(totalQuery);
       const totalUsers = totalSnapshot.size;
-      users = users.slice(offset);
+
+      // Get paginated data
+      usersQuery = query(usersQuery, limit(limit), offset(offset));
+      const usersSnapshot = await getDocs(usersQuery);
+      const users = usersSnapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data(),
+        // Convert timestamps to readable format
+        created_at: d.data().created_at?.toDate?.() || d.data().created_at,
+        updated_at: d.data().updated_at?.toDate?.() || d.data().updated_at
+      }));
 
       res.json({
         users,
@@ -3501,14 +3534,14 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
           currentPage: page,
           totalPages: Math.ceil(totalUsers / limit),
           totalUsers,
-          hasNextPage: page < Math.ceil(totalUsers / limit),
+          hasNextPage: (offset + limit) < totalUsers,
           hasPreviousPage: page > 1
         }
       });
     }
   } catch (error) {
     console.error('Get users error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
 
@@ -3517,28 +3550,45 @@ app.get('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
   try {
     const userId = req.params.id;
 
-    const userSnap = await getDoc(doc(db, 'users', userId));
-    if (!userSnap.exists()) {
+    const userDoc = await getDoc(doc(db, 'users', userId));
+    if (!userDoc.exists()) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const user = userSnap.data();
-    user.id = userId;
+    const userData = userDoc.data();
+    const user = {
+      id: userId,
+      ...userData,
+      // Convert timestamps to readable format
+      created_at: userData.created_at?.toDate?.() || userData.created_at,
+      updated_at: userData.updated_at?.toDate?.() || userData.updated_at
+    };
 
     res.json(user);
   } catch (error) {
     console.error('Get user error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Failed to fetch user' });
   }
 });
 
 // POST /api/admin/users - Create a new user
 app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { firstName, lastName, email, phone, password, accountType, isActive, company, website, bio } = req.body;
+    const { 
+      firstName, 
+      lastName, 
+      email, 
+      phone, 
+      password, 
+      accountType, 
+      isActive = true,
+      company, 
+      website, 
+      bio 
+    } = req.body;
 
     // Validate required fields
-    if (!firstName || !lastName || !email || !password) {
+    if (!firstName?.trim() || !lastName?.trim() || !email?.trim() || !password) {
       return res.status(400).json({
         error: 'First name, last name, email, and password are required'
       });
@@ -3546,7 +3596,7 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
+    if (!emailRegex.test(email.trim())) {
       return res.status(400).json({ error: 'Please provide a valid email address' });
     }
 
@@ -3555,10 +3605,10 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
       return res.status(400).json({ error: 'Password must be at least 6 characters long' });
     }
 
-    // Check if email exists
-    const q = query(collection(db, 'users'), where('email', '==', email));
-    const querySnapshot = await getDocs(q);
-    if (!querySnapshot.empty) {
+    // Check if email already exists
+    const emailQuery = query(collection(db, 'users'), where('email', '==', email.trim()));
+    const emailSnapshot = await getDocs(emailQuery);
+    if (!emailSnapshot.empty) {
       return res.status(400).json({ error: 'Email already exists' });
     }
 
@@ -3566,53 +3616,44 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    // Insert new user
-    const userRef = await addDoc(collection(db, 'users'), {
+    const userData = {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       email: email.trim(),
-      phone: phone || null,
+      phone: phone?.trim() || null,
       password_hash: hashedPassword,
       account_type: accountType || 'student',
-      is_active: isActive !== undefined ? isActive : true,
-      company: company || null,
-      website: website || null,
-      bio: bio || null,
-      created_at: Timestamp.now(),
-      updated_at: Timestamp.now(),
+      is_active: isActive,
+      company: company?.trim() || null,
+      website: website?.trim() || null,
+      bio: bio?.trim() || null,
+      created_at: serverTimestamp(),
+      updated_at: serverTimestamp(),
       profile_image: null,
       email_verified: false
-    });
+    };
 
-    const newUserId = userRef.id;
+    // Create user document
+    const userRef = await addDoc(collection(db, 'users'), userData);
+    const userId = userRef.id;
 
     // Create user stats entry
     await addDoc(collection(db, 'user_stats'), {
-      user_id: newUserId,
+      user_id: userId,
       courses_enrolled: 0,
       courses_completed: 0,
       certificates_earned: 0,
       learning_streak: 0,
-      last_activity: Timestamp.now()
+      last_activity: serverTimestamp()
     });
 
-    console.log('User created successfully by admin:', { userId: newUserId, email });
+    console.log('User created successfully by admin:', { userId, email: email.trim() });
 
     const newUser = {
-      id: newUserId,
-      first_name: firstName.trim(),
-      last_name: lastName.trim(),
-      email: email.trim(),
-      phone: phone || null,
-      account_type: accountType || 'student',
-      profile_image: null,
-      company: company || null,
-      website: website || null,
-      bio: bio || null,
-      is_active: isActive !== undefined ? isActive : true,
-      email_verified: false,
-      created_at: Timestamp.now(),
-      updated_at: Timestamp.now()
+      id: userId,
+      ...userData,
+      created_at: new Date(),
+      updated_at: new Date()
     };
 
     res.status(201).json({
@@ -3622,7 +3663,7 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
 
   } catch (error) {
     console.error('Create user error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Failed to create user' });
   }
 });
 
@@ -3630,48 +3671,69 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
 app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
-    const { firstName, lastName, email, phone, accountType, isActive, company, website, bio } = req.body;
+    const { 
+      firstName, 
+      lastName, 
+      email, 
+      phone, 
+      accountType, 
+      isActive, 
+      company, 
+      website, 
+      bio 
+    } = req.body;
 
     const userRef = doc(db, 'users', userId);
-    const userSnap = await getDoc(userRef);
+    const userDoc = await getDoc(userRef);
 
-    if (!userSnap.exists()) {
+    if (!userDoc.exists()) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const currentUser = userSnap.data();
+    const currentUser = userDoc.data();
 
     // Validate email if changed
     if (email && email !== currentUser.email) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
+      if (!emailRegex.test(email.trim())) {
         return res.status(400).json({ error: 'Please provide a valid email address' });
       }
 
-      const existingQuery = query(collection(db, 'users'), where('email', '==', email));
-      const existingSnapshot = await getDocs(existingQuery);
-      if (!existingSnapshot.empty && existingSnapshot.docs[0].id !== userId) {
+      // Check if new email already exists
+      const emailQuery = query(
+        collection(db, 'users'), 
+        where('email', '==', email.trim())
+      );
+      const emailSnapshot = await getDocs(emailQuery);
+      if (!emailSnapshot.empty && emailSnapshot.docs[0].id !== userId) {
         return res.status(400).json({ error: 'Email already exists' });
       }
     }
 
-    // Update user
-    await updateDoc(userRef, {
-      first_name: firstName || currentUser.first_name,
-      last_name: lastName || currentUser.last_name,
-      email: email || currentUser.email,
-      phone: phone || currentUser.phone,
+    const updateData = {
+      first_name: firstName?.trim() || currentUser.first_name,
+      last_name: lastName?.trim() || currentUser.last_name,
+      email: email?.trim() || currentUser.email,
+      phone: phone?.trim() || currentUser.phone,
       account_type: accountType || currentUser.account_type,
       is_active: isActive !== undefined ? isActive : currentUser.is_active,
-      company: company || currentUser.company,
-      website: website || currentUser.website,
-      bio: bio || currentUser.bio,
-      updated_at: Timestamp.now()
-    });
+      company: company?.trim() || currentUser.company,
+      website: website?.trim() || currentUser.website,
+      bio: bio?.trim() || currentUser.bio,
+      updated_at: serverTimestamp()
+    };
 
-    const updatedSnap = await getDoc(userRef);
-    const updatedUser = updatedSnap.data();
-    updatedUser.id = userId;
+    // Update user document
+    await updateDoc(userRef, updateData);
+
+    // Get updated user data
+    const updatedDoc = await getDoc(userRef);
+    const updatedUser = {
+      id: userId,
+      ...updatedDoc.data(),
+      created_at: updatedDoc.data().created_at?.toDate?.() || updatedDoc.data().created_at,
+      updated_at: updatedDoc.data().updated_at?.toDate?.() || updatedDoc.data().updated_at
+    };
 
     res.json({
       message: 'User updated successfully',
@@ -3680,11 +3742,47 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
 
   } catch (error) {
     console.error('Update user error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Failed to update user' });
   }
 });
 
-// DELETE /api/admin/users/:id - Delete a user
+// PATCH /api/admin/users/:id/toggle-status - Toggle user active status
+app.patch('/api/admin/users/:id/toggle-status', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const adminId = req.user.id;
+
+    if (userId === adminId) {
+      return res.status(400).json({ error: 'You cannot deactivate your own account' });
+    }
+
+    const userRef = doc(db, 'users', userId);
+    const userDoc = await getDoc(userRef);
+
+    if (!userDoc.exists()) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const currentStatus = userDoc.data().is_active;
+    const newStatus = !currentStatus;
+
+    await updateDoc(userRef, {
+      is_active: newStatus,
+      updated_at: serverTimestamp()
+    });
+
+    res.json({
+      message: `User ${newStatus ? 'activated' : 'deactivated'} successfully`,
+      is_active: newStatus
+    });
+
+  } catch (error) {
+    console.error('Toggle user status error:', error);
+    res.status(500).json({ error: 'Failed to update user status' });
+  }
+});
+
+// DELETE /api/admin/users/:id - Delete a user permanently
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
@@ -3695,23 +3793,29 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
     }
 
     const userRef = doc(db, 'users', userId);
-    const userSnap = await getDoc(userRef);
+    const userDoc = await getDoc(userRef);
 
-    if (!userSnap.exists()) {
+    if (!userDoc.exists()) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Soft delete
-    await updateDoc(userRef, {
-      is_active: false,
-      updated_at: Timestamp.now()
-    });
+    // Delete user document
+    await deleteDoc(userRef);
+
+    // Also delete user stats
+    const statsQuery = query(collection(db, 'user_stats'), where('user_id', '==', userId));
+    const statsSnapshot = await getDocs(statsQuery);
+    
+    if (!statsSnapshot.empty) {
+      const deletePromises = statsSnapshot.docs.map(doc => deleteDoc(doc.ref));
+      await Promise.all(deletePromises);
+    }
 
     res.json({ message: 'User deleted successfully' });
 
   } catch (error) {
     console.error('Delete user error:', error);
-    res.status(500).json({ error: 'Server error while deleting user' });
+    res.status(500).json({ error: 'Failed to delete user' });
   }
 });
 
@@ -3730,9 +3834,9 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
     }
 
     const userRef = doc(db, 'users', userId);
-    const userSnap = await getDoc(userRef);
+    const userDoc = await getDoc(userRef);
 
-    if (!userSnap.exists()) {
+    if (!userDoc.exists()) {
       return res.status(404).json({ error: 'User not found' });
     }
 
@@ -3743,14 +3847,14 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
     // Update password
     await updateDoc(userRef, {
       password_hash: hashedPassword,
-      updated_at: Timestamp.now()
+      updated_at: serverTimestamp()
     });
 
     res.json({ message: 'Password reset successfully' });
 
   } catch (error) {
     console.error('Reset password error:', error);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Failed to reset password' });
   }
 });
 
