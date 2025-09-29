@@ -33,6 +33,25 @@ export interface Enrollment extends RecentEnrollment {
   completion_date?: string;
 }
 
+export interface Enrollment {
+  id: string;
+  userId: string;
+  courseId: string;
+  enrollmentDate: string;
+  status: 'active' | 'completed' | 'dropped';
+  progress: number;
+  completionDate?: string;
+  user?: {
+    firstName: string;
+    lastName: string;
+    email: string;
+  };
+  course?: {
+    title: string;
+    instructorName: string;
+  };
+}
+
 export interface ServiceRequest {
   id: number;
   name: string;
@@ -54,39 +73,100 @@ export interface DetailedServiceRequest extends ServiceRequest {
 }
 
 export interface Course {
-  id: number;
+  id: string;
   title: string;
   description: string;
-  instructor_name: string;
-  duration_weeks: number;
-  difficulty_level: string;
+  instructorName: string;
   category: string;
+  difficultyLevel: 'Beginner' | 'Intermediate' | 'Advanced';
   price: number;
+  duration: string;
   thumbnail?: string;
-  is_active: boolean;
-  created_at: string;
-  updated_at?: string;
+  videoUrl?: string;
+  createdAt: string;
+  updatedAt?: string;
+  isPublished?: boolean;
+  totalEnrollments?: number;
 }
 
 export interface Assignment {
-  id: number;
-  course_id: number;
-  course_title: string;
+  id: string;
+  courseId: string;
   title: string;
-  description?: string;
-  due_date?: string;
-  max_points: number;
-  created_at: string;
+  description: string;
+  dueDate: string;
+  maxPoints: number;
+  createdAt: string;
+  course?: {
+    title: string;
+  };
 }
 
-export interface Certificate {
-  id: number;
-  user_id: number;
-  user_name: string;
-  course_id: number;
-  course_title: string;
-  certificate_url: string;
-  issued_date: string;
+export interface Submission {
+  id: string;
+  assignmentId: string;
+  userId: string;
+  submissionText: string;
+  submittedAt: string;
+  grade?: number;
+  feedback?: string;
+  status: 'submitted' | 'graded' | 'pending';
+  assignment?: {
+    title: string;
+    maxPoints: number;
+  };
+  user?: {
+    firstName: string;
+    lastName: string;
+    email: string;
+  };
+}
+
+export interface Lesson {
+  id: string;
+  courseId: string;
+  title: string;
+  content: string;
+  videoUrl?: string;
+  duration: string;
+  order: number;
+  createdAt: string;
+  course?: {
+    title: string;
+  };
+}
+
+export interface Forum {
+  id: string;
+  courseId: string;
+  userId: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  repliesCount: number;
+  user?: {
+    firstName: string;
+    lastName: string;
+  };
+  course?: {
+    title: string;
+  };
+}
+
+export interface Analytics {
+  totalUsers: number;
+  totalCourses: number;
+  totalEnrollments: number;
+  totalRevenue: number;
+  recentEnrollments: Enrollment[];
+  popularCourses: Course[];
+}
+
+export interface Stats {
+  label: string;
+  value: string | number;
+  change?: string;
+  trend?: 'up' | 'down';
 }
 
 export interface ContactMessage {
@@ -122,35 +202,40 @@ export interface DashboardStats {
   pendingServiceRequests: number;
 }
 
-// src/lib/admin-types.ts
 export interface Certificate {
-  id: number;
-  userId: number;
-  courseId: number;
-  certificateUrl: string;
+  id: string;
+  userId: string;
+  courseId: string;
+  certificateUrl: string | null;
   issuedDate: string;
   course: {
-    id: number;
+    id: string;
     title: string;
     instructorName: string;
     category: string;
     difficultyLevel: string;
   };
   user: {
-    id: number;
     firstName: string;
     lastName: string;
     email: string;
   };
   enrollment: {
-    completionDate: string;
+    completionDate: string | null;
   };
 }
 
 export interface User {
-  id: number;
+  id: string;
   firstName: string;
   lastName: string;
   email: string;
-  accountType: string;
+  accountType: 'student' | 'admin';
+  createdAt: string;
+  lastLogin?: string;
+  phoneNumber?: string;
+  dateOfBirth?: string;
+  address?: string;
+  bio?: string;
+  profilePicture?: string;
 }
