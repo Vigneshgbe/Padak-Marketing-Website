@@ -270,22 +270,16 @@ const UserManagement: React.FC = () => {
     return;
   }
 
-  const token = getAuthToken();
-  if (!token) {
-    toast.error('Authentication token not found. Please login again.');
-    return;
-  }
-
   setIsSubmitting(true);
   
   try {
-    const baseURL = window.location.origin;
     let url, method, body;
 
+    // Determine the endpoint and data based on modal type
     if (modalType === 'create') {
-      url = `${baseURL}/api/admin/users`;
+      url = '/api/admin/users';
       method = 'POST';
-      body = JSON.stringify({
+      body = {
         firstName: formData.firstName.trim(),
         lastName: formData.lastName.trim(),
         email: formData.email.trim(),
@@ -296,11 +290,11 @@ const UserManagement: React.FC = () => {
         company: formData.company.trim(),
         website: formData.website.trim(),
         bio: formData.bio.trim()
-      });
+      };
     } else if (modalType === 'edit' && selectedUser) {
-      url = `${baseURL}/api/admin/users/${selectedUser.id}`;
+      url = `/api/admin/users/${selectedUser.id}`;
       method = 'PUT';
-      body = JSON.stringify({
+      body = {
         firstName: formData.firstName.trim(),
         lastName: formData.lastName.trim(),
         email: formData.email.trim(),
@@ -310,15 +304,15 @@ const UserManagement: React.FC = () => {
         company: formData.company.trim(),
         website: formData.website.trim(),
         bio: formData.bio.trim()
-      });
+      };
     } else if (modalType === 'password' && selectedUser) {
-      url = `${baseURL}/api/admin/users/${selectedUser.id}/password`;
+      url = `/api/admin/users/${selectedUser.id}/password`;
       method = 'PUT';
-      body = JSON.stringify({
+      body = {
         password: formData.password
-      });
+      };
     } else {
-      throw new Error('Invalid modal type');
+      throw new Error('Invalid operation');
     }
 
     console.log('Making request to:', url);
@@ -327,56 +321,50 @@ const UserManagement: React.FC = () => {
 
     const response = await fetch(url, {
       method,
-      headers: getAuthHeaders(),
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
       credentials: 'include',
-      body
+      body: JSON.stringify(body)
     });
 
     console.log('Response status:', response.status);
-    
+
+    const responseText = await response.text();
+    console.log('Response text:', responseText);
+
     if (!response.ok) {
       let errorMessage = `Server error (${response.status})`;
       
       try {
-        // Try to parse JSON error
-        const errorText = await response.text();
-        console.log('Error response text:', errorText);
-        
-        try {
-          const errorData = JSON.parse(errorText);
-          errorMessage = errorData.error || errorMessage;
-        } catch {
-          // If not JSON, use the text as error message
-          errorMessage = errorText || errorMessage;
-        }
-      } catch (textError) {
-        console.error('Could not read error response:', textError);
+        const errorData = JSON.parse(responseText);
+        errorMessage = errorData.error || errorMessage;
+      } catch {
+        errorMessage = responseText || errorMessage;
       }
       
       throw new Error(errorMessage);
     }
-    
-    // Try to parse successful response
-    try {
-      const result = await response.json();
-      console.log('Success response:', result);
 
-      setIsModalOpen(false);
-      await refetch();
-      
-      const successMessage = modalType === 'create' ? 'User created successfully' : 
-                           modalType === 'password' ? 'Password reset successfully' : 
-                           'User updated successfully';
-      toast.success(successMessage);
-    } catch (parseError) {
-      console.error('Error parsing response:', parseError);
-      setIsModalOpen(false);
-      await refetch();
-      toast.success('Operation completed successfully');
+    // Parse successful response
+    const result = JSON.parse(responseText);
+    console.log('Success response:', result);
+
+    if (!result.success) {
+      throw new Error(result.error || 'Operation failed');
     }
+
+    setIsModalOpen(false);
+    await refetch();
+    
+    const successMessage = modalType === 'create' ? 'User created successfully' : 
+                         modalType === 'password' ? 'Password reset successfully' : 
+                         'User updated successfully';
+    toast.success(successMessage);
     
   } catch (error) {
-    console.error(`Error ${modalType === 'create' ? 'creating' : modalType === 'password' ? 'resetting password' : 'updating'} user:`, error);
+    console.error(`Error ${modalType} user:`, error);
     toast.error(error instanceof Error ? error.message : 'An unexpected error occurred');
   } finally {
     setIsSubmitting(false);

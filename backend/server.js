@@ -3166,11 +3166,13 @@ app.get('/api/admin/analytics', authenticateToken, requireAdmin, async (req, res
   }
 });
 
-// ==================== ADMIN USER MANAGEMENT ENDPOINTS ====================
+// ==================== ADMIN USER MANAGEMENT ROUTES ====================
 
-// GET /api/admin/users - Get all users with filtering and search
+// GET /api/admin/users - Get all users
 app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
+    console.log('Fetching users for admin');
+    
     const { search, accountType, status } = req.query;
     
     let query = db.collection('users');
@@ -3189,28 +3191,26 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
     
     let users = [];
     snapshot.forEach(doc => {
-      const user = doc.data();
+      const userData = doc.data();
       users.push({
         id: doc.id,
-        first_name: user.first_name || '',
-        last_name: user.last_name || '',
-        email: user.email || '',
-        phone: user.phone || '',
-        account_type: user.account_type || 'student',
-        profile_image: user.profile_image || '',
-        company: user.company || '',
-        website: user.website || '',
-        bio: user.bio || '',
-        is_active: user.is_active !== undefined ? user.is_active : true,
-        email_verified: user.email_verified || false,
-        created_at: user.created_at ? user.created_at.toDate().toISOString() : new Date().toISOString(),
-        updated_at: user.updated_at ? user.updated_at.toDate().toISOString() : new Date().toISOString()
+        first_name: userData.first_name || '',
+        last_name: userData.last_name || '',
+        email: userData.email || '',
+        phone: userData.phone || '',
+        account_type: userData.account_type || 'student',
+        is_active: userData.is_active !== undefined ? userData.is_active : true,
+        company: userData.company || '',
+        website: userData.website || '',
+        bio: userData.bio || '',
+        created_at: userData.created_at ? userData.created_at.toDate().toISOString() : new Date().toISOString(),
+        updated_at: userData.updated_at ? userData.updated_at.toDate().toISOString() : new Date().toISOString()
       });
     });
 
     // Apply search filter
-    if (search) {
-      const searchLower = search.toLowerCase();
+    if (search && search.trim() !== '') {
+      const searchLower = search.toLowerCase().trim();
       users = users.filter(user => 
         (user.first_name && user.first_name.toLowerCase().includes(searchLower)) ||
         (user.last_name && user.last_name.toLowerCase().includes(searchLower)) ||
@@ -3222,65 +3222,54 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
     users.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
     res.json({
+      success: true,
       users,
       total: users.length
     });
 
   } catch (error) {
     console.error('Get users error:', error);
-    res.status(500).json({ error: 'Server error while fetching users' });
+    res.status(500).json({ 
+      success: false,
+      error: 'Server error while fetching users' 
+    });
   }
 });
 
-// POST /api/admin/users - Create a new user (Admin only)
+// POST /api/admin/users - Create new user
 app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
+    console.log('Creating new user:', req.body);
+    
     const { firstName, lastName, email, phone, password, accountType, isActive, company, website, bio } = req.body;
 
     // Validation
     if (!firstName || !lastName || !email || !password) {
       return res.status(400).json({
+        success: false,
         error: 'First name, last name, email, and password are required'
       });
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: 'Please provide a valid email address' });
-    }
-
-    // Password validation
-    const validatePassword = (password) => {
-      const errors = [];
-      if (password.length < 6) errors.push("Password must be at least 6 characters long");
-      if (!/[A-Z]/.test(password)) errors.push("Password must contain at least one uppercase letter");
-      if (!/[a-z]/.test(password)) errors.push("Password must contain at least one lowercase letter");
-      if (!/[0-9]/.test(password)) errors.push("Password must contain at least one number");
-      if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) errors.push("Password must contain at least one special character");
-      return errors;
-    };
-
-    const passwordErrors = validatePassword(password);
-    if (passwordErrors.length > 0) {
-      return res.status(400).json({ error: passwordErrors[0] });
-    }
-
-    // Check if email already exists
-    const existingUserSnapshot = await db.collection('users').where('email', '==', email.trim()).get();
-    if (!existingUserSnapshot.empty) {
-      return res.status(400).json({ error: 'Email already exists' });
+    // Check if email exists
+    const emailSnapshot = await db.collection('users')
+      .where('email', '==', email.trim().toLowerCase())
+      .get();
+    
+    if (!emailSnapshot.empty) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email already exists'
+      });
     }
 
     // Hash password
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user document
-    const userRef = db.collection('users').doc();
     const userData = {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
-      email: email.trim(),
+      email: email.trim().toLowerCase(),
       phone: phone || '',
       password_hash: hashedPassword,
       account_type: accountType || 'student',
@@ -3288,78 +3277,68 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
       company: company || '',
       website: website || '',
       bio: bio || '',
-      profile_image: '',
       email_verified: false,
       created_at: new Date(),
       updated_at: new Date()
     };
 
-    await userRef.set(userData);
-
-    // Create user stats
-    await db.collection('user_stats').doc(userRef.id).set({
-      user_id: userRef.id,
-      courses_enrolled: 0,
-      courses_completed: 0,
-      certificates_earned: 0,
-      learning_streak: 0,
-      last_activity: new Date()
-    });
-
-    console.log('User created by admin:', { userId: userRef.id, email: email.trim() });
-
-    const createdUser = {
-      id: userRef.id,
-      ...userData
-    };
+    const userRef = await db.collection('users').add(userData);
 
     res.status(201).json({
+      success: true,
       message: 'User created successfully',
-      user: createdUser
+      user: {
+        id: userRef.id,
+        ...userData
+      }
     });
 
   } catch (error) {
     console.error('Create user error:', error);
-    res.status(500).json({ error: 'Server error while creating user' });
+    res.status(500).json({
+      success: false,
+      error: 'Server error while creating user'
+    });
   }
 });
 
-// PUT /api/admin/users/:id - Update a user
+// PUT /api/admin/users/:id - Update user
 app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
     const { firstName, lastName, email, phone, accountType, isActive, company, website, bio } = req.body;
 
-    console.log('Updating user:', userId);
-    console.log('Update data:', req.body);
+    console.log('Updating user:', userId, req.body);
 
     // Check if user exists
     const userDoc = await db.collection('users').doc(userId).get();
     if (!userDoc.exists) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
     }
 
     const currentUser = userDoc.data();
 
-    // Email validation if changed
+    // Check email uniqueness if changed
     if (email && email !== currentUser.email) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        return res.status(400).json({ error: 'Please provide a valid email address' });
-      }
-
-      // Check if new email already exists
-      const existingUserSnapshot = await db.collection('users').where('email', '==', email.trim()).get();
-      if (!existingUserSnapshot.empty && existingUserSnapshot.docs[0].id !== userId) {
-        return res.status(400).json({ error: 'Email already exists' });
+      const emailSnapshot = await db.collection('users')
+        .where('email', '==', email.trim().toLowerCase())
+        .get();
+      
+      if (!emailSnapshot.empty && emailSnapshot.docs[0].id !== userId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Email already exists'
+        });
       }
     }
 
-    // Prepare update data
     const updateData = {
       first_name: firstName ? firstName.trim() : currentUser.first_name,
       last_name: lastName ? lastName.trim() : currentUser.last_name,
-      email: email ? email.trim() : currentUser.email,
+      email: email ? email.trim().toLowerCase() : currentUser.email,
       phone: phone !== undefined ? phone : currentUser.phone,
       account_type: accountType || currentUser.account_type,
       is_active: isActive !== undefined ? isActive : currentUser.is_active,
@@ -3369,63 +3348,72 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
       updated_at: new Date()
     };
 
-    // Update user
     await db.collection('users').doc(userId).update(updateData);
 
-    // Get updated user
-    const updatedUserDoc = await db.collection('users').doc(userId).get();
-    const updatedUser = updatedUserDoc.data();
-
     res.json({
+      success: true,
       message: 'User updated successfully',
       user: {
         id: userId,
-        ...updatedUser
+        ...updateData
       }
     });
 
   } catch (error) {
     console.error('Update user error:', error);
-    res.status(500).json({ error: 'Server error while updating user' });
+    res.status(500).json({
+      success: false,
+      error: 'Server error while updating user'
+    });
   }
 });
 
-// DELETE /api/admin/users/:id - Delete a user (soft delete)
+// DELETE /api/admin/users/:id - Delete user (soft delete)
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
     const adminId = req.user.id || req.user.userId;
 
-    console.log('Deleting user:', userId, 'by admin:', adminId);
+    console.log('Deleting user:', userId);
 
     // Prevent self-deletion
     if (userId === adminId) {
-      return res.status(400).json({ error: 'You cannot delete your own account' });
+      return res.status(400).json({
+        success: false,
+        error: 'You cannot delete your own account'
+      });
     }
 
     // Check if user exists
     const userDoc = await db.collection('users').doc(userId).get();
     if (!userDoc.exists) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
     }
 
-    // Soft delete (deactivate)
+    // Soft delete
     await db.collection('users').doc(userId).update({
       is_active: false,
       updated_at: new Date()
     });
 
-    console.log('User soft deleted by admin:', { userId });
-
-    res.json({ message: 'User deleted successfully' });
+    res.json({
+      success: true,
+      message: 'User deleted successfully'
+    });
 
   } catch (error) {
     console.error('Delete user error:', error);
-    res.status(500).json({ error: 'Server error while deleting user' });
+    res.status(500).json({
+      success: false,
+      error: 'Server error while deleting user'
+    });
   }
 });
 
-// PUT /api/admin/users/:id/password - Reset user password
+// PUT /api/admin/users/:id/password - Reset password
 app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
@@ -3434,49 +3422,64 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
     console.log('Resetting password for user:', userId);
 
     if (!password) {
-      return res.status(400).json({ error: 'Password is required' });
-    }
-
-    // Password validation
-    const validatePassword = (password) => {
-      const errors = [];
-      if (password.length < 6) errors.push("Password must be at least 6 characters long");
-      if (!/[A-Z]/.test(password)) errors.push("Password must contain at least one uppercase letter");
-      if (!/[a-z]/.test(password)) errors.push("Password must contain at least one lowercase letter");
-      if (!/[0-9]/.test(password)) errors.push("Password must contain at least one number");
-      if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) errors.push("Password must contain at least one special character");
-      return errors;
-    };
-
-    const passwordErrors = validatePassword(password);
-    if (passwordErrors.length > 0) {
-      return res.status(400).json({ error: passwordErrors[0] });
+      return res.status(400).json({
+        success: false,
+        error: 'Password is required'
+      });
     }
 
     // Check if user exists
     const userDoc = await db.collection('users').doc(userId).get();
     if (!userDoc.exists) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
     }
 
     // Hash new password
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Update password
     await db.collection('users').doc(userId).update({
       password_hash: hashedPassword,
       updated_at: new Date()
     });
 
-    console.log('Password reset by admin for user:', userId);
-
-    res.json({ message: 'Password reset successfully' });
+    res.json({
+      success: true,
+      message: 'Password reset successfully'
+    });
 
   } catch (error) {
     console.error('Reset password error:', error);
-    res.status(500).json({ error: 'Server error while resetting password' });
+    res.status(500).json({
+      success: false,
+      error: 'Server error while resetting password'
+    });
   }
+});
+
+// Debug route to see all registered routes
+app.get('/api/debug/routes', (req, res) => {
+  const routes = [];
+  app._router.stack.forEach(middleware => {
+    if (middleware.route) {
+      routes.push({
+        path: middleware.route.path,
+        methods: Object.keys(middleware.route.methods)
+      });
+    } else if (middleware.name === 'router') {
+      middleware.handle.stack.forEach(handler => {
+        if (handler.route) {
+          routes.push({
+            path: handler.route.path,
+            methods: Object.keys(handler.route.methods)
+          });
+        }
+      });
+    }
+  });
+  res.json({ routes });
 });
 
 // ==================== USER PROFILE ENDPOINTS ====================
