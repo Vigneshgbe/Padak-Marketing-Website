@@ -189,8 +189,8 @@ const UserManagement: React.FC = () => {
     
     if (!formData.lastName.trim()) {
       errors.lastName = 'Last name is required';
-    } else if (formData.lastName.trim().length < 2) {
-      errors.lastName = 'Last name must be at least 2 characters';
+    } else if (formData.lastName.trim().length < 1) {
+      errors.lastName = 'Last name must be at least 1 character';
     }
     
     if (!formData.email.trim()) {
@@ -265,160 +265,163 @@ const UserManagement: React.FC = () => {
   };
 
   const handleSaveUser = async () => {
-    if (!validateForm()) {
-      toast.error('Please fix the form errors before submitting');
-      return;
-    }
+  if (!validateForm()) {
+    toast.error('Please fix the form errors before submitting');
+    return;
+  }
 
-    const token = getAuthToken();
-    if (!token) {
-      toast.error('Authentication token not found. Please login again.');
-      return;
-    }
+  const token = getAuthToken();
+  if (!token) {
+    toast.error('Authentication token not found. Please login again.');
+    return;
+  }
 
-    setIsSubmitting(true);
-    
-    try {
-      const baseURL = window.location.origin;
-      let url, method, body;
+  setIsSubmitting(true);
+  
+  try {
+    const baseURL = window.location.origin;
+    let url, method, body;
 
-      if (modalType === 'create') {
-        url = `${baseURL}/api/admin/users`;
-        method = 'POST';
-        body = JSON.stringify({
-          firstName: formData.firstName.trim(),
-          lastName: formData.lastName.trim(),
-          email: formData.email.trim(),
-          phone: formData.phone.trim(),
-          password: formData.password,
-          accountType: formData.accountType,
-          isActive: formData.isActive,
-          company: formData.company.trim(),
-          website: formData.website.trim(),
-          bio: formData.bio.trim()
-        });
-      } else if (modalType === 'edit' && selectedUser) {
-        url = `${baseURL}/api/admin/users/${selectedUser.id}`;
-        method = 'PUT';
-        body = JSON.stringify({
-          firstName: formData.firstName.trim(),
-          lastName: formData.lastName.trim(),
-          email: formData.email.trim(),
-          phone: formData.phone.trim(),
-          accountType: formData.accountType,
-          isActive: formData.isActive,
-          company: formData.company.trim(),
-          website: formData.website.trim(),
-          bio: formData.bio.trim()
-        });
-      } else if (modalType === 'password' && selectedUser) {
-        url = `${baseURL}/api/admin/users/${selectedUser.id}/password`;
-        method = 'PUT';
-        body = JSON.stringify({
-          password: formData.password
-        });
-      } else {
-        throw new Error('Invalid modal type');
-      }
-
-      console.log('Making request to:', url);
-
-      const response = await fetch(url, {
-        method,
-        headers: getAuthHeaders(),
-        credentials: 'include',
-        body
+    if (modalType === 'create') {
+      url = `${baseURL}/api/admin/users`;
+      method = 'POST';
+      body = JSON.stringify({
+        firstName: formData.firstName.trim(),
+        lastName: formData.lastName.trim(),
+        email: formData.email.trim(),
+        phone: formData.phone.trim(),
+        password: formData.password,
+        accountType: formData.accountType,
+        isActive: formData.isActive,
+        company: formData.company.trim(),
+        website: formData.website.trim(),
+        bio: formData.bio.trim()
       });
+    } else if (modalType === 'edit' && selectedUser) {
+      url = `${baseURL}/api/admin/users/${selectedUser.id}`;
+      method = 'PUT';
+      body = JSON.stringify({
+        firstName: formData.firstName.trim(),
+        lastName: formData.lastName.trim(),
+        email: formData.email.trim(),
+        phone: formData.phone.trim(),
+        accountType: formData.accountType,
+        isActive: formData.isActive,
+        company: formData.company.trim(),
+        website: formData.website.trim(),
+        bio: formData.bio.trim()
+      });
+    } else if (modalType === 'password' && selectedUser) {
+      url = `${baseURL}/api/admin/users/${selectedUser.id}/password`;
+      method = 'PUT';
+      body = JSON.stringify({
+        password: formData.password
+      });
+    } else {
+      throw new Error('Invalid modal type');
+    }
 
-      console.log('Response status:', response.status);
+    console.log('Making request to:', url);
+    console.log('Request method:', method);
+    console.log('Request body:', body);
+
+    const response = await fetch(url, {
+      method,
+      headers: getAuthHeaders(),
+      credentials: 'include',
+      body
+    });
+
+    console.log('Response status:', response.status);
+    
+    if (!response.ok) {
+      // Try to get error message from response
+      let errorMessage = `Server error (${response.status})`;
       
-      if (!response.ok) {
-        const contentType = response.headers.get('content-type');
-        let errorMessage = `Failed to ${modalType} user`;
-        
-        if (contentType && contentType.includes('application/json')) {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorMessage;
-        } else {
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorMessage;
+      } catch (parseError) {
+        // If response is not JSON, try to get text
+        try {
           const textError = await response.text();
           console.error('Non-JSON error response:', textError);
-          errorMessage = `Server error (${response.status})`;
+        } catch (textError) {
+          console.error('Could not read error response');
         }
-        
-        throw new Error(errorMessage);
       }
       
-      const result = await response.json();
-      console.log('Success response:', result);
-
-      setIsModalOpen(false);
-      await refetch();
-      
-      toast.success(`User ${modalType === 'create' ? 'created' : modalType === 'password' ? 'password reset' : 'updated'} successfully`);
-      
-    } catch (error) {
-      console.error(`Error ${modalType === 'create' ? 'creating' : modalType === 'password' ? 'resetting password' : 'updating'} user:`, error);
-      toast.error(error instanceof Error ? error.message : 'An unexpected error occurred');
-    } finally {
-      setIsSubmitting(false);
+      throw new Error(errorMessage);
     }
-  };
+    
+    const result = await response.json();
+    console.log('Success response:', result);
+
+    setIsModalOpen(false);
+    await refetch();
+    
+    toast.success(`User ${modalType === 'create' ? 'created' : modalType === 'password' ? 'password reset' : 'updated'} successfully`);
+    
+  } catch (error) {
+    console.error(`Error ${modalType === 'create' ? 'creating' : modalType === 'password' ? 'resetting password' : 'updating'} user:`, error);
+    toast.error(error instanceof Error ? error.message : 'An unexpected error occurred');
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   const handleDeleteConfirm = async () => {
-    if (!selectedUser) return;
+  if (!selectedUser) return;
 
-    const token = getAuthToken();
-    if (!token) {
-      toast.error('Authentication token not found. Please login again.');
-      return;
-    }
+  const token = getAuthToken();
+  if (!token) {
+    toast.error('Authentication token not found. Please login again.');
+    return;
+  }
+  
+  setIsSubmitting(true);
+  
+  try {
+    const baseURL = window.location.origin;
     
-    setIsSubmitting(true);
+    console.log('Deleting user:', selectedUser.id);
+
+    const response = await fetch(`${baseURL}/api/admin/users/${selectedUser.id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+      credentials: 'include'
+    });
     
-    try {
-      const baseURL = window.location.origin;
-      
-      console.log('Deleting user:', selectedUser.id);
+    console.log('Delete response status:', response.status);
 
-      const response = await fetch(`${baseURL}/api/admin/users/${selectedUser.id}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(),
-        credentials: 'include'
-      });
+    if (!response.ok) {
+      let errorMessage = `Server error (${response.status})`;
       
-      console.log('Delete response status:', response.status);
-
-      if (!response.ok) {
-        const contentType = response.headers.get('content-type');
-        let errorMessage = 'Failed to delete user';
-        
-        if (contentType && contentType.includes('application/json')) {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorMessage;
-        } else {
-          const textError = await response.text();
-          console.error('Non-JSON error response:', textError);
-          errorMessage = `Server error (${response.status})`;
-        }
-        
-        throw new Error(errorMessage);
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorMessage;
+      } catch (parseError) {
+        console.error('Could not parse error response');
       }
       
-      const result = await response.json();
-      console.log('Delete success:', result);
-
-      setIsModalOpen(false);
-      await refetch();
-      
-      toast.success('User deleted successfully');
-      
-    } catch (error) {
-      console.error('Error deleting user:', error);
-      toast.error(error instanceof Error ? error.message : 'An unexpected error occurred');
-    } finally {
-      setIsSubmitting(false);
+      throw new Error(errorMessage);
     }
-  };
+    
+    const result = await response.json();
+    console.log('Delete success:', result);
+
+    setIsModalOpen(false);
+    await refetch();
+    
+    toast.success('User deleted successfully');
+    
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    toast.error(error instanceof Error ? error.message : 'An unexpected error occurred');
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
