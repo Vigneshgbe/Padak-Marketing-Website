@@ -6,8 +6,8 @@ import Modal from '../../../components/admin/Modal';
 import { useNavigate } from 'react-router-dom';
 
 interface CalendarEvent {
-  id: number;
-  user_id: number | null;
+  id: string;
+  user_id: string | null;
   title: string;
   description: string | null;
   event_date: string;
@@ -21,7 +21,7 @@ interface CalendarEvent {
 }
 
 interface User {
-  id: number;
+  id: string;
   first_name: string;
   last_name: string;
   email: string;
@@ -59,15 +59,12 @@ const CalendarManagement: React.FC = () => {
 
   // Handle authentication errors
   const handleAuthError = () => {
-    // Clear invalid tokens
     try {
       localStorage.removeItem('token');
       localStorage.removeItem('authToken');
     } catch (error) {
       console.error('Error clearing tokens:', error);
     }
-    
-    // Redirect to login
     navigate('/login');
   };
 
@@ -131,10 +128,14 @@ const CalendarManagement: React.FC = () => {
       };
 
       const baseURL = getBaseURL();
+      console.log('Fetching users from:', `${baseURL}/api/admin/users`);
+      
       const response = await fetch(`${baseURL}/api/admin/users`, {
         method: 'GET',
         headers
       });
+
+      console.log('Users response status:', response.status);
 
       if (response.status === 401) {
         handleAuthError();
@@ -143,19 +144,24 @@ const CalendarManagement: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json();
-        // Ensure data is an array before setting it
+        console.log('Users data received:', data);
+        
+        // Handle both response formats: direct array or {users: [...]}
         if (Array.isArray(data)) {
           setUsers(data);
+        } else if (data && typeof data === 'object' && 'users' in data && Array.isArray(data.users)) {
+          setUsers(data.users);
         } else {
-          console.error('Users API did not return an array:', data);
+          console.error('Unexpected users data format:', data);
           setUsers([]);
         }
       } else {
-        console.error('Failed to fetch users:', response.statusText);
+        const errorText = await response.text();
+        console.error('Failed to fetch users:', response.statusText, errorText);
         setUsers([]);
       }
     } catch (err) {
-      console.error('Failed to fetch users:', err);
+      console.error('Error fetching users:', err);
       setUsers([]);
     }
   };
@@ -217,7 +223,7 @@ const CalendarManagement: React.FC = () => {
 
       if (response.ok) {
         setIsModalOpen(false);
-        fetchEvents(); // Refresh the data
+        await fetchEvents();
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to save calendar event');
@@ -258,7 +264,7 @@ const CalendarManagement: React.FC = () => {
 
       if (response.ok) {
         setIsModalOpen(false);
-        fetchEvents(); // Refresh the data
+        await fetchEvents();
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to delete calendar event');
@@ -275,24 +281,23 @@ const CalendarManagement: React.FC = () => {
     
     // Convert empty strings to null for optional fields
     const processedData = {
-      user_id: formDataObj.user_id ? parseInt(formDataObj.user_id as string) : null,
+      user_id: formDataObj.user_id && formDataObj.user_id !== '' ? String(formDataObj.user_id) : null,
       title: formDataObj.title as string,
-      description: formDataObj.description || null,
+      description: formDataObj.description && formDataObj.description !== '' ? formDataObj.description as string : null,
       event_date: formDataObj.event_date as string,
-      event_time: formDataObj.event_time || null,
+      event_time: formDataObj.event_time && formDataObj.event_time !== '' ? formDataObj.event_time as string : null,
       event_type: formDataObj.event_type as string
     };
 
+    console.log('Submitting event data:', processedData);
     handleSaveEvent(processedData);
   };
 
   const filteredEvents = events.filter((event: CalendarEvent) => {
-    // Apply search filter
     if (searchTerm && !`${event.title} ${event.description} ${event.event_type}`.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false;
     }
     
-    // Apply type filter
     if (selectedFilter !== 'all' && event.event_type !== selectedFilter) {
       return false;
     }
@@ -305,6 +310,15 @@ const CalendarManagement: React.FC = () => {
       return `${event.first_name} ${event.last_name}`;
     }
     return event.email || 'System Event';
+  };
+
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'N/A';
+    try {
+      return new Date(dateString).toLocaleDateString();
+    } catch {
+      return 'Invalid Date';
+    }
   };
 
   return (
@@ -392,7 +406,7 @@ const CalendarManagement: React.FC = () => {
             },
             { 
               header: 'Date', 
-              accessor: (event) => new Date(event.event_date).toLocaleDateString() 
+              accessor: (event) => formatDate(event.event_date)
             },
             { 
               header: 'Time', 
@@ -450,7 +464,7 @@ const CalendarManagement: React.FC = () => {
                 name="title"
                 defaultValue={selectedEvent?.title || ''}
                 required
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               />
             </div>
 
@@ -461,15 +475,24 @@ const CalendarManagement: React.FC = () => {
               <select
                 name="user_id"
                 defaultValue={selectedEvent?.user_id || ''}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               >
                 <option value="">Select a user (optional)</option>
-                {Array.isArray(users) && users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.first_name} {user.last_name} ({user.email})
-                  </option>
-                ))}
+                {users.length > 0 ? (
+                  users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.first_name} {user.last_name} ({user.email})
+                    </option>
+                  ))
+                ) : (
+                  <option value="" disabled>No users available</option>
+                )}
               </select>
+              {users.length === 0 && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Loading users...
+                </p>
+              )}
             </div>
 
             <div>
@@ -480,7 +503,7 @@ const CalendarManagement: React.FC = () => {
                 name="description"
                 defaultValue={selectedEvent?.description || ''}
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               />
             </div>
 
@@ -492,9 +515,9 @@ const CalendarManagement: React.FC = () => {
                 <input
                   type="date"
                   name="event_date"
-                  defaultValue={selectedEvent?.event_date || ''}
+                  defaultValue={selectedEvent?.event_date ? new Date(selectedEvent.event_date).toISOString().split('T')[0] : ''}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 />
               </div>
 
@@ -506,7 +529,7 @@ const CalendarManagement: React.FC = () => {
                   type="time"
                   name="event_time"
                   defaultValue={selectedEvent?.event_time || ''}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 />
               </div>
             </div>
@@ -518,7 +541,7 @@ const CalendarManagement: React.FC = () => {
               <select
                 name="event_type"
                 defaultValue={selectedEvent?.event_type || 'custom'}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               >
                 <option value="custom">Custom</option>
                 <option value="webinar">Webinar</option>
