@@ -203,7 +203,7 @@ const UserManagement: React.FC = () => {
       errors.phone = 'Please enter a valid phone number';
     }
     
-    if (formData.website && !/^https?:\/\/.+\..+/.test(formData.website)) {
+    if (formData.website && formData.website.trim() && !/^https?:\/\/.+\..+/.test(formData.website)) {
       errors.website = 'Please enter a valid website URL (include http:// or https://)';
     }
     
@@ -229,14 +229,25 @@ const UserManagement: React.FC = () => {
     return true;
   });
 
+  const getAuthToken = (): string | null => {
+    // Check multiple possible token storage locations
+    return localStorage.getItem('token') || 
+           localStorage.getItem('authToken') || 
+           localStorage.getItem('adminToken') ||
+           sessionStorage.getItem('token') ||
+           null;
+  };
+
   const getAuthHeaders = (): HeadersInit => {
-    const token = localStorage.getItem('adminToken') || localStorage.getItem('token') || localStorage.getItem('authToken');
+    const token = getAuthToken();
     const headers: HeadersInit = {
       'Content-Type': 'application/json'
     };
 
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
+    } else {
+      console.error('No authentication token found');
     }
 
     return headers;
@@ -244,24 +255,26 @@ const UserManagement: React.FC = () => {
 
   const handleSaveUser = async () => {
     if (!validateForm()) {
+      toast.error('Please fix the form errors before submitting');
+      return;
+    }
+
+    const token = getAuthToken();
+    if (!token) {
+      toast.error('Authentication token not found. Please login again.');
       return;
     }
 
     setIsSubmitting(true);
     
     try {
-      const baseURL = window.location.origin.includes('localhost') 
-        ? 'http://localhost:5000' 
-        : '';
-      
-      let url: string;
-      let method: string;
-      let body: any;
+      const baseURL = window.location.origin;
+      let url, method, body;
 
       if (modalType === 'create') {
         url = `${baseURL}/api/admin/users`;
         method = 'POST';
-        body = {
+        body = JSON.stringify({
           firstName: formData.firstName.trim(),
           lastName: formData.lastName.trim(),
           email: formData.email.trim(),
@@ -272,11 +285,11 @@ const UserManagement: React.FC = () => {
           company: formData.company.trim(),
           website: formData.website.trim(),
           bio: formData.bio.trim()
-        };
+        });
       } else if (modalType === 'edit' && selectedUser) {
         url = `${baseURL}/api/admin/users/${selectedUser.id}`;
         method = 'PUT';
-        body = {
+        body = JSON.stringify({
           firstName: formData.firstName.trim(),
           lastName: formData.lastName.trim(),
           email: formData.email.trim(),
@@ -286,38 +299,47 @@ const UserManagement: React.FC = () => {
           company: formData.company.trim(),
           website: formData.website.trim(),
           bio: formData.bio.trim()
-        };
+        });
       } else if (modalType === 'password' && selectedUser) {
         url = `${baseURL}/api/admin/users/${selectedUser.id}/password`;
         method = 'PUT';
-        body = {
+        body = JSON.stringify({
           password: formData.password
-        };
+        });
       } else {
         throw new Error('Invalid modal type');
       }
+
+      console.log('Making request to:', url);
 
       const response = await fetch(url, {
         method,
         headers: getAuthHeaders(),
         credentials: 'include',
-        body: JSON.stringify(body)
+        body
       });
-      
-      const contentType = response.headers.get('content-type');
-      let errorData;
-      
-      if (contentType && contentType.includes('application/json')) {
-        errorData = await response.json();
-      } else {
-        const text = await response.text();
-        errorData = { error: text || `Failed to ${modalType} user` };
-      }
+
+      console.log('Response status:', response.status);
       
       if (!response.ok) {
-        throw new Error(errorData.error || `Failed to ${modalType} user`);
+        const contentType = response.headers.get('content-type');
+        let errorMessage = `Failed to ${modalType} user`;
+        
+        if (contentType && contentType.includes('application/json')) {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } else {
+          const textError = await response.text();
+          console.error('Non-JSON error response:', textError);
+          errorMessage = `Server error (${response.status})`;
+        }
+        
+        throw new Error(errorMessage);
       }
       
+      const result = await response.json();
+      console.log('Success response:', result);
+
       setIsModalOpen(false);
       await refetch();
       
@@ -325,7 +347,7 @@ const UserManagement: React.FC = () => {
       
     } catch (error) {
       console.error(`Error ${modalType === 'create' ? 'creating' : modalType === 'password' ? 'resetting password' : 'updating'} user:`, error);
-      toast.error(`Failed to ${modalType} user: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(error instanceof Error ? error.message : 'An unexpected error occurred');
     } finally {
       setIsSubmitting(false);
     }
@@ -333,34 +355,47 @@ const UserManagement: React.FC = () => {
 
   const handleDeleteConfirm = async () => {
     if (!selectedUser) return;
+
+    const token = getAuthToken();
+    if (!token) {
+      toast.error('Authentication token not found. Please login again.');
+      return;
+    }
     
     setIsSubmitting(true);
     
     try {
-      const baseURL = window.location.origin.includes('localhost') 
-        ? 'http://localhost:5000' 
-        : '';
+      const baseURL = window.location.origin;
       
+      console.log('Deleting user:', selectedUser.id);
+
       const response = await fetch(`${baseURL}/api/admin/users/${selectedUser.id}`, {
         method: 'DELETE',
         headers: getAuthHeaders(),
         credentials: 'include'
       });
       
-      const contentType = response.headers.get('content-type');
-      let errorData;
-      
-      if (contentType && contentType.includes('application/json')) {
-        errorData = await response.json();
-      } else {
-        const text = await response.text();
-        errorData = { error: text || 'Failed to delete user' };
-      }
-      
+      console.log('Delete response status:', response.status);
+
       if (!response.ok) {
-        throw new Error(errorData.error || 'Failed to delete user');
+        const contentType = response.headers.get('content-type');
+        let errorMessage = 'Failed to delete user';
+        
+        if (contentType && contentType.includes('application/json')) {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } else {
+          const textError = await response.text();
+          console.error('Non-JSON error response:', textError);
+          errorMessage = `Server error (${response.status})`;
+        }
+        
+        throw new Error(errorMessage);
       }
       
+      const result = await response.json();
+      console.log('Delete success:', result);
+
       setIsModalOpen(false);
       await refetch();
       
@@ -368,7 +403,7 @@ const UserManagement: React.FC = () => {
       
     } catch (error) {
       console.error('Error deleting user:', error);
-      toast.error(`Failed to delete user: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(error instanceof Error ? error.message : 'An unexpected error occurred');
     } finally {
       setIsSubmitting(false);
     }
@@ -376,14 +411,19 @@ const UserManagement: React.FC = () => {
 
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
+    try {
+      return new Date(dateString).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    } catch {
+      return 'N/A';
+    }
   };
 
   const capitalizeAccountType = (type: string) => {
+    if (!type) return 'Student';
     return type.charAt(0).toUpperCase() + type.slice(1);
   };
 
@@ -437,7 +477,7 @@ const UserManagement: React.FC = () => {
 
           <button
             onClick={handleCreateUser}
-            className="flex items-center justify-center gap-1 px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors"
+            className="flex items-center justify-center gap-1 px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={isSubmitting}
           >
             <Plus size={16} />
@@ -461,7 +501,7 @@ const UserManagement: React.FC = () => {
           <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
           <button
             onClick={() => refetch()}
-            className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
+            className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={isSubmitting}
           >
             Retry
@@ -500,7 +540,7 @@ const UserManagement: React.FC = () => {
                   e.stopPropagation();
                   handleEditUser(user);
                 }}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Edit User"
                 disabled={isSubmitting}
               >
@@ -511,7 +551,7 @@ const UserManagement: React.FC = () => {
                   e.stopPropagation();
                   handleResetPassword(user);
                 }}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Reset Password"
                 disabled={isSubmitting}
               >
@@ -522,7 +562,7 @@ const UserManagement: React.FC = () => {
                   e.stopPropagation();
                   handleDeleteUser(user);
                 }}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Delete User"
                 disabled={isSubmitting}
               >
@@ -537,7 +577,7 @@ const UserManagement: React.FC = () => {
       <Modal
         isOpen={isModalOpen && (modalType === 'create' || modalType === 'edit')}
         title={modalType === 'create' ? 'Create New User' : 'Edit User'}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => !isSubmitting && setIsModalOpen(false)}
         size="lg"
       >
         <div className="space-y-4">
@@ -768,7 +808,7 @@ const UserManagement: React.FC = () => {
       <Modal
         isOpen={isModalOpen && modalType === 'password'}
         title="Reset Password"
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => !isSubmitting && setIsModalOpen(false)}
         size="md"
       >
         <div className="space-y-4">
@@ -831,18 +871,18 @@ const UserManagement: React.FC = () => {
       <Modal
         isOpen={isModalOpen && modalType === 'delete'}
         title="Delete User"
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => !isSubmitting && setIsModalOpen(false)}
         size="md"
       >
         <div className="space-y-4">
           <p className="text-gray-700 dark:text-gray-300">
             Are you sure you want to delete user <strong>{selectedUser?.first_name} {selectedUser?.last_name}</strong>? 
-            This action cannot be undone and will permanently remove all associated data.
+            This action will deactivate the account.
           </p>
 
           <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
             <p className="text-yellow-800 dark:text-yellow-200 text-sm">
-              ⚠️ This will also affect any related data such as bookmarks, connections, and statistics.
+              ⚠️ This will deactivate the user account. The user will no longer be able to log in.
             </p>
           </div>
 
