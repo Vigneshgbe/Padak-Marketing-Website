@@ -33,6 +33,13 @@ const AssignmentManagement: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Form state for controlled inputs
+  const [formTitle, setFormTitle] = useState('');
+  const [formDescription, setFormDescription] = useState('');
+  const [formCourseId, setFormCourseId] = useState('');
+  const [formDueDate, setFormDueDate] = useState('');
+  const [formMaxPoints, setFormMaxPoints] = useState('100');
+
   useEffect(() => {
     fetchAssignments();
     fetchCourses();
@@ -103,6 +110,12 @@ const AssignmentManagement: React.FC = () => {
     setSelectedAssignment(assignment);
     setModalType('edit');
     setFormError(null);
+    // Pre-fill form
+    setFormTitle(assignment.title);
+    setFormDescription(assignment.description || '');
+    setFormCourseId(assignment.course_id.toString());
+    setFormDueDate(formatDateForInput(assignment.due_date));
+    setFormMaxPoints(assignment.max_points.toString());
     setIsModalOpen(true);
   };
 
@@ -116,22 +129,48 @@ const AssignmentManagement: React.FC = () => {
     setSelectedAssignment(null);
     setModalType('create');
     setFormError(null);
+    // Reset form
+    setFormTitle('');
+    setFormDescription('');
+    setFormCourseId('');
+    setFormDueDate('');
+    setFormMaxPoints('100');
     setIsModalOpen(true);
   };
 
-  const handleSaveAssignment = async (formData: any) => {
+  const handleSaveAssignment = async () => {
     try {
       setSaving(true);
       setFormError(null);
 
-      // Validate form data - check for truthy values and handle "0" as valid
-      if (!formData.title?.trim() || 
-          !formData.course_id || 
-          !formData.due_date || 
-          formData.max_points === undefined || 
-          formData.max_points === null || 
-          formData.max_points === '') {
-        setFormError('Please fill in all required fields');
+      // Detailed validation with specific error messages
+      if (!formTitle || formTitle.trim() === '') {
+        setFormError('Assignment title is required');
+        setSaving(false);
+        return;
+      }
+
+      if (!formCourseId || formCourseId === '') {
+        setFormError('Please select a course');
+        setSaving(false);
+        return;
+      }
+
+      if (!formDueDate || formDueDate === '') {
+        setFormError('Due date is required');
+        setSaving(false);
+        return;
+      }
+
+      if (!formMaxPoints || formMaxPoints === '' || isNaN(Number(formMaxPoints))) {
+        setFormError('Max points must be a valid number');
+        setSaving(false);
+        return;
+      }
+
+      const maxPointsNum = parseInt(formMaxPoints);
+      if (maxPointsNum < 1 || maxPointsNum > 1000) {
+        setFormError('Max points must be between 1 and 1000');
         setSaving(false);
         return;
       }
@@ -152,11 +191,21 @@ const AssignmentManagement: React.FC = () => {
 
       const method = modalType === 'create' ? 'POST' : 'PUT';
 
+      const payload = {
+        title: formTitle.trim(),
+        description: formDescription.trim(),
+        course_id: formCourseId,
+        due_date: formDueDate,
+        max_points: maxPointsNum
+      };
+
+      console.log('Submitting assignment:', payload);
+
       const response = await fetch(url, {
         method,
         headers,
         credentials: 'include',
-        body: JSON.stringify(formData)
+        body: JSON.stringify(payload)
       });
 
       if (response.ok) {
@@ -207,23 +256,6 @@ const AssignmentManagement: React.FC = () => {
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const formDataObj = Object.fromEntries(formData.entries());
-    
-    // Convert string values to appropriate types
-    const processedData = {
-      title: formDataObj.title as string,
-      description: formDataObj.description as string || '',
-      course_id: parseInt(formDataObj.course_id as string),
-      due_date: formDataObj.due_date as string,
-      max_points: parseInt(formDataObj.max_points as string)
-    };
-
-    handleSaveAssignment(processedData);
   };
 
   const filteredAssignments = assignments.filter((assignment) => {
@@ -380,7 +412,7 @@ const AssignmentManagement: React.FC = () => {
         }}
         size="lg"
       >
-        <form onSubmit={handleFormSubmit}>
+        <div>
           {/* Required Fields Notice */}
           <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
             <div className="flex items-start">
@@ -409,10 +441,9 @@ const AssignmentManagement: React.FC = () => {
               </label>
               <input
                 type="text"
-                name="title"
-                defaultValue={selectedAssignment?.title || ''}
+                value={formTitle}
+                onChange={(e) => setFormTitle(e.target.value)}
                 placeholder="e.g., Final Project, Midterm Exam"
-                required
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -422,9 +453,8 @@ const AssignmentManagement: React.FC = () => {
                 Course <span className="text-red-500">*</span>
               </label>
               <select
-                name="course_id"
-                defaultValue={selectedAssignment?.course_id || ''}
-                required
+                value={formCourseId}
+                onChange={(e) => setFormCourseId(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
               >
                 <option value="">Select a course</option>
@@ -446,8 +476,8 @@ const AssignmentManagement: React.FC = () => {
                 Description
               </label>
               <textarea
-                name="description"
-                defaultValue={selectedAssignment?.description || ''}
+                value={formDescription}
+                onChange={(e) => setFormDescription(e.target.value)}
                 placeholder="Provide assignment details, requirements, and instructions..."
                 rows={4}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
@@ -461,9 +491,8 @@ const AssignmentManagement: React.FC = () => {
                 </label>
                 <input
                   type="date"
-                  name="due_date"
-                  defaultValue={formatDateForInput(selectedAssignment?.due_date || '')}
-                  required
+                  value={formDueDate}
+                  onChange={(e) => setFormDueDate(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
                 />
               </div>
@@ -474,12 +503,11 @@ const AssignmentManagement: React.FC = () => {
                 </label>
                 <input
                   type="number"
-                  name="max_points"
+                  value={formMaxPoints}
+                  onChange={(e) => setFormMaxPoints(e.target.value)}
                   min="1"
                   max="1000"
-                  defaultValue={selectedAssignment?.max_points || 100}
                   placeholder="100"
-                  required
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
                 />
               </div>
@@ -498,7 +526,8 @@ const AssignmentManagement: React.FC = () => {
                 Cancel
               </button>
               <button
-                type="submit"
+                type="button"
+                onClick={handleSaveAssignment}
                 disabled={saving}
                 className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center transition-colors"
               >
@@ -516,7 +545,7 @@ const AssignmentManagement: React.FC = () => {
               </button>
             </div>
           </div>
-        </form>
+        </div>
       </Modal>
 
       {/* Delete Confirmation Modal */}
