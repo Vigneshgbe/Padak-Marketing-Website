@@ -6,9 +6,9 @@ import Modal from '../../../components/admin/Modal';
 import { Certificate, User, Course } from '../../../lib/admin-types';
 
 interface CertificateFormData {
-  user_id: number;
-  course_id: number;
-  certificate_url: string;
+  userId: string;
+  courseId: string;
+  certificateUrl: string;
 }
 
 const CertificateManagement: React.FC = () => {
@@ -22,9 +22,9 @@ const CertificateManagement: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState<CertificateFormData>({
-    user_id: 0,
-    course_id: 0,
-    certificate_url: ''
+    userId: '',
+    courseId: '',
+    certificateUrl: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -118,7 +118,6 @@ const CertificateManagement: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json();
-        // Ensure we're setting an array
         setCourses(Array.isArray(data) ? data : []);
       } else {
         console.error('Failed to fetch courses');
@@ -138,16 +137,16 @@ const CertificateManagement: React.FC = () => {
   const handleEditCertificate = (certificate: Certificate) => {
     setSelectedCertificate(certificate);
     setFormData({
-      user_id: certificate.user.id,
-      course_id: certificate.course.id,
-      certificate_url: certificate.certificateUrl || ''
+      userId: certificate.userId,
+      courseId: certificate.courseId,
+      certificateUrl: certificate.certificateUrl || ''
     });
     setIsCreateModalOpen(true);
   };
 
   const handleCreateCertificate = () => {
     setSelectedCertificate(null);
-    setFormData({ user_id: 0, course_id: 0, certificate_url: '' });
+    setFormData({ userId: '', courseId: '', certificateUrl: '' });
     setIsCreateModalOpen(true);
   };
 
@@ -155,7 +154,7 @@ const CertificateManagement: React.FC = () => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: name === 'user_id' || name === 'course_id' ? parseInt(value) : value
+      [name]: value
     }));
   };
 
@@ -179,7 +178,7 @@ const CertificateManagement: React.FC = () => {
 
       if (response.ok) {
         setIsModalOpen(false);
-        fetchCertificates(); // Refresh the data
+        fetchCertificates();
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to delete certificate');
@@ -191,7 +190,14 @@ const CertificateManagement: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!formData.userId || !formData.courseId) {
+      setError('Please select both a student and a course');
+      return;
+    }
+
     setIsSubmitting(true);
+    setError(null);
 
     try {
       const token = localStorage.getItem('token') || localStorage.getItem('authToken');
@@ -219,7 +225,8 @@ const CertificateManagement: React.FC = () => {
 
       if (response.ok) {
         setIsCreateModalOpen(false);
-        fetchCertificates(); // Refresh the data
+        setFormData({ userId: '', courseId: '', certificateUrl: '' });
+        fetchCertificates();
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to save certificate');
@@ -274,11 +281,14 @@ const CertificateManagement: React.FC = () => {
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6">
           <div className="flex items-center mb-4">
             <span className="text-red-500 mr-2">⚠️</span>
-            <h3 className="text-lg font-semibold text-red-700 dark:text-red-300">Error Loading Certificates</h3>
+            <h3 className="text-lg font-semibold text-red-700 dark:text-red-300">Error</h3>
           </div>
           <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
           <button
-            onClick={fetchCertificates}
+            onClick={() => {
+              setError(null);
+              fetchCertificates();
+            }}
             className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
           >
             Retry
@@ -385,18 +395,29 @@ const CertificateManagement: React.FC = () => {
       <Modal
         isOpen={isCreateModalOpen}
         title={selectedCertificate ? "Edit Certificate" : "Issue New Certificate"}
-        onClose={() => setIsCreateModalOpen(false)}
+        onClose={() => {
+          setIsCreateModalOpen(false);
+          setError(null);
+          setFormData({ userId: '', courseId: '', certificateUrl: '' });
+        }}
         size="lg"
       >
         <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
+              <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
+            </div>
+          )}
+
           <div>
-            <label className="block text-sm font-medium mb-1">Student</label>
+            <label className="block text-sm font-medium mb-1">Student *</label>
             <select
-              name="user_id"
-              value={formData.user_id}
+              name="userId"
+              value={formData.userId}
               onChange={handleFormChange}
               required
-              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
+              disabled={selectedCertificate !== null}
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <option value="">Select a student</option>
               {Array.isArray(users) && users.map((user) => (
@@ -408,13 +429,14 @@ const CertificateManagement: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Course</label>
+            <label className="block text-sm font-medium mb-1">Course *</label>
             <select
-              name="course_id"
-              value={formData.course_id}
+              name="courseId"
+              value={formData.courseId}
               onChange={handleFormChange}
               required
-              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
+              disabled={selectedCertificate !== null}
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <option value="">Select a course</option>
               {Array.isArray(courses) && courses.map((course) => (
@@ -429,28 +451,33 @@ const CertificateManagement: React.FC = () => {
             <label className="block text-sm font-medium mb-1">Certificate URL</label>
             <input
               type="url"
-              name="certificate_url"
-              value={formData.certificate_url}
+              name="certificateUrl"
+              value={formData.certificateUrl}
               onChange={handleFormChange}
               placeholder="https://example.com/certificate.pdf"
               className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
             />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Optional: Enter a URL to an existing certificate</p>
           </div>
 
           <div className="flex justify-end gap-2 mt-6">
             <button
               type="button"
-              onClick={() => setIsCreateModalOpen(false)}
+              onClick={() => {
+                setIsCreateModalOpen(false);
+                setError(null);
+                setFormData({ userId: '', courseId: '', certificateUrl: '' });
+              }}
               className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 disabled:opacity-50"
+              disabled={isSubmitting || !formData.userId || !formData.courseId}
+              className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSubmitting ? 'Saving...' : (selectedCertificate ? 'Update' : 'Issue Certificate')}
+              {isSubmitting ? 'Saving...' : (selectedCertificate ? 'Update Certificate' : 'Issue Certificate')}
             </button>
           </div>
         </form>
