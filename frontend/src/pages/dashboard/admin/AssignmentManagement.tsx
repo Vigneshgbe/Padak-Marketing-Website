@@ -124,8 +124,13 @@ const AssignmentManagement: React.FC = () => {
       setSaving(true);
       setFormError(null);
 
-      // Validate form data
-      if (!formData.title || !formData.course_id || !formData.due_date || !formData.max_points) {
+      // Validate form data - check for truthy values and handle "0" as valid
+      if (!formData.title?.trim() || 
+          !formData.course_id || 
+          !formData.due_date || 
+          formData.max_points === undefined || 
+          formData.max_points === null || 
+          formData.max_points === '') {
         setFormError('Please fill in all required fields');
         setSaving(false);
         return;
