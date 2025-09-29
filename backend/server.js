@@ -3062,7 +3062,6 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
-    const offset = (page - 1) * limit;
     const accountType = req.query.accountType;
     const status = req.query.status;
     const search = req.query.search;
@@ -3079,38 +3078,80 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
     }
 
     if (search) {
-      // Simple search on first_name or last_name or email
-      const firstName = await db.collection('users').where('first_name', '>=', search).where('first_name', '<=', search + '\uf8ff').get();
-      const lastName = await db.collection('users').where('last_name', '>=', search).where('last_name', '<=', search + '\uf8ff').get();
-      const email = await db.collection('users').where('email', '>=', search).where('email', '<=', search + '\uf8ff').get();
-      const all = [...firstName.docs, ...lastName.docs, ...email.docs];
-      const unique = [...new Set(all.map(d => d.id))].map(id => all.find(d => d.id === id));
-      const users = unique.map(doc => {
+      // For search, we need to handle it differently since Firestore doesn't support OR queries directly
+      const usersRef = db.collection('users');
+      const firstNameQuery = usersRef.where('first_name', '>=', search).where('first_name', '<=', search + '\uf8ff');
+      const lastNameQuery = usersRef.where('last_name', '>=', search).where('last_name', '<=', search + '\uf8ff');
+      const emailQuery = usersRef.where('email', '>=', search).where('email', '<=', search + '\uf8ff');
+      
+      const [firstNameSnapshot, lastNameSnapshot, emailSnapshot] = await Promise.all([
+        firstNameQuery.get(),
+        lastNameQuery.get(),
+        emailQuery.get()
+      ]);
+
+      const allDocs = [...firstNameSnapshot.docs, ...lastNameSnapshot.docs, ...emailSnapshot.docs];
+      const uniqueDocs = allDocs.reduce((acc, doc) => {
+        if (!acc.find(d => d.id === doc.id)) {
+          acc.push(doc);
+        }
+        return acc;
+      }, []);
+
+      const users = uniqueDocs.map(doc => {
         const data = doc.data();
         data.id = doc.id;
         return data;
       });
-      res.json(users);
+
+      // Apply pagination manually for search results
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
+      const paginatedUsers = users.slice(startIndex, endIndex);
+
+      res.json({
+        users: paginatedUsers,
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(users.length / limit),
+          totalUsers: users.length,
+          hasNextPage: endIndex < users.length,
+          hasPreviousPage: page > 1
+        }
+      });
       return;
     }
 
-    const users = await query.limit(limit).offset(offset).get();
+    // For non-search queries, use startAfter for pagination
+    let usersSnapshot;
+    if (page > 1) {
+      // Get the last document of previous page to start after
+      const previousPageQuery = query.limit((page - 1) * limit);
+      const previousPageSnapshot = await previousPageQuery.get();
+      const lastDoc = previousPageSnapshot.docs[previousPageSnapshot.docs.length - 1];
+      
+      usersSnapshot = await query.startAfter(lastDoc).limit(limit).get();
+    } else {
+      usersSnapshot = await query.limit(limit).get();
+    }
 
-    const data = users.docs.map(doc => {
+    const users = usersSnapshot.docs.map(doc => {
       const u = doc.data();
       u.id = doc.id;
       return u;
     });
 
-    const total = (await query.get()).size;
+    // Get total count
+    const totalSnapshot = await query.get();
+    const total = totalSnapshot.size;
 
     res.json({
-      users: data,
+      users: users,
       pagination: {
         currentPage: page,
         totalPages: Math.ceil(total / limit),
         totalUsers: total,
-        hasNextPage: page < Math.ceil(total / limit),
+        hasNextPage: (page * limit) < total,
         hasPreviousPage: page > 1
       }
     });
