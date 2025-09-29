@@ -3186,8 +3186,8 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
       bio: bio || null,
       is_active: isActive !== undefined ? isActive : true,
       email_verified: true,
-      created_at: firebase.firestore.Timestamp.now(),
-      updated_at: firebase.firestore.Timestamp.now()
+      created_at: admin.firestore.Timestamp.now(),
+      updated_at: admin.firestore.Timestamp.now()
     });
 
     // Create user stats entry
@@ -3196,7 +3196,7 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
       courses_completed: 0,
       certificates_earned: 0,
       learning_streak: 0,
-      last_activity: firebase.firestore.Timestamp.now()
+      last_activity: admin.firestore.Timestamp.now()
     });
 
     console.log('User created successfully by admin:', { userId: userRef.id, email });
@@ -3236,7 +3236,7 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
         return res.status(400).json({ error: 'Please provide a valid email address' });
       }
 
-      const existing = await db.collection('users').where('email', '==', email).where(firebase.firestore.FieldPath.documentId(), '!=', id).get();
+      const existing = await db.collection('users').where('email', '==', email).where(admin.firestore.FieldPath.documentId(), '!=', id).get();
 
       if (!existing.empty) {
         return res.status(400).json({ error: 'Email already exists' });
@@ -3253,7 +3253,7 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
       company: company || u.company,
       website: website || u.website,
       bio: bio || u.bio,
-      updated_at: firebase.firestore.Timestamp.now()
+      updated_at: admin.firestore.Timestamp.now()
     });
 
     const updated = await db.collection('users').doc(id).get();
@@ -3289,7 +3289,7 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
 
     await db.collection('users').doc(id).update({
       is_active: false,
-      updated_at: firebase.firestore.Timestamp.now()
+      updated_at: admin.firestore.Timestamp.now()
     });
 
     res.json({ message: 'User deleted successfully' });
@@ -3324,7 +3324,7 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
 
     await db.collection('users').doc(id).update({
       password_hash: hashedPassword,
-      updated_at: firebase.firestore.Timestamp.now()
+      updated_at: admin.firestore.Timestamp.now()
     });
 
     res.json({ message: 'Password reset successfully' });
