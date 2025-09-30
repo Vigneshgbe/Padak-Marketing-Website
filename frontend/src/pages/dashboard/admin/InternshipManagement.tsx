@@ -1,9 +1,10 @@
 // src/pages/dashboard/admin/InternshipManagement.tsx
 import React, { useState, useEffect } from 'react';
-import { Edit, Trash2, Plus, Search, Filter, Save, X } from 'lucide-react';
+import { Edit, Trash2, Plus, Search, Filter, Save, X, AlertCircle } from 'lucide-react';
 import DataTable from '../../../components/admin/DataTable';
 import StatusBadge from '../../../components/admin/StatusBadge';
 import Modal from '../../../components/admin/Modal';
+import { useNavigate } from 'react-router-dom';
 
 interface Internship {
   id: string;
@@ -31,21 +32,54 @@ const InternshipManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [saving, setSaving] = useState(false);
+  const [authError, setAuthError] = useState(false);
+  
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchInternships();
   }, []);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+    const userString = localStorage.getItem('user');
+    
+    if (!token) {
+      setAuthError(true);
+      setError('Authentication required. Please log in again.');
+      return null;
+    }
+
+    // Check if user is admin
+    try {
+      if (userString) {
+        const user = JSON.parse(userString);
+        if (user.role !== 'admin' && !user.isAdmin) {
+          setAuthError(true);
+          setError('Access denied. Admin privileges required.');
+          return null;
+        }
+      }
+    } catch (e) {
+      console.error('Error parsing user data:', e);
+    }
+
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    };
+  };
+
   const fetchInternships = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
+      setError(null);
+      setAuthError(false);
 
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      const headers = getAuthHeaders();
+      if (!headers) {
+        setLoading(false);
+        return;
       }
 
       const baseURL = 'http://localhost:5000';
@@ -55,14 +89,31 @@ const InternshipManagement: React.FC = () => {
         credentials: 'include'
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        setInternships(data);
-      } else {
-        throw new Error('Failed to fetch internships');
+      if (response.status === 401 || response.status === 403) {
+        setAuthError(true);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Authentication failed. Please log in as admin.');
       }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to fetch internships: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      setInternships(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      const errorMessage = err instanceof Error ? err.message : 'An error occurred';
+      setError(errorMessage);
+      console.error('Fetch internships error:', err);
+      
+      // If auth error, redirect to login after 3 seconds
+      if (authError) {
+        setTimeout(() => {
+          localStorage.clear();
+          navigate('/login');
+        }, 3000);
+      }
     } finally {
       setLoading(false);
     }
@@ -89,13 +140,12 @@ const InternshipManagement: React.FC = () => {
   const handleSaveInternship = async (formData: any) => {
     try {
       setSaving(true);
-      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
+      setError(null);
 
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      const headers = getAuthHeaders();
+      if (!headers) {
+        setSaving(false);
+        return;
       }
 
       const baseURL = 'http://localhost:5000';
@@ -112,15 +162,22 @@ const InternshipManagement: React.FC = () => {
         body: JSON.stringify(formData)
       });
 
-      if (response.ok) {
-        setIsModalOpen(false);
-        fetchInternships();
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to save internship');
+      if (response.status === 401 || response.status === 403) {
+        setAuthError(true);
+        throw new Error('Authentication failed. Please log in as admin.');
       }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to ${modalType} internship`);
+      }
+
+      setIsModalOpen(false);
+      await fetchInternships();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save internship');
+      const errorMessage = err instanceof Error ? err.message : `Failed to ${modalType} internship`;
+      setError(errorMessage);
+      console.error('Save internship error:', err);
     } finally {
       setSaving(false);
     }
@@ -130,13 +187,11 @@ const InternshipManagement: React.FC = () => {
     if (!selectedInternship) return;
 
     try {
-      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
+      setError(null);
 
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      const headers = getAuthHeaders();
+      if (!headers) {
+        return;
       }
 
       const baseURL = 'http://localhost:5000';
@@ -146,15 +201,22 @@ const InternshipManagement: React.FC = () => {
         credentials: 'include'
       });
 
-      if (response.ok) {
-        setIsModalOpen(false);
-        fetchInternships();
-      } else {
-        const errorData = await response.json();
+      if (response.status === 401 || response.status === 403) {
+        setAuthError(true);
+        throw new Error('Authentication failed. Please log in as admin.');
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to delete internship');
       }
+
+      setIsModalOpen(false);
+      await fetchInternships();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete internship');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete internship';
+      setError(errorMessage);
+      console.error('Delete internship error:', err);
     }
   };
 
@@ -163,7 +225,6 @@ const InternshipManagement: React.FC = () => {
     const formData = new FormData(e.currentTarget);
     const formDataObj = Object.fromEntries(formData.entries());
     
-    // Convert requirements and benefits from textarea to array
     const requirements = (formDataObj.requirements as string).split('\n').filter(r => r.trim());
     const benefits = (formDataObj.benefits as string).split('\n').filter(b => b.trim());
     
@@ -229,7 +290,8 @@ const InternshipManagement: React.FC = () => {
 
           <button
             onClick={handleCreateInternship}
-            className="flex items-center justify-center gap-1 px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors"
+            disabled={authError}
+            className="flex items-center justify-center gap-1 px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus size={16} />
             <span>Add New</span>
@@ -244,18 +306,27 @@ const InternshipManagement: React.FC = () => {
       )}
 
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6">
+        <div className={`${authError ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'} border rounded-lg p-6`}>
           <div className="flex items-center mb-4">
-            <span className="text-red-500 mr-2">⚠️</span>
-            <h3 className="text-lg font-semibold text-red-700 dark:text-red-300">Error Loading Internships</h3>
+            <AlertCircle className={`mr-2 ${authError ? 'text-yellow-500' : 'text-red-500'}`} size={24} />
+            <h3 className={`text-lg font-semibold ${authError ? 'text-yellow-700 dark:text-yellow-300' : 'text-red-700 dark:text-red-300'}`}>
+              {authError ? 'Access Denied' : 'Error Loading Internships'}
+            </h3>
           </div>
-          <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
-          <button
-            onClick={fetchInternships}
-            className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
-          >
-            Retry
-          </button>
+          <p className={`${authError ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'} mb-4`}>{error}</p>
+          {authError ? (
+            <div className="text-sm text-yellow-600 dark:text-yellow-400">
+              <p className="mb-2">Redirecting to login page...</p>
+              <p>Please ensure you're logged in with an admin account.</p>
+            </div>
+          ) : (
+            <button
+              onClick={fetchInternships}
+              className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
+            >
+              Retry
+            </button>
+          )}
         </div>
       )}
 

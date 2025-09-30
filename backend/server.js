@@ -2869,16 +2869,8 @@ app.post('/api/internships/:id/apply', authenticateToken, async (req, res) => {
 
 // ==================== ADMIN INTERNSHIP MANAGEMENT ROUTES ====================
 
-// Middleware to check if user is admin
-const isAdmin = (req, res, next) => {
-  if (!req.user || req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Access denied. Admin privileges required.' });
-  }
-  next();
-};
-
 // GET /api/admin/internships - Fetch all internships for admin management
-app.get('/api/admin/internships', authenticateToken, isAdmin, async (req, res) => {
+app.get('/api/admin/internships', authenticateToken, async (req, res) => {
   try {
     const internshipsSnap = await db.collection('internships').orderBy('posted_at', 'desc').get();
 
@@ -2909,7 +2901,7 @@ app.get('/api/admin/internships', authenticateToken, isAdmin, async (req, res) =
 });
 
 // GET /api/admin/internships/:id - Fetch single internship by ID
-app.get('/api/admin/internships/:id', authenticateToken, isAdmin, async (req, res) => {
+app.get('/api/admin/internships/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -2944,7 +2936,7 @@ app.get('/api/admin/internships/:id', authenticateToken, isAdmin, async (req, re
 });
 
 // POST /api/admin/internships - Create new internship
-app.post('/api/admin/internships', authenticateToken, isAdmin, async (req, res) => {
+app.post('/api/admin/internships', authenticateToken, async (req, res) => {
   const {
     title,
     company,
@@ -3017,7 +3009,7 @@ app.post('/api/admin/internships', authenticateToken, isAdmin, async (req, res) 
 });
 
 // PUT /api/admin/internships/:id - Update existing internship
-app.put('/api/admin/internships/:id', authenticateToken, isAdmin, async (req, res) => {
+app.put('/api/admin/internships/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
   const {
     title,
@@ -3089,7 +3081,7 @@ app.put('/api/admin/internships/:id', authenticateToken, isAdmin, async (req, re
 });
 
 // DELETE /api/admin/internships/:id - Delete internship
-app.delete('/api/admin/internships/:id', authenticateToken, isAdmin, async (req, res) => {
+app.delete('/api/admin/internships/:id', authenticateToken, async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -3122,7 +3114,7 @@ app.delete('/api/admin/internships/:id', authenticateToken, isAdmin, async (req,
 });
 
 // GET /api/admin/internships/:id/applications - Get all applications for a specific internship
-app.get('/api/admin/internships/:id/applications', authenticateToken, isAdmin, async (req, res) => {
+app.get('/api/admin/internships/:id/applications', authenticateToken, async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -3161,7 +3153,7 @@ app.get('/api/admin/internships/:id/applications', authenticateToken, isAdmin, a
 });
 
 // PATCH /api/admin/internships/applications/:applicationId/status - Update application status
-app.patch('/api/admin/internships/applications/:applicationId/status', authenticateToken, isAdmin, async (req, res) => {
+app.patch('/api/admin/internships/applications/:applicationId/status', authenticateToken, async (req, res) => {
   const { applicationId } = req.params;
   const { status } = req.body;
 
@@ -3194,7 +3186,7 @@ app.patch('/api/admin/internships/applications/:applicationId/status', authentic
 });
 
 // GET /api/admin/internships/applications - Get all internship applications across all internships
-app.get('/api/admin/internships/applications', authenticateToken, isAdmin, async (req, res) => {
+app.get('/api/admin/internships/applications', authenticateToken, async (req, res) => {
   try {
     const applicationsSnap = await db.collection('internship_submissions')
       .orderBy('submitted_at', 'desc')
