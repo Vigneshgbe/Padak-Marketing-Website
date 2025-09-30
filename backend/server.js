@@ -156,9 +156,27 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 app.use('/uploads/avatars', express.static(path.join(__dirname, 'uploads', 'avatars')));
 
+
+// CORS middleware for API routes
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+  }
+  next();
+});
+
 // Request logging middleware
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  if (req.method === 'POST' || req.method === 'PUT') {
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+  }
   next();
 });
 
@@ -167,39 +185,65 @@ const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
+  console.log('Auth check - Token present:', !!token);
+
   if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
+    return res.status(401).json({ 
+      success: false,
+      error: 'Access token required' 
+    });
   }
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
+    console.log('Token decoded - userId:', decoded.userId);
     
     // Get user from Firestore to verify they still exist and are active
     const userDoc = await db.collection('users').doc(decoded.userId).get();
     
     if (!userDoc.exists) {
-      return res.status(401).json({ error: 'User not found' });
+      console.log('User not found in database');
+      return res.status(401).json({ 
+        success: false,
+        error: 'User not found' 
+      });
     }
 
     const user = userDoc.data();
-    if (!user.is_active) {
-      return res.status(401).json({ error: 'Account deactivated' });
+    if (user.is_active === false) {
+      console.log('User account deactivated');
+      return res.status(401).json({ 
+        success: false,
+        error: 'Account deactivated' 
+      });
     }
 
     req.user = {
       id: decoded.userId,
+      userId: decoded.userId, // Add both for compatibility
       ...user
     };
+    
+    console.log('Auth successful for user:', req.user.email);
     next();
   } catch (error) {
-    return res.status(403).json({ error: 'Invalid or expired token' });
+    console.error('Token verification error:', error.message);
+    return res.status(403).json({ 
+      success: false,
+      error: 'Invalid or expired token' 
+    });
   }
 };
 
 // Admin Authorization Middleware
 const requireAdmin = (req, res, next) => {
+  console.log('Admin check - Account type:', req.user?.account_type);
+  
   if (!req.user || req.user.account_type !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
+    return res.status(403).json({ 
+      success: false,
+      error: 'Admin access required' 
+    });
   }
   next();
 };
@@ -3171,7 +3215,7 @@ app.get('/api/admin/analytics', authenticateToken, requireAdmin, async (req, res
 // GET /api/admin/users - Get all users
 app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    console.log('Fetching users for admin');
+    console.log('Fetching users for admin:', req.user.email);
     
     const { search, accountType, status } = req.query;
     
@@ -3199,12 +3243,16 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
         email: userData.email || '',
         phone: userData.phone || '',
         account_type: userData.account_type || 'student',
-        is_active: userData.is_active !== undefined ? userData.is_active : true,
+        is_active: userData.is_active !== false, // Default to true if undefined
         company: userData.company || '',
         website: userData.website || '',
         bio: userData.bio || '',
-        created_at: userData.created_at ? userData.created_at.toDate().toISOString() : new Date().toISOString(),
-        updated_at: userData.updated_at ? userData.updated_at.toDate().toISOString() : new Date().toISOString()
+        created_at: userData.created_at ? 
+          (userData.created_at.toDate ? userData.created_at.toDate().toISOString() : userData.created_at) : 
+          new Date().toISOString(),
+        updated_at: userData.updated_at ? 
+          (userData.updated_at.toDate ? userData.updated_at.toDate().toISOString() : userData.updated_at) : 
+          new Date().toISOString()
       });
     });
 
@@ -3221,6 +3269,8 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
     // Sort by creation date (newest first)
     users.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
+    console.log(`Returning ${users.length} users`);
+
     res.json({
       success: true,
       users,
@@ -3231,7 +3281,8 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
     console.error('Get users error:', error);
     res.status(500).json({ 
       success: false,
-      error: 'Server error while fetching users' 
+      error: 'Server error while fetching users',
+      details: error.message
     });
   }
 });
@@ -3239,7 +3290,7 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
 // POST /api/admin/users - Create new user
 app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    console.log('Creating new user:', req.body);
+    console.log('Creating new user - Request body:', req.body);
     
     const { firstName, lastName, email, phone, password, accountType, isActive, company, website, bio } = req.body;
 
@@ -3248,6 +3299,15 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
       return res.status(400).json({
         success: false,
         error: 'First name, last name, email, and password are required'
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid email format'
       });
     }
 
@@ -3263,6 +3323,21 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
       });
     }
 
+    // Validate password
+    const passwordErrors = [];
+    if (password.length < 6) passwordErrors.push("Password must be at least 6 characters");
+    if (!/[A-Z]/.test(password)) passwordErrors.push("Must contain uppercase letter");
+    if (!/[a-z]/.test(password)) passwordErrors.push("Must contain lowercase letter");
+    if (!/[0-9]/.test(password)) passwordErrors.push("Must contain number");
+    if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) passwordErrors.push("Must contain special character");
+    
+    if (passwordErrors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: passwordErrors[0]
+      });
+    }
+
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -3273,23 +3348,27 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
       phone: phone || '',
       password_hash: hashedPassword,
       account_type: accountType || 'student',
-      is_active: isActive !== undefined ? isActive : true,
+      is_active: isActive !== false, // Default to true
       company: company || '',
       website: website || '',
       bio: bio || '',
       email_verified: false,
-      created_at: new Date(),
-      updated_at: new Date()
+      created_at: firebase.firestore.FieldValue.serverTimestamp(),
+      updated_at: firebase.firestore.FieldValue.serverTimestamp()
     };
 
     const userRef = await db.collection('users').add(userData);
+
+    console.log('User created successfully:', userRef.id);
 
     res.status(201).json({
       success: true,
       message: 'User created successfully',
       user: {
         id: userRef.id,
-        ...userData
+        ...userData,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       }
     });
 
@@ -3297,7 +3376,8 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
     console.error('Create user error:', error);
     res.status(500).json({
       success: false,
-      error: 'Server error while creating user'
+      error: 'Server error while creating user',
+      details: error.message
     });
   }
 });
@@ -3308,11 +3388,21 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
     const userId = req.params.id;
     const { firstName, lastName, email, phone, accountType, isActive, company, website, bio } = req.body;
 
-    console.log('Updating user:', userId, req.body);
+    console.log('Updating user:', userId);
+    console.log('Update data:', req.body);
+
+    // Validation
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
 
     // Check if user exists
     const userDoc = await db.collection('users').doc(userId).get();
     if (!userDoc.exists) {
+      console.log('User not found:', userId);
       return res.status(404).json({
         success: false,
         error: 'User not found'
@@ -3322,12 +3412,19 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
     const currentUser = userDoc.data();
 
     // Check email uniqueness if changed
-    if (email && email !== currentUser.email) {
+    if (email && email.toLowerCase() !== currentUser.email.toLowerCase()) {
       const emailSnapshot = await db.collection('users')
         .where('email', '==', email.trim().toLowerCase())
         .get();
       
-      if (!emailSnapshot.empty && emailSnapshot.docs[0].id !== userId) {
+      let emailExists = false;
+      emailSnapshot.forEach(doc => {
+        if (doc.id !== userId) {
+          emailExists = true;
+        }
+      });
+
+      if (emailExists) {
         return res.status(400).json({
           success: false,
           error: 'Email already exists'
@@ -3336,26 +3433,40 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
     }
 
     const updateData = {
-      first_name: firstName ? firstName.trim() : currentUser.first_name,
-      last_name: lastName ? lastName.trim() : currentUser.last_name,
-      email: email ? email.trim().toLowerCase() : currentUser.email,
-      phone: phone !== undefined ? phone : currentUser.phone,
-      account_type: accountType || currentUser.account_type,
-      is_active: isActive !== undefined ? isActive : currentUser.is_active,
-      company: company !== undefined ? company : currentUser.company,
-      website: website !== undefined ? website : currentUser.website,
-      bio: bio !== undefined ? bio : currentUser.bio,
-      updated_at: new Date()
+      updated_at: firebase.firestore.FieldValue.serverTimestamp()
     };
 
+    // Only update fields that were provided
+    if (firstName !== undefined) updateData.first_name = firstName.trim();
+    if (lastName !== undefined) updateData.last_name = lastName.trim();
+    if (email !== undefined) updateData.email = email.trim().toLowerCase();
+    if (phone !== undefined) updateData.phone = phone;
+    if (accountType !== undefined) updateData.account_type = accountType;
+    if (isActive !== undefined) updateData.is_active = isActive;
+    if (company !== undefined) updateData.company = company;
+    if (website !== undefined) updateData.website = website;
+    if (bio !== undefined) updateData.bio = bio;
+
+    console.log('Applying updates:', updateData);
+
     await db.collection('users').doc(userId).update(updateData);
+
+    // Get updated user data
+    const updatedDoc = await db.collection('users').doc(userId).get();
+    const updatedUser = updatedDoc.data();
+
+    console.log('User updated successfully');
 
     res.json({
       success: true,
       message: 'User updated successfully',
       user: {
         id: userId,
-        ...updateData
+        ...updatedUser,
+        created_at: updatedUser.created_at ? 
+          (updatedUser.created_at.toDate ? updatedUser.created_at.toDate().toISOString() : updatedUser.created_at) : 
+          currentUser.created_at,
+        updated_at: new Date().toISOString()
       }
     });
 
@@ -3363,7 +3474,8 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
     console.error('Update user error:', error);
     res.status(500).json({
       success: false,
-      error: 'Server error while updating user'
+      error: 'Server error while updating user',
+      details: error.message
     });
   }
 });
@@ -3375,6 +3487,7 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
     const adminId = req.user.id || req.user.userId;
 
     console.log('Deleting user:', userId);
+    console.log('Admin ID:', adminId);
 
     // Prevent self-deletion
     if (userId === adminId) {
@@ -3387,17 +3500,20 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
     // Check if user exists
     const userDoc = await db.collection('users').doc(userId).get();
     if (!userDoc.exists) {
+      console.log('User not found for deletion:', userId);
       return res.status(404).json({
         success: false,
         error: 'User not found'
       });
     }
 
-    // Soft delete
+    // Soft delete - just deactivate the user
     await db.collection('users').doc(userId).update({
       is_active: false,
-      updated_at: new Date()
+      updated_at: firebase.firestore.FieldValue.serverTimestamp()
     });
+
+    console.log('User deactivated successfully');
 
     res.json({
       success: true,
@@ -3408,7 +3524,8 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
     console.error('Delete user error:', error);
     res.status(500).json({
       success: false,
-      error: 'Server error while deleting user'
+      error: 'Server error while deleting user',
+      details: error.message
     });
   }
 });
@@ -3428,9 +3545,25 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
       });
     }
 
+    // Validate password
+    const passwordErrors = [];
+    if (password.length < 6) passwordErrors.push("Password must be at least 6 characters");
+    if (!/[A-Z]/.test(password)) passwordErrors.push("Must contain uppercase letter");
+    if (!/[a-z]/.test(password)) passwordErrors.push("Must contain lowercase letter");
+    if (!/[0-9]/.test(password)) passwordErrors.push("Must contain number");
+    if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) passwordErrors.push("Must contain special character");
+    
+    if (passwordErrors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: passwordErrors[0]
+      });
+    }
+
     // Check if user exists
     const userDoc = await db.collection('users').doc(userId).get();
     if (!userDoc.exists) {
+      console.log('User not found for password reset:', userId);
       return res.status(404).json({
         success: false,
         error: 'User not found'
@@ -3442,8 +3575,10 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
 
     await db.collection('users').doc(userId).update({
       password_hash: hashedPassword,
-      updated_at: new Date()
+      updated_at: firebase.firestore.FieldValue.serverTimestamp()
     });
+
+    console.log('Password reset successfully');
 
     res.json({
       success: true,
@@ -3454,32 +3589,285 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
     console.error('Reset password error:', error);
     res.status(500).json({
       success: false,
-      error: 'Server error while resetting password'
+      error: 'Server error while resetting password',
+      details: error.message
     });
   }
 });
 
-// Debug route to see all registered routes
-app.get('/api/debug/routes', (req, res) => {
-  const routes = [];
-  app._router.stack.forEach(middleware => {
-    if (middleware.route) {
-      routes.push({
-        path: middleware.route.path,
-        methods: Object.keys(middleware.route.methods)
-      });
-    } else if (middleware.name === 'router') {
-      middleware.handle.stack.forEach(handler => {
-        if (handler.route) {
-          routes.push({
-            path: handler.route.path,
-            methods: Object.keys(handler.route.methods)
-          });
-        }
+// ==================== ADMIN DASHBOARD STATS ====================
+
+app.get('/api/admin/dashboard', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    console.log('Fetching dashboard data for admin:', req.user.email);
+
+    // Get all users
+    const usersSnapshot = await db.collection('users').get();
+    const totalUsers = usersSnapshot.size;
+    
+    let activeUsers = 0;
+    let studentCount = 0;
+    let professionalCount = 0;
+    let businessCount = 0;
+    
+    usersSnapshot.forEach(doc => {
+      const user = doc.data();
+      if (user.is_active !== false) activeUsers++;
+      
+      switch(user.account_type) {
+        case 'student': studentCount++; break;
+        case 'professional': professionalCount++; break;
+        case 'business': businessCount++; break;
+      }
+    });
+
+    // Get courses (if collection exists)
+    let totalCourses = 0;
+    try {
+      const coursesSnapshot = await db.collection('courses').get();
+      totalCourses = coursesSnapshot.size;
+    } catch (e) {
+      console.log('Courses collection not found');
+    }
+
+    // Get enrollments (if collection exists)
+    let totalEnrollments = 0;
+    try {
+      const enrollmentsSnapshot = await db.collection('enrollments').get();
+      totalEnrollments = enrollmentsSnapshot.size;
+    } catch (e) {
+      console.log('Enrollments collection not found');
+    }
+
+    const stats = {
+      totalUsers,
+      activeUsers,
+      totalCourses,
+      totalEnrollments,
+      usersByType: {
+        student: studentCount,
+        professional: professionalCount,
+        business: businessCount
+      }
+    };
+
+    console.log('Dashboard stats:', stats);
+
+    res.json({
+      success: true,
+      stats
+    });
+
+  } catch (error) {
+    console.error('Dashboard error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error while fetching dashboard data',
+      details: error.message
+    });
+  }
+});
+
+// ==================== AUTH ROUTES ====================
+
+// Register endpoint
+app.post('/api/register', async (req, res) => {
+  const { firstName, lastName, email, phone, password, confirmPassword, accountType } = req.body;
+
+  try {
+    // Validate required fields
+    if (!firstName || !lastName || !email || !password || !confirmPassword || !accountType) {
+      return res.status(400).json({
+        success: false,
+        error: 'All fields are required'
       });
     }
-  });
-  res.json({ routes });
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Please provide a valid email address' 
+      });
+    }
+
+    // Validate password match
+    if (password !== confirmPassword) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Passwords do not match' 
+      });
+    }
+
+    // Validate password strength
+    const passwordErrors = [];
+    if (password.length < 6) passwordErrors.push("Password must be at least 6 characters long");
+    if (!/[A-Z]/.test(password)) passwordErrors.push("Password must contain at least one uppercase letter");
+    if (!/[a-z]/.test(password)) passwordErrors.push("Password must contain at least one lowercase letter");
+    if (!/[0-9]/.test(password)) passwordErrors.push("Password must contain at least one number");
+    if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) passwordErrors.push("Password must contain at least one special character");
+
+    if (passwordErrors.length > 0) {
+      return res.status(400).json({ 
+        success: false,
+        error: passwordErrors[0] 
+      });
+    }
+
+    // Check if email exists
+    const existingUsers = await db.collection('users').where('email', '==', email.toLowerCase()).get();
+    if (!existingUsers.empty) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Email already exists' 
+      });
+    }
+
+    // Hash password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    // Insert new user in Firestore
+    const userRef = db.collection('users').doc();
+    const userData = {
+      first_name: firstName.trim(),
+      last_name: lastName.trim(),
+      email: email.trim().toLowerCase(),
+      phone: phone || '',
+      password_hash: hashedPassword,
+      account_type: accountType,
+      is_active: true,
+      email_verified: false,
+      company: '',
+      website: '',
+      bio: '',
+      created_at: firebase.firestore.FieldValue.serverTimestamp(),
+      updated_at: firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    await userRef.set(userData);
+
+    console.log('User registered successfully:', { userId: userRef.id, email });
+    
+    // Generate JWT token for immediate login
+    const token = jwt.sign(
+      {
+        userId: userRef.id,
+        email: email,
+        accountType: accountType
+      },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'User registered successfully',
+      userId: userRef.id,
+      token: token
+    });
+
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Server error during registration' 
+    });
+  }
+});
+
+// Login endpoint
+app.post('/api/login', async (req, res) => {
+  const { email, password, rememberMe } = req.body;
+
+  try {
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Email and password are required' 
+      });
+    }
+
+    // Check if user exists in Firestore
+    const users = await db.collection('users').where('email', '==', email.toLowerCase()).get();
+
+    if (users.empty) {
+      return res.status(401).json({ 
+        success: false,
+        error: 'Invalid email or password' 
+      });
+    }
+
+    const userDoc = users.docs[0];
+    const user = userDoc.data();
+    const userId = userDoc.id;
+
+    // Check if user is active
+    if (user.is_active === false) {
+      return res.status(401).json({ 
+        success: false,
+        error: 'Account deactivated. Please contact administrator.' 
+      });
+    }
+
+    // Verify password
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+    if (!isPasswordValid) {
+      return res.status(401).json({ 
+        success: false,
+        error: 'Invalid email or password' 
+      });
+    }
+
+    // Generate JWT token
+    const tokenExpiry = rememberMe ? '30d' : '7d';
+    const token = jwt.sign(
+      {
+        userId: userId,
+        email: user.email,
+        accountType: user.account_type
+      },
+      JWT_SECRET,
+      { expiresIn: tokenExpiry }
+    );
+
+    // Update last login timestamp
+    await db.collection('users').doc(userId).update({
+      updated_at: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log('User logged in successfully:', { userId, email: user.email });
+
+    // Send success response
+    res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      token: token,
+      user: {
+        id: userId,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        email: user.email,
+        phone: user.phone,
+        accountType: user.account_type,
+        profileImage: user.profile_image || '',
+        company: user.company || '',
+        website: user.website || '',
+        bio: user.bio || '',
+        isActive: user.is_active,
+        emailVerified: user.email_verified
+      }
+    });
+
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Server error during login' 
+    });
+  }
 });
 
 // ==================== USER PROFILE ENDPOINTS ====================
