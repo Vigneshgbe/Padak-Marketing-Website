@@ -34,6 +34,8 @@ import CalendarManagement from './dashboard/admin/CalendarManagement';
 import ServiceRequests from './dashboard/admin/ServiceRequests';
 import ResourceManagement from './dashboard/admin/ResourceManagement';
 import PaymentManagement from './dashboard/admin/PaymentManagement';
+import InternshipApplicationsManagement from './dashboard/admin/InternshipApplicationsManagement';
+import InternshipManagement from './dashboard/admin/InternshipManagement';
 
 const Dashboard: React.FC = () => {
   const { user, token, loading } = useAuth();
@@ -42,8 +44,8 @@ const Dashboard: React.FC = () => {
   const [darkMode, setDarkMode] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [userStats, setUserStats] = useState<UserStats>({
-    coursesEnrolled: 1,
-    coursesCompleted: 1,
+    coursesEnrolled: 0,
+    coursesCompleted: 0,
     certificatesEarned: 0,
     learningStreak: 1,
     lastActivity: new Date().toISOString(),
@@ -221,6 +223,10 @@ const Dashboard: React.FC = () => {
           return <EnrollmentManagement />;
         case 'admin-certificates':
           return <CertificateManagement />;
+        case 'admin-internships':
+          return <InternshipManagement />;
+        case 'admin-internship-applications':
+          return <InternshipApplicationsManagement />;
         case 'admin-services':
           return <ServiceManagement />;
         case 'admin-contacts':
