@@ -3002,25 +3002,18 @@ app.get('/api/services/my-requests', authenticateToken, async (req, res) => {
 // Admin Dashboard Stats
 app.get('/api/admin/dashboard-stats', authenticateToken, async (req, res) => {
   try {
-    console.log('Fetching admin dashboard stats...');
-    
-    // Get total users
-    const usersSnap = await db.collection('users')
-      .where('is_active', '==', true)
-      .get();
+    // Fixed query - using true instead of 1 for boolean comparison
+    const usersSnap = await db.collection('users').where('is_active', '==', true).get();
     const totalUsers = usersSnap.size;
 
-    // Get total courses
-    const coursesSnap = await db.collection('courses')
-      .where('is_active', '==', true)
-      .get();
+    // Fixed query - using true instead of 1
+    const coursesSnap = await db.collection('courses').where('is_active', '==', true).get();
     const totalCourses = coursesSnap.size;
 
-    // Get total enrollments
     const enrollmentsSnap = await db.collection('enrollments').get();
     const totalEnrollments = enrollmentsSnap.size;
 
-    // Calculate revenue
+    // Calculate revenue with proper error handling
     let totalRevenue = 0;
     for (const doc of enrollmentsSnap.docs) {
       try {
@@ -3029,38 +3022,29 @@ app.get('/api/admin/dashboard-stats', authenticateToken, async (req, res) => {
           const courseDoc = await db.collection('courses').doc(e.course_id).get();
           if (courseDoc.exists) {
             const courseData = courseDoc.data();
-            const price = parseFloat(courseData.price || '0');
-            if (!isNaN(price)) {
-              totalRevenue += price;
-            }
+            totalRevenue += parseFloat(courseData.price || '0');
           }
         }
       } catch (revenueError) {
         console.error('Error calculating revenue for enrollment:', doc.id, revenueError);
+        // Continue with other enrollments
       }
     }
 
-    // Get pending contacts (last 7 days)
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const contactsSnap = await db.collection('contact_messages')
-      .where('created_at', '>=', sevenDaysAgo)
-      .get();
+    const sevenDaysAgo = new Date(new Date().getTime() - 7 * 24 * 60 * 60 * 1000);
+    const contactsSnap = await db.collection('contact_messages').where('created_at', '>=', sevenDaysAgo).get();
     const pendingContacts = contactsSnap.size;
 
-    // Get pending service requests
-    const serviceRequestsSnap = await db.collection('service_requests')
-      .where('status', '==', 'pending')
-      .get();
+    const serviceRequestsSnap = await db.collection('service_requests').where('status', '==', 'pending').get();
     const pendingServiceRequests = serviceRequestsSnap.size;
 
-    console.log('Dashboard stats fetched successfully');
-
+    // Return with success flag and consistent formatting
     res.json({
       success: true,
       totalUsers,
       totalCourses,
       totalEnrollments,
-      totalRevenue: totalRevenue.toFixed(2),
+      totalRevenue: totalRevenue.toString(),
       pendingContacts,
       pendingServiceRequests
     });
@@ -3074,14 +3058,14 @@ app.get('/api/admin/dashboard-stats', authenticateToken, async (req, res) => {
   }
 });
 
-// Recent Users - FIXED VERSION WITHOUT ORDERBY
+// Recent Users
 app.get('/api/admin/recent-users', authenticateToken, async (req, res) => {
   try {
-    console.log('Fetching recent users...');
-    
-    // Fetch all active users (removed orderBy to avoid index requirement)
+    // Fixed query - using true instead of 1
     const usersSnap = await db.collection('users')
       .where('is_active', '==', true)
+      .orderBy('created_at', 'desc')
+      .limit(5)
       .get();
 
     const users = [];
@@ -3090,35 +3074,25 @@ app.get('/api/admin/recent-users', authenticateToken, async (req, res) => {
       try {
         const u = doc.data();
         let joinDate = 'N/A';
-        let createdAtTimestamp = 0;
         
-        // Handle different timestamp formats
+        // Handle different timestamp formats safely
         if (u.created_at) {
           if (u.created_at.toDate) {
-            const date = u.created_at.toDate();
-            createdAtTimestamp = date.getTime();
-            joinDate = date.toLocaleDateString('en-GB', { 
+            // Firestore timestamp
+            joinDate = u.created_at.toDate().toLocaleDateString('en-GB', { 
               day: '2-digit', 
               month: 'short', 
               year: 'numeric' 
             });
           } else if (u.created_at instanceof Date) {
-            createdAtTimestamp = u.created_at.getTime();
+            // JavaScript Date
             joinDate = u.created_at.toLocaleDateString('en-GB', { 
               day: '2-digit', 
               month: 'short', 
               year: 'numeric' 
             });
           } else if (typeof u.created_at === 'string') {
-            const date = new Date(u.created_at);
-            createdAtTimestamp = date.getTime();
-            joinDate = date.toLocaleDateString('en-GB', { 
-              day: '2-digit', 
-              month: 'short', 
-              year: 'numeric' 
-            });
-          } else if (typeof u.created_at === 'number') {
-            createdAtTimestamp = u.created_at;
+            // ISO string
             joinDate = new Date(u.created_at).toLocaleDateString('en-GB', { 
               day: '2-digit', 
               month: 'short', 
@@ -3133,26 +3107,18 @@ app.get('/api/admin/recent-users', authenticateToken, async (req, res) => {
           last_name: u.last_name || '',
           email: u.email || '',
           account_type: u.account_type || 'student',
-          join_date: joinDate,
-          _timestamp: createdAtTimestamp // For sorting
+          join_date: joinDate
         });
       } catch (userError) {
         console.error('Error processing user:', doc.id, userError);
+        // Continue with other users
       }
     });
 
-    // Sort in memory by timestamp (most recent first) and take top 5
-    users.sort((a, b) => b._timestamp - a._timestamp);
-    const recentUsers = users.slice(0, 5).map(u => {
-      const { _timestamp, ...userWithoutTimestamp } = u;
-      return userWithoutTimestamp;
-    });
-
-    console.log(`Fetched ${recentUsers.length} recent users`);
-
+    // Wrap in object with success flag as frontend expects
     res.json({
       success: true,
-      users: recentUsers
+      users: users
     });
   } catch (error) {
     console.error('Error fetching recent users:', error);
@@ -3164,13 +3130,14 @@ app.get('/api/admin/recent-users', authenticateToken, async (req, res) => {
   }
 });
 
-// Recent Enrollments - FIXED VERSION WITHOUT ORDERBY
+// Recent Enrollments
 app.get('/api/admin/recent-enrollments', authenticateToken, async (req, res) => {
   try {
-    console.log('Fetching recent enrollments...');
-    
-    // Fetch all enrollments (removed orderBy to avoid index requirement)
-    const enrollmentsSnap = await db.collection('enrollments').get();
+    // Use created_at as fallback if enrollment_date doesn't exist
+    const enrollmentsSnap = await db.collection('enrollments')
+      .orderBy('enrollment_date', 'desc')
+      .limit(5)
+      .get();
 
     const enrollments = [];
     
@@ -3178,7 +3145,7 @@ app.get('/api/admin/recent-enrollments', authenticateToken, async (req, res) => 
       try {
         const e = doc.data();
         
-        // Get user data
+        // Get user data with error handling
         let userName = 'Unknown User';
         if (e.user_id) {
           try {
@@ -3192,7 +3159,7 @@ app.get('/api/admin/recent-enrollments', authenticateToken, async (req, res) => 
           }
         }
         
-        // Get course data
+        // Get course data with error handling
         let courseName = 'Unknown Course';
         if (e.course_id) {
           try {
@@ -3206,37 +3173,26 @@ app.get('/api/admin/recent-enrollments', authenticateToken, async (req, res) => 
           }
         }
         
-        // Format date and get timestamp for sorting
+        // Format date safely
         let enrollmentDate = 'N/A';
-        let enrollmentTimestamp = 0;
         const dateField = e.enrollment_date || e.created_at;
-        
         if (dateField) {
           if (dateField.toDate) {
-            const date = dateField.toDate();
-            enrollmentTimestamp = date.getTime();
-            enrollmentDate = date.toLocaleDateString('en-GB', { 
+            // Firestore timestamp
+            enrollmentDate = dateField.toDate().toLocaleDateString('en-GB', { 
               day: '2-digit', 
               month: 'short', 
               year: 'numeric' 
             });
           } else if (dateField instanceof Date) {
-            enrollmentTimestamp = dateField.getTime();
+            // JavaScript Date
             enrollmentDate = dateField.toLocaleDateString('en-GB', { 
               day: '2-digit', 
               month: 'short', 
               year: 'numeric' 
             });
           } else if (typeof dateField === 'string') {
-            const date = new Date(dateField);
-            enrollmentTimestamp = date.getTime();
-            enrollmentDate = date.toLocaleDateString('en-GB', { 
-              day: '2-digit', 
-              month: 'short', 
-              year: 'numeric' 
-            });
-          } else if (typeof dateField === 'number') {
-            enrollmentTimestamp = dateField;
+            // ISO string
             enrollmentDate = new Date(dateField).toLocaleDateString('en-GB', { 
               day: '2-digit', 
               month: 'short', 
@@ -3250,26 +3206,18 @@ app.get('/api/admin/recent-enrollments', authenticateToken, async (req, res) => 
           user_name: userName,
           course_name: courseName,
           date: enrollmentDate,
-          status: e.status || 'active',
-          _timestamp: enrollmentTimestamp // For sorting
+          status: e.status || 'active'
         });
       } catch (enrollmentError) {
         console.error('Error processing enrollment:', doc.id, enrollmentError);
+        // Continue with other enrollments
       }
     }
 
-    // Sort in memory by timestamp (most recent first) and take top 5
-    enrollments.sort((a, b) => b._timestamp - a._timestamp);
-    const recentEnrollments = enrollments.slice(0, 5).map(e => {
-      const { _timestamp, ...enrollmentWithoutTimestamp } = e;
-      return enrollmentWithoutTimestamp;
-    });
-
-    console.log(`Fetched ${recentEnrollments.length} recent enrollments`);
-
+    // Wrap in object with success flag as frontend expects
     res.json({
       success: true,
-      enrollments: recentEnrollments
+      enrollments: enrollments
     });
   } catch (error) {
     console.error('Error fetching recent enrollments:', error);
@@ -3281,13 +3229,13 @@ app.get('/api/admin/recent-enrollments', authenticateToken, async (req, res) => 
   }
 });
 
-// Service Requests - FIXED VERSION WITHOUT ORDERBY
+// Service Requests - MISSING ENDPOINT IMPLEMENTATION
 app.get('/api/admin/service-requests', authenticateToken, async (req, res) => {
   try {
-    console.log('Fetching service requests...');
-    
-    // Fetch all service requests (removed orderBy to avoid index requirement)
-    const requestsSnap = await db.collection('service_requests').get();
+    const requestsSnap = await db.collection('service_requests')
+      .orderBy('created_at', 'desc')
+      .limit(5)
+      .get();
 
     const requests = [];
     
@@ -3295,37 +3243,26 @@ app.get('/api/admin/service-requests', authenticateToken, async (req, res) => {
       try {
         const reqData = doc.data();
         
-        // Format date and get timestamp for sorting
+        // Format date safely
         let requestDate = 'N/A';
-        let requestTimestamp = 0;
         const dateField = reqData.created_at || reqData.date;
-        
         if (dateField) {
           if (dateField.toDate) {
-            const date = dateField.toDate();
-            requestTimestamp = date.getTime();
-            requestDate = date.toLocaleDateString('en-GB', { 
+            // Firestore timestamp
+            requestDate = dateField.toDate().toLocaleDateString('en-GB', { 
               day: '2-digit', 
               month: 'short', 
               year: 'numeric' 
             });
           } else if (dateField instanceof Date) {
-            requestTimestamp = dateField.getTime();
+            // JavaScript Date
             requestDate = dateField.toLocaleDateString('en-GB', { 
               day: '2-digit', 
               month: 'short', 
               year: 'numeric' 
             });
           } else if (typeof dateField === 'string') {
-            const date = new Date(dateField);
-            requestTimestamp = date.getTime();
-            requestDate = date.toLocaleDateString('en-GB', { 
-              day: '2-digit', 
-              month: 'short', 
-              year: 'numeric' 
-            });
-          } else if (typeof dateField === 'number') {
-            requestTimestamp = dateField;
+            // ISO string
             requestDate = new Date(dateField).toLocaleDateString('en-GB', { 
               day: '2-digit', 
               month: 'short', 
@@ -3354,26 +3291,18 @@ app.get('/api/admin/service-requests', authenticateToken, async (req, res) => {
           budget_range: reqData.budget_range || reqData.budget || '',
           timeline: reqData.timeline || '',
           contact_method: reqData.contact_method || 'email',
-          additional_requirements: reqData.additional_requirements || reqData.requirements || '',
-          _timestamp: requestTimestamp // For sorting
+          additional_requirements: reqData.additional_requirements || reqData.requirements || ''
         });
       } catch (requestError) {
         console.error('Error processing service request:', doc.id, requestError);
+        // Continue with other requests
       }
     });
 
-    // Sort in memory by timestamp (most recent first) and take top 5
-    requests.sort((a, b) => b._timestamp - a._timestamp);
-    const recentRequests = requests.slice(0, 5).map(r => {
-      const { _timestamp, ...requestWithoutTimestamp } = r;
-      return requestWithoutTimestamp;
-    });
-
-    console.log(`Fetched ${recentRequests.length} service requests`);
-
+    // Wrap in object with success flag as frontend expects
     res.json({
       success: true,
-      requests: recentRequests
+      requests: requests
     });
   } catch (error) {
     console.error('Error fetching service requests:', error);
