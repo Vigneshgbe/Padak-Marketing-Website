@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Users, BookOpen, UserCheck, BarChart, MessageSquare, ChevronRight, RefreshCw, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
+import { Users, BookOpen, UserCheck, BarChart, MessageSquare, ChevronRight, RefreshCw, AlertCircle } from 'lucide-react';
 
+// StatCard Component (inline since we can't import)
 const StatCard = ({ title, value, icon, color }) => (
   <div className={`bg-gradient-to-br ${color} text-white rounded-xl shadow-lg p-6`}>
     <div className="flex items-center justify-between">
@@ -31,16 +32,6 @@ const AdminOverview = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [diagnostics, setDiagnostics] = useState([]);
-
-  const addDiagnostic = (endpoint, status, message) => {
-    setDiagnostics(prev => [...prev, {
-      endpoint,
-      status,
-      message,
-      timestamp: new Date().toLocaleTimeString()
-    }]);
-  };
 
   const getAuthHeaders = () => {
     const token = window.localStorage?.getItem('token') || 
@@ -54,46 +45,52 @@ const AdminOverview = () => {
 
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
-      addDiagnostic('Auth', 'success', 'Token found');
-    } else {
-      addDiagnostic('Auth', 'warning', 'No token found');
     }
 
     return headers;
   };
 
-  const testEndpoint = async (endpoint, headers, baseURL) => {
-    const fullUrl = `${baseURL}${endpoint}`;
-    console.log(`Testing endpoint: ${fullUrl}`);
+  const safelyParseJson = async (response, endpoint) => {
+    const contentType = response.headers.get('content-type');
+    
+    // Check if response is HTML (error page)
+    if (contentType && contentType.includes('text/html')) {
+      console.error(`Received HTML instead of JSON from ${endpoint}`);
+      throw new Error(`Server returned HTML instead of JSON for ${endpoint}. This usually means the endpoint doesn't exist or there's a routing issue.`);
+    }
+
+    const text = await response.text();
+    
+    if (!text || text.trim() === '') {
+      console.warn(`Empty response from ${endpoint}`);
+      return { success: false, data: [] };
+    }
     
     try {
-      const response = await fetch(fullUrl, {
-        method: 'GET',
-        headers,
-        credentials: 'include'
+      return JSON.parse(text);
+    } catch (parseError) {
+      console.error(`JSON parse error for ${endpoint}:`, text.substring(0, 200));
+      throw new Error(`Invalid JSON from ${endpoint}: ${parseError.message}`);
+    }
+  };
+
+  const fetchWithTimeout = async (url, options, timeout = 10000) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
       });
-
-      const contentType = response.headers.get('content-type');
-      console.log(`${endpoint} - Status: ${response.status}, Content-Type: ${contentType}`);
-
-      if (!response.ok) {
-        addDiagnostic(endpoint, 'error', `HTTP ${response.status}: ${response.statusText}`);
-        return { success: false, status: response.status };
-      }
-
-      if (contentType && contentType.includes('text/html')) {
-        addDiagnostic(endpoint, 'error', 'Returned HTML instead of JSON');
-        return { success: false, status: response.status };
-      }
-
-      const data = await response.json();
-      addDiagnostic(endpoint, 'success', `Success - ${JSON.stringify(data).substring(0, 50)}...`);
-      return { success: true, data };
-
+      clearTimeout(timeoutId);
+      return response;
     } catch (error) {
-      console.error(`Error testing ${endpoint}:`, error);
-      addDiagnostic(endpoint, 'error', error.message);
-      return { success: false, error: error.message };
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('Request timeout');
+      }
+      throw error;
     }
   };
 
@@ -101,7 +98,6 @@ const AdminOverview = () => {
     try {
       if (!isRefresh) {
         setLoading(true);
-        setDiagnostics([]);
       } else {
         setRefreshing(true);
       }
@@ -110,22 +106,30 @@ const AdminOverview = () => {
       const headers = getAuthHeaders();
       const baseURL = window.location.origin;
 
-      addDiagnostic('System', 'info', `Base URL: ${baseURL}`);
+      console.log('Fetching dashboard data from:', baseURL);
 
-      // Test all endpoints
-      const endpoints = [
-        '/api/admin/dashboard-stats',
-        '/api/admin/recent-users',
-        '/api/admin/recent-enrollments',
-        '/api/admin/service-requests'
-      ];
+      // Fetch dashboard stats
+      try {
+        const statsResponse = await fetchWithTimeout(
+          `${baseURL}/api/admin/dashboard-stats`,
+          {
+            method: 'GET',
+            headers,
+            credentials: 'include'
+          }
+        );
 
-      let allSuccessful = true;
+        if (!statsResponse.ok) {
+          console.error('Stats response not OK:', statsResponse.status, statsResponse.statusText);
+          throw new Error(`HTTP ${statsResponse.status}: ${statsResponse.statusText}`);
+        }
 
-      // Dashboard Stats
-      const statsResult = await testEndpoint(endpoints[0], headers, baseURL);
-      if (statsResult.success && statsResult.data) {
-        const statsData = statsResult.data;
+        const statsData = await safelyParseJson(statsResponse, 'dashboard-stats');
+        
+        if (statsData.success === false) {
+          console.error('Stats API returned success=false:', statsData);
+        }
+        
         const revenue = parseFloat(statsData.totalRevenue || 0);
         const formattedRevenue = new Intl.NumberFormat('en-IN', {
           style: 'currency',
@@ -141,45 +145,112 @@ const AdminOverview = () => {
           pendingContacts: statsData.pendingContacts || 0,
           pendingServiceRequests: statsData.pendingServiceRequests || 0
         });
-      } else {
-        allSuccessful = false;
+      } catch (statsError) {
+        console.error('Error fetching stats:', statsError);
+        setError(`Stats: ${statsError.message}`);
       }
 
-      // Recent Users
-      const usersResult = await testEndpoint(endpoints[1], headers, baseURL);
-      if (usersResult.success && usersResult.data) {
-        const usersList = usersResult.data.users || usersResult.data || [];
-        setRecentUsers(Array.isArray(usersList) ? usersList : []);
-      } else {
-        allSuccessful = false;
+      // Fetch recent users
+      try {
+        const usersResponse = await fetchWithTimeout(
+          `${baseURL}/api/admin/recent-users`,
+          {
+            method: 'GET',
+            headers,
+            credentials: 'include'
+          }
+        );
+
+        if (usersResponse.ok) {
+          const usersData = await safelyParseJson(usersResponse, 'recent-users');
+          
+          let usersList = [];
+          if (usersData.success !== false) {
+            usersList = usersData.users || usersData || [];
+          }
+          
+          setRecentUsers(Array.isArray(usersList) ? usersList : []);
+        } else {
+          console.warn('Failed to fetch recent users:', usersResponse.status);
+        }
+      } catch (usersError) {
+        console.error('Error fetching users:', usersError);
       }
 
-      // Recent Enrollments
-      const enrollmentsResult = await testEndpoint(endpoints[2], headers, baseURL);
-      if (enrollmentsResult.success && enrollmentsResult.data) {
-        const enrollmentsList = enrollmentsResult.data.enrollments || enrollmentsResult.data || [];
-        setRecentEnrollments(Array.isArray(enrollmentsList) ? enrollmentsList : []);
-      } else {
-        allSuccessful = false;
+      // Fetch recent enrollments
+      try {
+        const enrollmentsResponse = await fetchWithTimeout(
+          `${baseURL}/api/admin/recent-enrollments`,
+          {
+            method: 'GET',
+            headers,
+            credentials: 'include'
+          }
+        );
+
+        if (enrollmentsResponse.ok) {
+          const enrollmentsData = await safelyParseJson(enrollmentsResponse, 'recent-enrollments');
+          
+          let enrollmentsList = [];
+          if (enrollmentsData.success !== false) {
+            enrollmentsList = enrollmentsData.enrollments || enrollmentsData || [];
+          }
+          
+          setRecentEnrollments(Array.isArray(enrollmentsList) ? enrollmentsList : []);
+        } else {
+          console.warn('Failed to fetch recent enrollments:', enrollmentsResponse.status);
+        }
+      } catch (enrollmentsError) {
+        console.error('Error fetching enrollments:', enrollmentsError);
       }
 
-      // Service Requests
-      const requestsResult = await testEndpoint(endpoints[3], headers, baseURL);
-      if (requestsResult.success && requestsResult.data) {
-        const requestsList = requestsResult.data.requests || requestsResult.data || [];
-        setServiceRequests(Array.isArray(requestsList) ? requestsList : []);
-      } else {
-        allSuccessful = false;
-      }
+      // Fetch service requests
+      try {
+        const serviceRequestsResponse = await fetchWithTimeout(
+          `${baseURL}/api/admin/service-requests`,
+          {
+            method: 'GET',
+            headers,
+            credentials: 'include'
+          }
+        );
 
-      if (!allSuccessful) {
-        setError('Some endpoints failed. Check diagnostics below.');
+        if (serviceRequestsResponse.ok) {
+          const serviceRequestsData = await safelyParseJson(serviceRequestsResponse, 'service-requests');
+          
+          let requestsList = [];
+          if (serviceRequestsData.success !== false) {
+            requestsList = serviceRequestsData.requests || serviceRequestsData || [];
+          }
+          
+          const transformedRequests = (Array.isArray(requestsList) ? requestsList : []).map((request) => ({
+            id: request.id,
+            name: request.name || `${request.user_first_name || ''} ${request.user_last_name || ''}`.trim() || 'Unknown',
+            service: request.service || 'General Inquiry',
+            date: request.date || 'N/A',
+            status: request.status || 'pending',
+            email: request.email || '',
+            phone: request.phone || '',
+            company: request.company || '',
+            website: request.website || '',
+            project_details: request.project_details || '',
+            budget_range: request.budget_range || '',
+            timeline: request.timeline || '',
+            contact_method: request.contact_method || 'email',
+            additional_requirements: request.additional_requirements || ''
+          }));
+          
+          setServiceRequests(transformedRequests);
+        } else {
+          console.warn('Failed to fetch service requests:', serviceRequestsResponse.status);
+        }
+      } catch (requestsError) {
+        console.error('Error fetching service requests:', requestsError);
       }
 
     } catch (error) {
       console.error('Error in fetchDashboardData:', error);
-      setError(error.message);
-      addDiagnostic('System', 'error', error.message);
+      setError(error instanceof Error ? error.message : 'Failed to load dashboard data');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -194,6 +265,13 @@ const AdminOverview = () => {
     fetchDashboardData(true);
   };
 
+  const handleManagementClick = (sectionId) => {
+    console.log(`Navigate to ${sectionId}`);
+    window.dispatchEvent(new CustomEvent('admin-navigation', { 
+      detail: { section: sectionId } 
+    }));
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -204,13 +282,13 @@ const AdminOverview = () => {
 
   return (
     <div className="p-6">
-      {/* Header */}
+      {/* Header with Refresh Button */}
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Admin Dashboard - Diagnostic Mode</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Admin Dashboard</h1>
         <button
           onClick={handleRefresh}
           disabled={refreshing}
-          className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50"
+          className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
           {refreshing ? 'Refreshing...' : 'Refresh Data'}
@@ -220,46 +298,32 @@ const AdminOverview = () => {
       {/* Error Banner */}
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6">
-          <div className="flex items-center">
-            <AlertCircle size={20} className="text-red-500 mr-2 flex-shrink-0" />
-            <div>
-              <h3 className="text-sm font-semibold text-red-800 dark:text-red-200">
-                Failed to load some dashboard data
-              </h3>
-              <p className="text-sm text-red-600 dark:text-red-300 mt-1">{error}</p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <AlertCircle size={20} className="text-red-500 mr-2 flex-shrink-0" />
+              <div>
+                <h3 className="text-sm font-semibold text-red-800 dark:text-red-200">
+                  Failed to load some dashboard data
+                </h3>
+                <p className="text-sm text-red-600 dark:text-red-300 mt-1">
+                  {error}
+                </p>
+                <p className="text-xs text-red-500 dark:text-red-400 mt-2">
+                  This usually means the API endpoint doesn't exist or Firestore indexes are missing. Check the browser console for details.
+                </p>
+              </div>
             </div>
+            <button
+              onClick={handleRefresh}
+              className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200 text-sm font-medium ml-4"
+            >
+              Try Again
+            </button>
           </div>
         </div>
       )}
 
-      {/* Diagnostics Panel */}
-      <div className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 mb-6">
-        <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-          <AlertCircle size={20} className="mr-2" />
-          API Diagnostics
-        </h2>
-        <div className="space-y-2 max-h-64 overflow-y-auto">
-          {diagnostics.map((diag, index) => (
-            <div key={index} className="flex items-start gap-3 p-2 bg-white dark:bg-gray-900 rounded text-sm">
-              <div className="flex-shrink-0 mt-1">
-                {diag.status === 'success' && <CheckCircle size={16} className="text-green-500" />}
-                {diag.status === 'error' && <XCircle size={16} className="text-red-500" />}
-                {diag.status === 'warning' && <AlertCircle size={16} className="text-yellow-500" />}
-                {diag.status === 'info' && <AlertCircle size={16} className="text-blue-500" />}
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-gray-900 dark:text-white">{diag.endpoint}</span>
-                  <span className="text-xs text-gray-500">{diag.timestamp}</span>
-                </div>
-                <p className="text-gray-600 dark:text-gray-400 mt-1">{diag.message}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Stats Cards */}
+      {/* Admin Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard
           title="Total Users"
@@ -287,39 +351,144 @@ const AdminOverview = () => {
         />
       </div>
 
-      {/* Data Preview */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-4">
-          <h3 className="font-bold text-gray-900 dark:text-white mb-2">Recent Users ({recentUsers.length})</h3>
-          <pre className="text-xs bg-gray-100 dark:bg-gray-900 p-2 rounded overflow-auto max-h-40">
-            {JSON.stringify(recentUsers, null, 2)}
-          </pre>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        {/* Recent Users */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Recent Users</h2>
+            <button
+              onClick={() => handleManagementClick('users')}
+              className="text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300 flex items-center"
+            >
+              Manage <ChevronRight size={18} className="ml-1" />
+            </button>
+          </div>
+          <div className="space-y-4">
+            {recentUsers.length > 0 ? (
+              recentUsers.map((user) => (
+                <div key={user.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-white">
+                      {`${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unnamed User'}
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{user.email || 'No email'}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="inline-block px-2 py-1 text-xs rounded-full bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
+                      {user.account_type || 'student'}
+                    </span>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{user.join_date || 'N/A'}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-8">
+                <Users size={48} className="mx-auto text-gray-400 mb-3" />
+                <p className="text-gray-500 dark:text-gray-400">No recent users found</p>
+                <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+                  Users will appear here as they register
+                </p>
+              </div>
+            )}
+          </div>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-4">
-          <h3 className="font-bold text-gray-900 dark:text-white mb-2">Recent Enrollments ({recentEnrollments.length})</h3>
-          <pre className="text-xs bg-gray-100 dark:bg-gray-900 p-2 rounded overflow-auto max-h-40">
-            {JSON.stringify(recentEnrollments, null, 2)}
-          </pre>
-        </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-4">
-          <h3 className="font-bold text-gray-900 dark:text-white mb-2">Service Requests ({serviceRequests.length})</h3>
-          <pre className="text-xs bg-gray-100 dark:bg-gray-900 p-2 rounded overflow-auto max-h-40">
-            {JSON.stringify(serviceRequests, null, 2)}
-          </pre>
+
+        {/* Recent Enrollments */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Recent Enrollments</h2>
+            <button
+              onClick={() => handleManagementClick('enrollments')}
+              className="text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300 flex items-center"
+            >
+              Manage <ChevronRight size={18} className="ml-1" />
+            </button>
+          </div>
+          <div className="space-y-4">
+            {recentEnrollments.length > 0 ? (
+              recentEnrollments.map((enrollment) => (
+                <div key={enrollment.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-white">{enrollment.user_name || 'Unknown User'}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{enrollment.course_name || 'Unknown Course'}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className={`inline-block px-2 py-1 text-xs rounded-full ${
+                      enrollment.status === 'active'
+                        ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                        : enrollment.status === 'completed'
+                        ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                        : 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300'
+                    }`}>
+                      {enrollment.status || 'pending'}
+                    </span>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{enrollment.date || 'N/A'}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-8">
+                <UserCheck size={48} className="mx-auto text-gray-400 mb-3" />
+                <p className="text-gray-500 dark:text-gray-400">No recent enrollments</p>
+                <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+                  Course enrollments will appear here
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Instructions */}
-      <div className="mt-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-        <h3 className="font-bold text-blue-900 dark:text-blue-200 mb-2">Diagnostic Instructions:</h3>
-        <ol className="text-sm text-blue-800 dark:text-blue-300 space-y-1 list-decimal list-inside">
-          <li>Check the API Diagnostics panel above for detailed error messages</li>
-          <li>Look for red (error) or yellow (warning) indicators</li>
-          <li>HTTP 404 means the endpoint doesn't exist on your backend</li>
-          <li>Verify your backend server is running and the routes are properly registered</li>
-          <li>Check if the routes are defined AFTER your authentication middleware</li>
-          <li>Open browser DevTools (F12) → Network tab to see the actual requests</li>
-        </ol>
+      {/* Service Requests */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 mb-8">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Service Requests</h2>
+          <div className="flex items-center gap-4">
+            {serviceRequests.length > 0 && (
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                {adminStats.pendingServiceRequests} pending
+              </span>
+            )}
+            <button
+              onClick={() => handleManagementClick('service-requests')}
+              className="text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300 flex items-center"
+            >
+              Manage <ChevronRight size={18} className="ml-1" />
+            </button>
+          </div>
+        </div>
+        <div className="space-y-4">
+          {serviceRequests.length > 0 ? (
+            serviceRequests.map((request) => (
+              <div key={request.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                <div>
+                  <p className="font-medium text-gray-900 dark:text-white">{request.name || 'Unknown'}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{request.service || 'General Inquiry'}</p>
+                </div>
+                <div className="text-right">
+                  <span className={`inline-block px-2 py-1 text-xs rounded-full ${
+                    request.status === 'pending'
+                      ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'
+                      : request.status === 'in-process'
+                      ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
+                      : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
+                  }`}>
+                    {request.status || 'pending'}
+                  </span>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{request.date || 'N/A'}</p>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="text-center py-8">
+              <MessageSquare size={48} className="mx-auto text-gray-400 mb-3" />
+              <p className="text-gray-500 dark:text-gray-400">No service requests</p>
+              <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+                Service requests from users will appear here
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
