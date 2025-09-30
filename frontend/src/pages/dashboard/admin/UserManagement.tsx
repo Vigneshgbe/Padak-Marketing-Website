@@ -321,10 +321,7 @@ const UserManagement: React.FC = () => {
 
     const response = await fetch(url, {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders()
-      },
+      headers: getAuthHeaders(),
       credentials: 'include',
       body: JSON.stringify(body)
     });
