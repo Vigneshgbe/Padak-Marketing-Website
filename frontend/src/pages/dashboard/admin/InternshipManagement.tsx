@@ -17,10 +17,43 @@ interface Internship {
   description: string;
   requirements: string[];
   benefits: string[];
-  posted_at: string;
+  posted_at: any; // Can be Firestore Timestamp or string
   applications_count: number;
   spots_available: number;
 }
+
+// Helper function to format dates
+const formatDate = (dateValue: any): string => {
+  if (!dateValue) return 'N/A';
+  
+  try {
+    // Handle Firestore Timestamp
+    if (dateValue._seconds || dateValue.seconds) {
+      const seconds = dateValue._seconds || dateValue.seconds;
+      const date = new Date(seconds * 1000);
+      return date.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
+    }
+    
+    // Handle ISO string or Date object
+    const date = new Date(dateValue);
+    if (!isNaN(date.getTime())) {
+      return date.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
+    }
+    
+    return String(dateValue);
+  } catch (error) {
+    console.error('Error formatting date:', error);
+    return 'Invalid Date';
+  }
+};
 
 const InternshipManagement: React.FC = () => {
   const [internships, setInternships] = useState<Internship[]>([]);
@@ -352,6 +385,10 @@ const InternshipManagement: React.FC = () => {
             {
               header: 'Applications',
               accessor: (internship) => `${internship.applications_count}/${internship.spots_available}`
+            },
+            {
+              header: 'Posted',
+              accessor: (internship) => formatDate(internship.posted_at)
             }
           ]}
           actions={(internship) => (
