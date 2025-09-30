@@ -156,21 +156,6 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 app.use('/uploads/avatars', express.static(path.join(__dirname, 'uploads', 'avatars')));
 
-
-// CORS middleware for API routes
-app.use((req, res, next) => {
-  if (req.path.startsWith('/api/')) {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    
-    if (req.method === 'OPTIONS') {
-      return res.sendStatus(200);
-    }
-  }
-  next();
-});
-
 // Request logging middleware
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
@@ -3215,7 +3200,7 @@ app.get('/api/admin/analytics', authenticateToken, requireAdmin, async (req, res
 // GET /api/admin/users - Get all users
 app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    console.log('Fetching users for admin:', req.user.email);
+    console.log('Fetching users for admin');
     
     const { search, accountType, status } = req.query;
     
@@ -3243,16 +3228,12 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
         email: userData.email || '',
         phone: userData.phone || '',
         account_type: userData.account_type || 'student',
-        is_active: userData.is_active !== false, // Default to true if undefined
+        is_active: userData.is_active !== undefined ? userData.is_active : true,
         company: userData.company || '',
         website: userData.website || '',
         bio: userData.bio || '',
-        created_at: userData.created_at ? 
-          (userData.created_at.toDate ? userData.created_at.toDate().toISOString() : userData.created_at) : 
-          new Date().toISOString(),
-        updated_at: userData.updated_at ? 
-          (userData.updated_at.toDate ? userData.updated_at.toDate().toISOString() : userData.updated_at) : 
-          new Date().toISOString()
+        created_at: userData.created_at ? userData.created_at.toDate().toISOString() : new Date().toISOString(),
+        updated_at: userData.updated_at ? userData.updated_at.toDate().toISOString() : new Date().toISOString()
       });
     });
 
@@ -3269,8 +3250,6 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
     // Sort by creation date (newest first)
     users.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-    console.log(`Returning ${users.length} users`);
-
     res.json({
       success: true,
       users,
@@ -3281,8 +3260,7 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
     console.error('Get users error:', error);
     res.status(500).json({ 
       success: false,
-      error: 'Server error while fetching users',
-      details: error.message
+      error: 'Server error while fetching users' 
     });
   }
 });
@@ -3290,7 +3268,7 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
 // POST /api/admin/users - Create new user
 app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    console.log('Creating new user - Request body:', req.body);
+    console.log('Creating new user:', req.body);
     
     const { firstName, lastName, email, phone, password, accountType, isActive, company, website, bio } = req.body;
 
@@ -3299,15 +3277,6 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
       return res.status(400).json({
         success: false,
         error: 'First name, last name, email, and password are required'
-      });
-    }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid email format'
       });
     }
 
@@ -3323,21 +3292,6 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
       });
     }
 
-    // Validate password
-    const passwordErrors = [];
-    if (password.length < 6) passwordErrors.push("Password must be at least 6 characters");
-    if (!/[A-Z]/.test(password)) passwordErrors.push("Must contain uppercase letter");
-    if (!/[a-z]/.test(password)) passwordErrors.push("Must contain lowercase letter");
-    if (!/[0-9]/.test(password)) passwordErrors.push("Must contain number");
-    if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) passwordErrors.push("Must contain special character");
-    
-    if (passwordErrors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        error: passwordErrors[0]
-      });
-    }
-
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -3348,18 +3302,27 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
       phone: phone || '',
       password_hash: hashedPassword,
       account_type: accountType || 'student',
-      is_active: isActive !== false, // Default to true
+      is_active: isActive !== undefined ? isActive : true,
       company: company || '',
       website: website || '',
       bio: bio || '',
       email_verified: false,
-      created_at: firebase.firestore.FieldValue.serverTimestamp(),
-      updated_at: firebase.firestore.FieldValue.serverTimestamp()
+      created_at: firebase.firestore.Timestamp.now(),
+      updated_at: firebase.firestore.Timestamp.now()
     };
 
+    // Create the user document
     const userRef = await db.collection('users').add(userData);
 
-    console.log('User created successfully:', userRef.id);
+    // Create user stats entry
+    await db.collection('user_stats').doc(userRef.id).set({
+      user_id: userRef.id,
+      courses_enrolled: 0,
+      courses_completed: 0,
+      certificates_earned: 0,
+      learning_streak: 0,
+      last_activity: new Date().toISOString()
+    });
 
     res.status(201).json({
       success: true,
@@ -3367,8 +3330,8 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
       user: {
         id: userRef.id,
         ...userData,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        created_at: userData.created_at.toDate().toISOString(),
+        updated_at: userData.updated_at.toDate().toISOString()
       }
     });
 
@@ -3376,33 +3339,22 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
     console.error('Create user error:', error);
     res.status(500).json({
       success: false,
-      error: 'Server error while creating user',
-      details: error.message
+      error: 'Server error while creating user'
     });
   }
 });
 
-// PUT /api/admin/users/:id - Update user
+// PUT /api/admin/users/:id - Update user - THIS ENDPOINT FIXED
 app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
     const { firstName, lastName, email, phone, accountType, isActive, company, website, bio } = req.body;
 
-    console.log('Updating user:', userId);
-    console.log('Update data:', req.body);
-
-    // Validation
-    if (!userId) {
-      return res.status(400).json({
-        success: false,
-        error: 'User ID is required'
-      });
-    }
+    console.log('Updating user:', userId, req.body);
 
     // Check if user exists
     const userDoc = await db.collection('users').doc(userId).get();
     if (!userDoc.exists) {
-      console.log('User not found:', userId);
       return res.status(404).json({
         success: false,
         error: 'User not found'
@@ -3412,61 +3364,60 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
     const currentUser = userDoc.data();
 
     // Check email uniqueness if changed
-    if (email && email.toLowerCase() !== currentUser.email.toLowerCase()) {
+    if (email && email !== currentUser.email) {
       const emailSnapshot = await db.collection('users')
         .where('email', '==', email.trim().toLowerCase())
         .get();
       
-      let emailExists = false;
-      emailSnapshot.forEach(doc => {
-        if (doc.id !== userId) {
-          emailExists = true;
+      if (!emailSnapshot.empty) {
+        // Make sure we're not matching the same user
+        const matchingUser = emailSnapshot.docs[0];
+        if (matchingUser.id !== userId) {
+          return res.status(400).json({
+            success: false,
+            error: 'Email already exists'
+          });
         }
-      });
-
-      if (emailExists) {
-        return res.status(400).json({
-          success: false,
-          error: 'Email already exists'
-        });
       }
     }
 
+    // Prepare update data
     const updateData = {
-      updated_at: firebase.firestore.FieldValue.serverTimestamp()
+      first_name: firstName !== undefined ? firstName.trim() : currentUser.first_name,
+      last_name: lastName !== undefined ? lastName.trim() : currentUser.last_name,
+      email: email !== undefined ? email.trim().toLowerCase() : currentUser.email,
+      phone: phone !== undefined ? phone : currentUser.phone,
+      account_type: accountType || currentUser.account_type,
+      is_active: isActive !== undefined ? isActive : currentUser.is_active,
+      company: company !== undefined ? company : currentUser.company,
+      website: website !== undefined ? website : currentUser.website,
+      bio: bio !== undefined ? bio : currentUser.bio,
+      updated_at: firebase.firestore.Timestamp.now()
     };
 
-    // Only update fields that were provided
-    if (firstName !== undefined) updateData.first_name = firstName.trim();
-    if (lastName !== undefined) updateData.last_name = lastName.trim();
-    if (email !== undefined) updateData.email = email.trim().toLowerCase();
-    if (phone !== undefined) updateData.phone = phone;
-    if (accountType !== undefined) updateData.account_type = accountType;
-    if (isActive !== undefined) updateData.is_active = isActive;
-    if (company !== undefined) updateData.company = company;
-    if (website !== undefined) updateData.website = website;
-    if (bio !== undefined) updateData.bio = bio;
-
-    console.log('Applying updates:', updateData);
-
+    // Update the user
     await db.collection('users').doc(userId).update(updateData);
 
-    // Get updated user data
-    const updatedDoc = await db.collection('users').doc(userId).get();
-    const updatedUser = updatedDoc.data();
-
-    console.log('User updated successfully');
+    // Get updated user data for response
+    const updatedUserDoc = await db.collection('users').doc(userId).get();
+    const updatedUser = updatedUserDoc.data();
 
     res.json({
       success: true,
       message: 'User updated successfully',
       user: {
         id: userId,
-        ...updatedUser,
-        created_at: updatedUser.created_at ? 
-          (updatedUser.created_at.toDate ? updatedUser.created_at.toDate().toISOString() : updatedUser.created_at) : 
-          currentUser.created_at,
-        updated_at: new Date().toISOString()
+        first_name: updatedUser.first_name,
+        last_name: updatedUser.last_name,
+        email: updatedUser.email,
+        phone: updatedUser.phone,
+        account_type: updatedUser.account_type,
+        is_active: updatedUser.is_active,
+        company: updatedUser.company,
+        website: updatedUser.website,
+        bio: updatedUser.bio,
+        created_at: updatedUser.created_at.toDate().toISOString(),
+        updated_at: updatedUser.updated_at.toDate().toISOString()
       }
     });
 
@@ -3474,8 +3425,7 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
     console.error('Update user error:', error);
     res.status(500).json({
       success: false,
-      error: 'Server error while updating user',
-      details: error.message
+      error: 'Server error while updating user'
     });
   }
 });
@@ -3484,10 +3434,9 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
 app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
-    const adminId = req.user.id || req.user.userId;
+    const adminId = req.user.id;
 
     console.log('Deleting user:', userId);
-    console.log('Admin ID:', adminId);
 
     // Prevent self-deletion
     if (userId === adminId) {
@@ -3500,20 +3449,17 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
     // Check if user exists
     const userDoc = await db.collection('users').doc(userId).get();
     if (!userDoc.exists) {
-      console.log('User not found for deletion:', userId);
       return res.status(404).json({
         success: false,
         error: 'User not found'
       });
     }
 
-    // Soft delete - just deactivate the user
+    // Soft delete by setting is_active to false
     await db.collection('users').doc(userId).update({
       is_active: false,
-      updated_at: firebase.firestore.FieldValue.serverTimestamp()
+      updated_at: firebase.firestore.Timestamp.now()
     });
-
-    console.log('User deactivated successfully');
 
     res.json({
       success: true,
@@ -3524,8 +3470,7 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
     console.error('Delete user error:', error);
     res.status(500).json({
       success: false,
-      error: 'Server error while deleting user',
-      details: error.message
+      error: 'Server error while deleting user'
     });
   }
 });
@@ -3545,14 +3490,18 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
       });
     }
 
-    // Validate password
-    const passwordErrors = [];
-    if (password.length < 6) passwordErrors.push("Password must be at least 6 characters");
-    if (!/[A-Z]/.test(password)) passwordErrors.push("Must contain uppercase letter");
-    if (!/[a-z]/.test(password)) passwordErrors.push("Must contain lowercase letter");
-    if (!/[0-9]/.test(password)) passwordErrors.push("Must contain number");
-    if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) passwordErrors.push("Must contain special character");
-    
+    // Validate password strength
+    const validatePassword = (password) => {
+      const errors = [];
+      if (password.length < 6) errors.push("Password must be at least 6 characters long");
+      if (!/[A-Z]/.test(password)) errors.push("Password must contain at least one uppercase letter");
+      if (!/[a-z]/.test(password)) errors.push("Password must contain at least one lowercase letter");
+      if (!/[0-9]/.test(password)) errors.push("Password must contain at least one number");
+      if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) errors.push("Password must contain at least one special character");
+      return errors;
+    };
+
+    const passwordErrors = validatePassword(password);
     if (passwordErrors.length > 0) {
       return res.status(400).json({
         success: false,
@@ -3563,7 +3512,6 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
     // Check if user exists
     const userDoc = await db.collection('users').doc(userId).get();
     if (!userDoc.exists) {
-      console.log('User not found for password reset:', userId);
       return res.status(404).json({
         success: false,
         error: 'User not found'
@@ -3575,10 +3523,8 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
 
     await db.collection('users').doc(userId).update({
       password_hash: hashedPassword,
-      updated_at: firebase.firestore.FieldValue.serverTimestamp()
+      updated_at: firebase.firestore.Timestamp.now()
     });
-
-    console.log('Password reset successfully');
 
     res.json({
       success: true,
@@ -3589,10 +3535,32 @@ app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async 
     console.error('Reset password error:', error);
     res.status(500).json({
       success: false,
-      error: 'Server error while resetting password',
-      details: error.message
+      error: 'Server error while resetting password'
     });
   }
+});
+
+// Debug route to see all registered routes
+app.get('/api/debug/routes', (req, res) => {
+  const routes = [];
+  app._router.stack.forEach(middleware => {
+    if (middleware.route) {
+      routes.push({
+        path: middleware.route.path,
+        methods: Object.keys(middleware.route.methods)
+      });
+    } else if (middleware.name === 'router') {
+      middleware.handle.stack.forEach(handler => {
+        if (handler.route) {
+          routes.push({
+            path: handler.route.path,
+            methods: Object.keys(handler.route.methods)
+          });
+        }
+      });
+    }
+  });
+  res.json({ routes });
 });
 
 // ==================== ADMIN DASHBOARD STATS ====================
