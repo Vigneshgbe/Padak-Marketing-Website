@@ -3113,12 +3113,18 @@ app.delete('/api/admin/internships/:id', authenticateToken, async (req, res) => 
   }
 });
 
-// GET /api/admin/internships/applications - Get all internship applications across all internships
+// ==================== ADMIN INTERNSHIP APPLICATION ROUTES ====================
+
+// GET /api/admin/internships/applications - Get all internship applications
 app.get('/api/admin/internships/applications', authenticateToken, async (req, res) => {
   try {
+    console.log('Fetching all internship applications...');
+    
     const applicationsSnap = await db.collection('internship_submissions')
       .orderBy('submitted_at', 'desc')
       .get();
+
+    console.log(`Found ${applicationsSnap.docs.length} applications`);
 
     const applications = [];
     
@@ -3135,6 +3141,8 @@ app.get('/api/admin/internships/applications', authenticateToken, async (req, re
         const internship = internshipDoc.data();
         internshipTitle = internship?.title || 'Unknown';
         internshipCompany = internship?.company || 'Unknown';
+      } else {
+        console.warn(`Internship ${app.internship_id} not found for application ${doc.id}`);
       }
 
       applications.push({
@@ -3145,14 +3153,15 @@ app.get('/api/admin/internships/applications', authenticateToken, async (req, re
         user_id: app.user_id,
         full_name: app.full_name,
         email: app.email,
-        phone: app.phone,
+        phone: app.phone || null,
         resume_url: app.resume_url,
-        cover_letter: app.cover_letter,
+        cover_letter: app.cover_letter || null,
         status: app.status,
         submitted_at: app.submitted_at
       });
     }
 
+    console.log(`Returning ${applications.length} applications`);
     res.json(applications);
   } catch (error) {
     console.error('Error fetching all internship applications:', error);
@@ -3160,16 +3169,19 @@ app.get('/api/admin/internships/applications', authenticateToken, async (req, re
   }
 });
 
-
-// GET /api/admin/internships/:id/applications - Get all applications for a specific internship
+// GET /api/admin/internships/:id/applications - Get applications for a specific internship
+// This route MUST come AFTER the /applications route above
 app.get('/api/admin/internships/:id/applications', authenticateToken, async (req, res) => {
   const { id } = req.params;
 
   try {
+    console.log(`Fetching applications for internship: ${id}`);
+    
     const internshipRef = db.collection('internships').doc(id);
     const internshipDoc = await internshipRef.get();
 
     if (!internshipDoc.exists) {
+      console.log(`Internship ${id} not found`);
       return res.status(404).json({ error: 'Internship not found.' });
     }
 
@@ -3185,9 +3197,9 @@ app.get('/api/admin/internships/:id/applications', authenticateToken, async (req
         user_id: app.user_id,
         full_name: app.full_name,
         email: app.email,
-        phone: app.phone,
+        phone: app.phone || null,
         resume_url: app.resume_url,
-        cover_letter: app.cover_letter,
+        cover_letter: app.cover_letter || null,
         status: app.status,
         submitted_at: app.submitted_at
       };
