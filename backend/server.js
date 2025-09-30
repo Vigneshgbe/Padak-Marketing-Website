@@ -2867,6 +2867,371 @@ app.post('/api/internships/:id/apply', authenticateToken, async (req, res) => {
   }
 });
 
+// ==================== ADMIN INTERNSHIP MANAGEMENT ROUTES ====================
+
+// Middleware to check if user is admin
+const isAdmin = (req, res, next) => {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Access denied. Admin privileges required.' });
+  }
+  next();
+};
+
+// GET /api/admin/internships - Fetch all internships for admin management
+app.get('/api/admin/internships', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const internshipsSnap = await db.collection('internships').orderBy('posted_at', 'desc').get();
+
+    const internships = internshipsSnap.docs.map(doc => {
+      const i = doc.data();
+      return {
+        id: doc.id,
+        title: i.title,
+        company: i.company,
+        location: i.location,
+        duration: i.duration,
+        type: i.type,
+        level: i.level,
+        description: i.description,
+        requirements: JSON.parse(i.requirements || '[]'),
+        benefits: JSON.parse(i.benefits || '[]'),
+        posted_at: i.posted_at,
+        applications_count: i.applications_count || 0,
+        spots_available: i.spots_available || 0
+      };
+    });
+
+    res.json(internships);
+  } catch (error) {
+    console.error('Error fetching internships for admin:', error);
+    res.status(500).json({ error: 'Internal server error while fetching internships.' });
+  }
+});
+
+// GET /api/admin/internships/:id - Fetch single internship by ID
+app.get('/api/admin/internships/:id', authenticateToken, isAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const internshipDoc = await db.collection('internships').doc(id).get();
+
+    if (!internshipDoc.exists) {
+      return res.status(404).json({ error: 'Internship not found.' });
+    }
+
+    const i = internshipDoc.data();
+    const internship = {
+      id: internshipDoc.id,
+      title: i.title,
+      company: i.company,
+      location: i.location,
+      duration: i.duration,
+      type: i.type,
+      level: i.level,
+      description: i.description,
+      requirements: JSON.parse(i.requirements || '[]'),
+      benefits: JSON.parse(i.benefits || '[]'),
+      posted_at: i.posted_at,
+      applications_count: i.applications_count || 0,
+      spots_available: i.spots_available || 0
+    };
+
+    res.json(internship);
+  } catch (error) {
+    console.error('Error fetching internship:', error);
+    res.status(500).json({ error: 'Internal server error while fetching internship.' });
+  }
+});
+
+// POST /api/admin/internships - Create new internship
+app.post('/api/admin/internships', authenticateToken, isAdmin, async (req, res) => {
+  const {
+    title,
+    company,
+    location,
+    duration,
+    type,
+    level,
+    description,
+    requirements,
+    benefits,
+    spots_available
+  } = req.body;
+
+  // Validation
+  if (!title || !company || !location || !duration || !type || !level || !description) {
+    return res.status(400).json({ error: 'All required fields must be provided.' });
+  }
+
+  if (!requirements || !benefits) {
+    return res.status(400).json({ error: 'Requirements and benefits are required.' });
+  }
+
+  if (spots_available === undefined || spots_available < 0) {
+    return res.status(400).json({ error: 'Valid spots_available is required.' });
+  }
+
+  try {
+    const internshipRef = db.collection('internships').doc();
+    
+    await internshipRef.set({
+      title,
+      company,
+      location,
+      duration,
+      type,
+      level,
+      description,
+      requirements: typeof requirements === 'string' ? requirements : JSON.stringify(requirements),
+      benefits: typeof benefits === 'string' ? benefits : JSON.stringify(benefits),
+      spots_available: parseInt(spots_available),
+      applications_count: 0,
+      posted_at: firebase.firestore.Timestamp.now()
+    });
+
+    const newInternship = await internshipRef.get();
+    const i = newInternship.data();
+    
+    res.status(201).json({
+      message: 'Internship created successfully',
+      internship: {
+        id: newInternship.id,
+        title: i.title,
+        company: i.company,
+        location: i.location,
+        duration: i.duration,
+        type: i.type,
+        level: i.level,
+        description: i.description,
+        requirements: JSON.parse(i.requirements),
+        benefits: JSON.parse(i.benefits),
+        posted_at: i.posted_at,
+        applications_count: i.applications_count,
+        spots_available: i.spots_available
+      }
+    });
+  } catch (error) {
+    console.error('Error creating internship:', error);
+    res.status(500).json({ error: 'Internal server error while creating internship.' });
+  }
+});
+
+// PUT /api/admin/internships/:id - Update existing internship
+app.put('/api/admin/internships/:id', authenticateToken, isAdmin, async (req, res) => {
+  const { id } = req.params;
+  const {
+    title,
+    company,
+    location,
+    duration,
+    type,
+    level,
+    description,
+    requirements,
+    benefits,
+    spots_available,
+    applications_count
+  } = req.body;
+
+  try {
+    const internshipRef = db.collection('internships').doc(id);
+    const internshipDoc = await internshipRef.get();
+
+    if (!internshipDoc.exists) {
+      return res.status(404).json({ error: 'Internship not found.' });
+    }
+
+    const updateData = {};
+    
+    if (title !== undefined) updateData.title = title;
+    if (company !== undefined) updateData.company = company;
+    if (location !== undefined) updateData.location = location;
+    if (duration !== undefined) updateData.duration = duration;
+    if (type !== undefined) updateData.type = type;
+    if (level !== undefined) updateData.level = level;
+    if (description !== undefined) updateData.description = description;
+    if (requirements !== undefined) {
+      updateData.requirements = typeof requirements === 'string' ? requirements : JSON.stringify(requirements);
+    }
+    if (benefits !== undefined) {
+      updateData.benefits = typeof benefits === 'string' ? benefits : JSON.stringify(benefits);
+    }
+    if (spots_available !== undefined) updateData.spots_available = parseInt(spots_available);
+    if (applications_count !== undefined) updateData.applications_count = parseInt(applications_count);
+
+    await internshipRef.update(updateData);
+
+    const updatedDoc = await internshipRef.get();
+    const i = updatedDoc.data();
+
+    res.json({
+      message: 'Internship updated successfully',
+      internship: {
+        id: updatedDoc.id,
+        title: i.title,
+        company: i.company,
+        location: i.location,
+        duration: i.duration,
+        type: i.type,
+        level: i.level,
+        description: i.description,
+        requirements: JSON.parse(i.requirements),
+        benefits: JSON.parse(i.benefits),
+        posted_at: i.posted_at,
+        applications_count: i.applications_count,
+        spots_available: i.spots_available
+      }
+    });
+  } catch (error) {
+    console.error('Error updating internship:', error);
+    res.status(500).json({ error: 'Internal server error while updating internship.' });
+  }
+});
+
+// DELETE /api/admin/internships/:id - Delete internship
+app.delete('/api/admin/internships/:id', authenticateToken, isAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const internshipRef = db.collection('internships').doc(id);
+    const internshipDoc = await internshipRef.get();
+
+    if (!internshipDoc.exists) {
+      return res.status(404).json({ error: 'Internship not found.' });
+    }
+
+    // Optional: Check if there are any applications before deletion
+    const applicationsSnap = await db.collection('internship_submissions')
+      .where('internship_id', '==', id)
+      .limit(1)
+      .get();
+
+    if (!applicationsSnap.empty) {
+      // You can choose to prevent deletion or cascade delete
+      // For now, we'll allow deletion but you might want to handle this differently
+      console.warn(`Deleting internship ${id} which has ${applicationsSnap.size} applications`);
+    }
+
+    await internshipRef.delete();
+
+    res.json({ message: 'Internship deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting internship:', error);
+    res.status(500).json({ error: 'Internal server error while deleting internship.' });
+  }
+});
+
+// GET /api/admin/internships/:id/applications - Get all applications for a specific internship
+app.get('/api/admin/internships/:id/applications', authenticateToken, isAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const internshipRef = db.collection('internships').doc(id);
+    const internshipDoc = await internshipRef.get();
+
+    if (!internshipDoc.exists) {
+      return res.status(404).json({ error: 'Internship not found.' });
+    }
+
+    const applicationsSnap = await db.collection('internship_submissions')
+      .where('internship_id', '==', id)
+      .orderBy('submitted_at', 'desc')
+      .get();
+
+    const applications = applicationsSnap.docs.map(doc => {
+      const app = doc.data();
+      return {
+        id: doc.id,
+        user_id: app.user_id,
+        full_name: app.full_name,
+        email: app.email,
+        phone: app.phone,
+        resume_url: app.resume_url,
+        cover_letter: app.cover_letter,
+        status: app.status,
+        submitted_at: app.submitted_at
+      };
+    });
+
+    res.json(applications);
+  } catch (error) {
+    console.error('Error fetching internship applications:', error);
+    res.status(500).json({ error: 'Internal server error while fetching applications.' });
+  }
+});
+
+// PATCH /api/admin/internships/applications/:applicationId/status - Update application status
+app.patch('/api/admin/internships/applications/:applicationId/status', authenticateToken, isAdmin, async (req, res) => {
+  const { applicationId } = req.params;
+  const { status } = req.body;
+
+  const validStatuses = ['pending', 'reviewed', 'accepted', 'rejected'];
+  
+  if (!status || !validStatuses.includes(status.toLowerCase())) {
+    return res.status(400).json({ error: 'Valid status is required (pending, reviewed, accepted, rejected).' });
+  }
+
+  try {
+    const applicationRef = db.collection('internship_submissions').doc(applicationId);
+    const applicationDoc = await applicationRef.get();
+
+    if (!applicationDoc.exists) {
+      return res.status(404).json({ error: 'Application not found.' });
+    }
+
+    await applicationRef.update({
+      status: status.toLowerCase()
+    });
+
+    res.json({ 
+      message: 'Application status updated successfully',
+      status: status.toLowerCase()
+    });
+  } catch (error) {
+    console.error('Error updating application status:', error);
+    res.status(500).json({ error: 'Internal server error while updating application status.' });
+  }
+});
+
+// GET /api/admin/internships/applications - Get all internship applications across all internships
+app.get('/api/admin/internships/applications', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const applicationsSnap = await db.collection('internship_submissions')
+      .orderBy('submitted_at', 'desc')
+      .get();
+
+    const applications = [];
+    
+    for (const doc of applicationsSnap.docs) {
+      const app = doc.data();
+      
+      // Fetch internship details
+      const internshipDoc = await db.collection('internships').doc(app.internship_id).get();
+      const internship = internshipDoc.exists ? internshipDoc.data() : null;
+
+      applications.push({
+        id: doc.id,
+        internship_id: app.internship_id,
+        internship_title: internship?.title || 'Unknown',
+        internship_company: internship?.company || 'Unknown',
+        user_id: app.user_id,
+        full_name: app.full_name,
+        email: app.email,
+        phone: app.phone,
+        resume_url: app.resume_url,
+        cover_letter: app.cover_letter,
+        status: app.status,
+        submitted_at: app.submitted_at
+      });
+    }
+
+    res.json(applications);
+  } catch (error) {
+    console.error('Error fetching all internship applications:', error);
+    res.status(500).json({ error: 'Internal server error while fetching applications.' });
+  }
+});
+
 // ==================== SERVICES ROUTES ====================
 
 // Get service categories
