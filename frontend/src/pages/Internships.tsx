@@ -16,31 +16,43 @@ import {
   Users,
   Award,
   Building,
-  Mail, // For email field in application form
-  FileText, // For resume field in application form
-  AlertCircle, // For displaying errors
-  Check, // For success icon
-  X // For error icon
+  AlertCircle,
+  Check,
+  X
 } from "lucide-react";
-import { useNavigate } from 'react-router-dom'; // For redirection
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog"; // For the application modal
-import { Label } from "@/components/ui/label"; // For form labels
-import { Textarea } from "@/components/ui/textarea"; // For cover letter
+import { useNavigate } from 'react-router-dom';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
-// Helper function for date formatting (re-used from AdminDashboard for consistency)
-const formatDateForDisplay = (dateString?: string | Date) => {
-  if (!dateString) return 'N/A';
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) {
-    const parts = String(dateString).match(/(\d{4})-(\d{2})-(\d{2})T/); // Try ISO format first
-    if (parts) {
-      const parsedDate = new Date(`${parts[1]}-${parts[2]}-${parts[3]}`);
-      if (!isNaN(parsedDate.getTime())) {
-        return parsedDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-      }
+// Helper function for date formatting - handles Firestore Timestamps and various date formats
+const formatDateForDisplay = (dateValue: any): string => {
+  if (!dateValue) return 'N/A';
+  
+  try {
+    // Handle Firestore Timestamp objects (most common from backend)
+    if (dateValue._seconds || dateValue.seconds) {
+      const seconds = dateValue._seconds || dateValue.seconds;
+      const date = new Date(seconds * 1000);
+      return date.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
     }
-    // Fallback for "DD Mon YYYY" if needed (though DB typically returns ISO or DateTime object)
-    const customParts = String(dateString).match(/(\d{2}) (\w{3}) (\d{4})/);
+    
+    // Handle ISO string format
+    const date = new Date(dateValue);
+    if (!isNaN(date.getTime())) {
+      return date.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
+    }
+    
+    // Fallback for custom "DD Mon YYYY" format
+    const customParts = String(dateValue).match(/(\d{2}) (\w{3}) (\d{4})/);
     if (customParts) {
       const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
       const monthIndex = monthNames.findIndex(m => m === customParts[2]);
@@ -48,32 +60,35 @@ const formatDateForDisplay = (dateString?: string | Date) => {
         const isoDateCandidate = `${customParts[3]}-${(monthIndex + 1).toString().padStart(2, '0')}-${customParts[1]}`;
         const reParsedDate = new Date(isoDateCandidate);
         if (!isNaN(reParsedDate.getTime())) {
-          return reParsedDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+          return reParsedDate.toLocaleDateString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+          });
         }
       }
     }
-    return String(dateString); // Fallback to original string if still invalid
+    
+    return String(dateValue);
+  } catch (error) {
+    console.error('Error formatting date:', error, dateValue);
+    return 'Invalid Date';
   }
-  return date.toLocaleDateString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
 };
 
-// Define Internship interface matching your database schema
+// Define Internship interface
 interface Internship {
   id: number;
   title: string;
   company: string;
   location: string;
   duration: string;
-  type: string; // "Paid" or "Unpaid"
-  level: string; // "Entry Level", "Intermediate", "Advanced"
+  type: string;
+  level: string;
   description: string;
-  requirements: string[]; // Stored as JSON string in DB, parsed to array here
-  benefits: string[]; // Stored as JSON string in DB, parsed to array here
-  posted_at: string; // Assuming DATETIME from DB
+  requirements: string[];
+  benefits: string[];
+  posted_at: any; // Can be Firestore Timestamp, ISO string, or Date object
   applications_count: number;
   spots_available: number;
 }
@@ -90,7 +105,7 @@ interface InternshipApplicationFormData {
 // Utility function to get authentication data from localStorage
 const getAuthData = () => {
   const token = localStorage.getItem('token');
-  const userString = localStorage.getItem('user'); // Assuming user data is stored as a stringified JSON
+  const userString = localStorage.getItem('user');
   if (token && userString) {
     try {
       const user = JSON.parse(userString);
@@ -125,15 +140,14 @@ const Internships: React.FC = () => {
   const [applicationMessage, setApplicationMessage] = useState<string>('');
 
   const navigate = useNavigate();
-  const authData = getAuthData(); // Check auth status on component render
+  const authData = getAuthData();
 
-  // --- Data Fetching Effect ---
   useEffect(() => {
     const fetchInternships = async () => {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch('http://localhost:5000/api/internships'); // Adjust URL if your backend is different
+        const response = await fetch('http://localhost:5000/api/internships');
         if (!response.ok) {
           throw new Error(`HTTP error! Status: ${response.status} - ${response.statusText}`);
         }
@@ -147,43 +161,36 @@ const Internships: React.FC = () => {
       }
     };
     fetchInternships();
-  }, []); // Empty dependency array means this runs once on component mount
+  }, []);
 
-  // --- Pre-fill Application Form Effect ---
   useEffect(() => {
     if (isApplyModalOpen && authData?.user) {
-      // Assuming authData.user has 'name' and 'email' properties
       setApplicationFormData(prev => ({
         ...prev,
         full_name: authData.user.name || '',
         email: authData.user.email || ''
       }));
     } else if (!isApplyModalOpen) {
-      // Reset form data when modal closes
       setApplicationFormData({ full_name: '', email: '', phone: '', resume_url: '', cover_letter: '' });
-      setApplicationStatus('idle'); // Also reset status
-      setApplicationMessage(''); // Clear message
+      setApplicationStatus('idle');
+      setApplicationMessage('');
     }
-  }, [isApplyModalOpen, authData]); // Re-run when modal opens/closes or authData changes
+  }, [isApplyModalOpen, authData]);
 
-  // --- Handle Apply Button Click ---
   const handleApplyClick = (internship: Internship) => {
     if (!authData) {
-      // If not logged in, redirect to login page
-      navigate('/login'); // Make sure you have a '/login' route in your app
+      navigate('/login');
       return;
     }
     setSelectedInternship(internship);
-    setIsApplyModalOpen(true); // Open the application modal
+    setIsApplyModalOpen(true);
   };
 
-  // --- Handle Application Form Input Changes ---
   const handleApplicationFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setApplicationFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // --- Handle Application Form Submission ---
   const handleApplicationSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedInternship || !authData?.token) {
@@ -200,30 +207,27 @@ const Internships: React.FC = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authData.token}` // Send JWT for authentication
+          'Authorization': `Bearer ${authData.token}`
         },
         body: JSON.stringify(applicationFormData)
       });
 
-      const result = await response.json(); // Always try to parse JSON for messages
+      const result = await response.json();
 
       if (!response.ok) {
-        // If response is not OK (e.g., 400, 403, 409, 500), throw an error
         throw new Error(result.message || `Server error: ${response.statusText}`);
       }
 
       setApplicationStatus('success');
       setApplicationMessage(result.message || 'Application submitted successfully!');
 
-      // Optimistically update internship spots and application count in UI
-      // This avoids another full fetch and provides immediate feedback
       setInternships(prevInternships =>
         prevInternships.map(int =>
           int.id === selectedInternship.id
             ? {
                 ...int,
                 applications_count: int.applications_count + 1,
-                spots_available: Math.max(0, int.spots_available - 1) // Ensure spots don't go below 0
+                spots_available: Math.max(0, int.spots_available - 1)
               }
             : int
         )
@@ -236,11 +240,10 @@ const Internships: React.FC = () => {
     }
   };
 
-  // --- Filtering Logic ---
   const filteredInternships = internships.filter(internship => {
     const matchesSearch = internship.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          internship.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         internship.description.toLowerCase().includes(searchTerm.toLowerCase()); // Added description to search
+                         internship.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesLocation = locationFilter === "all" ||
                            (locationFilter === "remote" && internship.location.toLowerCase() === "remote") ||
                            (locationFilter === "onsite" && internship.location.toLowerCase() !== "remote");
@@ -254,7 +257,6 @@ const Internships: React.FC = () => {
     <div className="min-h-screen flex flex-col">
       <Header />
 
-      {/* Hero Section */}
       <section className="py-20 bg-gradient-to-br from-orange-50/50 via-background to-orange-100/30 relative">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
@@ -270,7 +272,6 @@ const Internships: React.FC = () => {
             </p>
           </div>
 
-          {/* Search and Filters */}
           <div className="max-w-4xl mx-auto">
             <div className="grid md:grid-cols-4 gap-4 mb-8">
               <div className="relative">
@@ -319,12 +320,10 @@ const Internships: React.FC = () => {
           </div>
         </div>
 
-        {/* Floating background elements */}
         <div className="absolute top-20 left-10 w-32 h-32 bg-orange-400/10 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-20 right-10 w-24 h-24 bg-orange-500/10 rounded-full blur-2xl animate-pulse delay-1000"></div>
       </section>
 
-      {/* Internships Grid */}
       <section className="py-20 flex-grow bg-gradient-to-br from-orange-50/30 via-background to-orange-100/20">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           {loading && (
@@ -346,7 +345,6 @@ const Internships: React.FC = () => {
             <div className="space-y-6">
               {filteredInternships.map((internship) => (
                 <Card key={internship.id} className="group hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-0 bg-background/90 backdrop-blur-sm hover:bg-white relative overflow-hidden">
-                  {/* Orange accent line */}
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 to-orange-400 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300"></div>
 
                   <CardHeader className="pb-4">
@@ -381,7 +379,7 @@ const Internships: React.FC = () => {
                       </div>
                       <Button
                         onClick={() => handleApplyClick(internship)}
-                        disabled={internship.spots_available <= 0} // Disable if no spots
+                        disabled={internship.spots_available <= 0}
                         className="md:self-start bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-300"
                       >
                         {internship.spots_available <= 0 ? "No Spots Left" : "Apply Now"}
@@ -445,7 +443,6 @@ const Internships: React.FC = () => {
                     </div>
                   </CardContent>
 
-                  {/* Subtle background pattern */}
                   <div className="absolute -bottom-2 -right-2 w-20 h-20 bg-orange-400/5 rounded-full blur-xl group-hover:bg-orange-400/10 transition-all duration-300"></div>
                 </Card>
               ))}
@@ -466,7 +463,6 @@ const Internships: React.FC = () => {
 
       <Footer />
 
-      {/* Internship Application Modal */}
       <Dialog open={isApplyModalOpen} onOpenChange={setIsApplyModalOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -539,7 +535,7 @@ const Internships: React.FC = () => {
                 <Input
                   id="resume_url"
                   name="resume_url"
-                  type="url" // Use type="url" for better validation
+                  type="url"
                   value={applicationFormData.resume_url}
                   onChange={handleApplicationFormChange}
                   required
