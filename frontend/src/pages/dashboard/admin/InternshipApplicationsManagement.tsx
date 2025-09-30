@@ -1,9 +1,10 @@
 // src/pages/dashboard/admin/InternshipApplicationsManagement.tsx
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, ExternalLink, Mail, Phone, FileText, Calendar, Building, User } from 'lucide-react';
+import { Search, Filter, ExternalLink, Mail, Phone, FileText, Calendar, Building, User, AlertCircle } from 'lucide-react';
 import DataTable from '../../../components/admin/DataTable';
 import StatusBadge from '../../../components/admin/StatusBadge';
 import Modal from '../../../components/admin/Modal';
+import { useNavigate } from 'react-router-dom';
 
 interface InternshipApplication {
   id: string;
@@ -17,8 +18,45 @@ interface InternshipApplication {
   resume_url: string;
   cover_letter?: string;
   status: string;
-  submitted_at: string;
+  submitted_at: any; // Can be Firestore Timestamp or string
 }
+
+// Helper function to format dates - handles Firestore Timestamps
+const formatDate = (dateValue: any): string => {
+  if (!dateValue) return 'N/A';
+  
+  try {
+    // Handle Firestore Timestamp objects
+    if (dateValue._seconds || dateValue.seconds) {
+      const seconds = dateValue._seconds || dateValue.seconds;
+      const date = new Date(seconds * 1000);
+      return date.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    }
+    
+    // Handle ISO string or Date object
+    const date = new Date(dateValue);
+    if (!isNaN(date.getTime())) {
+      return date.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    }
+    
+    return String(dateValue);
+  } catch (error) {
+    console.error('Error formatting date:', error);
+    return 'Invalid Date';
+  }
+};
 
 const InternshipApplicationsManagement: React.FC = () => {
   const [applications, setApplications] = useState<InternshipApplication[]>([]);
@@ -29,38 +67,99 @@ const InternshipApplicationsManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [updating, setUpdating] = useState(false);
+  const [authError, setAuthError] = useState(false);
+  
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchApplications();
   }, []);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+    const userString = localStorage.getItem('user');
+    
+    if (!token) {
+      setAuthError(true);
+      setError('Authentication required. Please log in again.');
+      return null;
+    }
+
+    // Check if user is admin
+    try {
+      if (userString) {
+        const user = JSON.parse(userString);
+        if (user.role !== 'admin' && !user.isAdmin) {
+          setAuthError(true);
+          setError('Access denied. Admin privileges required.');
+          return null;
+        }
+      }
+    } catch (e) {
+      console.error('Error parsing user data:', e);
+    }
+
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    };
+  };
+
   const fetchApplications = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
+      setError(null);
+      setAuthError(false);
 
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      const headers = getAuthHeaders();
+      if (!headers) {
+        setLoading(false);
+        return;
       }
 
       const baseURL = 'http://localhost:5000';
+      console.log('Fetching applications from:', `${baseURL}/api/admin/internships/applications`);
       const response = await fetch(`${baseURL}/api/admin/internships/applications`, {
         method: 'GET',
         headers,
         credentials: 'include'
       });
+      
+      console.log('Response status:', response.status);
+      console.log('Response ok:', response.ok);
 
-      if (response.ok) {
-        const data = await response.json();
-        setApplications(data);
-      } else {
-        throw new Error('Failed to fetch applications');
+      if (response.status === 401 || response.status === 403) {
+        setAuthError(true);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Authentication failed. Please log in as admin.');
       }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
+        try {
+          const errorData = JSON.parse(errorText);
+          throw new Error(errorData.error || errorData.message || `Failed to fetch applications: ${response.statusText}`);
+        } catch (parseError) {
+          throw new Error(`Failed to fetch applications: ${response.status} ${response.statusText}. ${errorText}`);
+        }
+      }
+
+      const data = await response.json();
+      console.log('Fetched applications:', data);
+      setApplications(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      const errorMessage = err instanceof Error ? err.message : 'An error occurred';
+      setError(errorMessage);
+      console.error('Fetch applications error:', err);
+      
+      // If auth error, redirect to login after 3 seconds
+      if (authError) {
+        setTimeout(() => {
+          localStorage.clear();
+          navigate('/login');
+        }, 3000);
+      }
     } finally {
       setLoading(false);
     }
@@ -74,13 +173,12 @@ const InternshipApplicationsManagement: React.FC = () => {
   const handleUpdateStatus = async (applicationId: string, newStatus: string) => {
     try {
       setUpdating(true);
-      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
+      setError(null);
 
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
+      const headers = getAuthHeaders();
+      if (!headers) {
+        setUpdating(false);
+        return;
       }
 
       const baseURL = 'http://localhost:5000';
@@ -91,37 +189,33 @@ const InternshipApplicationsManagement: React.FC = () => {
         body: JSON.stringify({ status: newStatus })
       });
 
-      if (response.ok) {
-        // Update local state
-        setApplications(prev => 
-          prev.map(app => 
-            app.id === applicationId ? { ...app, status: newStatus } : app
-          )
-        );
-        
-        if (selectedApplication?.id === applicationId) {
-          setSelectedApplication(prev => prev ? { ...prev, status: newStatus } : null);
-        }
-      } else {
-        const errorData = await response.json();
+      if (response.status === 401 || response.status === 403) {
+        setAuthError(true);
+        throw new Error('Authentication failed. Please log in as admin.');
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to update status');
       }
+
+      // Update local state
+      setApplications(prev => 
+        prev.map(app => 
+          app.id === applicationId ? { ...app, status: newStatus } : app
+        )
+      );
+      
+      if (selectedApplication?.id === applicationId) {
+        setSelectedApplication(prev => prev ? { ...prev, status: newStatus } : null);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update status');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update status';
+      setError(errorMessage);
+      console.error('Update status error:', err);
     } finally {
       setUpdating(false);
     }
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-IN', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
   };
 
   const getStatusColor = (status: string) => {
@@ -225,18 +319,27 @@ const InternshipApplicationsManagement: React.FC = () => {
       )}
 
       {error && (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6">
+        <div className={`${authError ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'} border rounded-lg p-6`}>
           <div className="flex items-center mb-4">
-            <span className="text-red-500 mr-2">⚠️</span>
-            <h3 className="text-lg font-semibold text-red-700 dark:text-red-300">Error Loading Applications</h3>
+            <AlertCircle className={`mr-2 ${authError ? 'text-yellow-500' : 'text-red-500'}`} size={24} />
+            <h3 className={`text-lg font-semibold ${authError ? 'text-yellow-700 dark:text-yellow-300' : 'text-red-700 dark:text-red-300'}`}>
+              {authError ? 'Access Denied' : 'Error Loading Applications'}
+            </h3>
           </div>
-          <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
-          <button
-            onClick={fetchApplications}
-            className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
-          >
-            Retry
-          </button>
+          <p className={`${authError ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-600 dark:text-red-400'} mb-4`}>{error}</p>
+          {authError ? (
+            <div className="text-sm text-yellow-600 dark:text-yellow-400">
+              <p className="mb-2">Redirecting to login page...</p>
+              <p>Please ensure you're logged in with an admin account.</p>
+            </div>
+          ) : (
+            <button
+              onClick={fetchApplications}
+              className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
+            >
+              Retry
+            </button>
+          )}
         </div>
       )}
 
@@ -390,7 +493,7 @@ const InternshipApplicationsManagement: React.FC = () => {
             {/* Status Update */}
             <div className="border-t pt-4">
               <label className="text-sm text-gray-600 dark:text-gray-400 block mb-2">Update Status</label>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <button
                   onClick={() => handleUpdateStatus(selectedApplication.id, 'pending')}
                   disabled={updating || selectedApplication.status === 'pending'}

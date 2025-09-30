@@ -16,8 +16,6 @@ import {
   Users,
   Award,
   Building,
-  Mail,
-  FileText,
   AlertCircle,
   Check,
   X,
@@ -28,23 +26,36 @@ import { useNavigate } from 'react-router-dom';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "../hooks/use-auth";
 
-// Import useAuth and the User interface from your auth hook
-import { useAuth, User } from "../hooks/use-auth"; // Adjust path as needed, ensure User is imported
-
-// Helper function for date formatting (no change)
-const formatDateForDisplay = (dateString?: string | Date) => {
-  if (!dateString) return 'N/A';
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) {
-    const parts = String(dateString).match(/(\d{4})-(\d{2})-(\d{2})T/);
-    if (parts) {
-      const parsedDate = new Date(`${parts[1]}-${parts[2]}-${parts[3]}`);
-      if (!isNaN(parsedDate.getTime())) {
-        return parsedDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-      }
+// Helper function for date formatting - handles Firestore Timestamps
+const formatDateForDisplay = (dateValue: any): string => {
+  if (!dateValue) return 'N/A';
+  
+  try {
+    // Handle Firestore Timestamp objects (most common from backend)
+    if (dateValue._seconds || dateValue.seconds) {
+      const seconds = dateValue._seconds || dateValue.seconds;
+      const date = new Date(seconds * 1000);
+      return date.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
     }
-    const customParts = String(dateString).match(/(\d{2}) (\w{3}) (\d{4})/);
+    
+    // Handle ISO string format
+    const date = new Date(dateValue);
+    if (!isNaN(date.getTime())) {
+      return date.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
+    }
+    
+    // Fallback for custom "DD Mon YYYY" format
+    const customParts = String(dateValue).match(/(\d{2}) (\w{3}) (\d{4})/);
     if (customParts) {
       const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
       const monthIndex = monthNames.findIndex(m => m === customParts[2]);
@@ -52,20 +63,23 @@ const formatDateForDisplay = (dateString?: string | Date) => {
         const isoDateCandidate = `${customParts[3]}-${(monthIndex + 1).toString().padStart(2, '0')}-${customParts[1]}`;
         const reParsedDate = new Date(isoDateCandidate);
         if (!isNaN(reParsedDate.getTime())) {
-          return reParsedDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+          return reParsedDate.toLocaleDateString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+          });
         }
       }
     }
-    return String(dateString);
+    
+    return String(dateValue);
+  } catch (error) {
+    console.error('Error formatting date:', error, dateValue);
+    return 'Invalid Date';
   }
-  return date.toLocaleDateString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
 };
 
-// Define Internship interface (no change)
+// Define Internship interface
 interface Internship {
   id: number;
   title: string;
@@ -77,12 +91,12 @@ interface Internship {
   description: string;
   requirements: string[];
   benefits: string[];
-  posted_at: string;
+  posted_at: any; // Can be Firestore Timestamp, ISO string, or Date object
   applications_count: number;
   spots_available: number;
 }
 
-// Define Internship Submission form data structure (no change)
+// Define Internship Submission form data structure
 interface InternshipApplicationFormData {
   full_name: string;
   email: string;
@@ -90,8 +104,6 @@ interface InternshipApplicationFormData {
   resume_url: string;
   cover_letter: string;
 }
-
-// REMOVED: No need for a local User interface, import from use-auth
 
 const Interns: React.FC = () => {
   const [internships, setInternships] = useState<Internship[]>([]);
@@ -102,7 +114,6 @@ const Interns: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState("all");
   const [levelFilter, setLevelFilter] = useState("all");
 
-  // --- Pagination State ---
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 3;
 
@@ -119,12 +130,8 @@ const Interns: React.FC = () => {
   const [applicationMessage, setApplicationMessage] = useState<string>('');
 
   const navigate = useNavigate();
+  const { user, token, isAuthenticated } = useAuth();
 
-  // --- Use Auth Hook ---
-  // Get user, token, and isAuthenticated directly from your AuthContext
-  const { user, token, isAuthenticated } = useAuth(); // 'token' is now provided by useAuth!
-
-  // --- Data Fetching Effect (no change) ---
   useEffect(() => {
     const fetchInternships = async () => {
       setLoading(true);
@@ -146,12 +153,9 @@ const Interns: React.FC = () => {
     fetchInternships();
   }, []);
 
-  // --- Pre-fill Application Form Effect ---
-  // Now dependent on isApplyModalOpen AND user (from AuthContext)
   useEffect(() => {
     if (isApplyModalOpen) {
-      if (user) { // Use the user object from useAuth directly
-        // Combine firstName and lastName for full_name
+      if (user) {
         setApplicationFormData(prev => ({
           ...prev,
           full_name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
@@ -159,32 +163,26 @@ const Interns: React.FC = () => {
         }));
       }
     } else {
-      // Reset form data when modal closes
       setApplicationFormData({ full_name: '', email: '', phone: '', resume_url: '', cover_letter: '' });
-      setApplicationStatus('idle'); // Also reset status
-      setApplicationMessage(''); // Clear message
+      setApplicationStatus('idle');
+      setApplicationMessage('');
     }
-  }, [isApplyModalOpen, user]); // Add 'user' to dependency array
+  }, [isApplyModalOpen, user]);
 
-  // --- Handle Apply Button Click ---
   const handleApplyClick = useCallback((internship: Internship) => {
     setSelectedInternship(internship);
     setIsApplyModalOpen(true);
     console.log("handleApplyClick: Opening application modal for internship ID:", internship.id);
   }, []);
 
-  // --- Handle Application Form Input Changes (no change) ---
   const handleApplicationFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setApplicationFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // --- Handle Application Form Submission ---
   const handleApplicationSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Now, rely on the 'user' and 'token' states from useAuth
-    // isAuthenticated already checks for both user and token
     if (!selectedInternship || !isAuthenticated || !user || !user.id || !token) {
       setApplicationStatus('error');
       setApplicationMessage('You must be logged in to submit an application. Please log in first.');
@@ -198,7 +196,7 @@ const Interns: React.FC = () => {
     try {
       const submissionPayload = {
         internship_id: selectedInternship.id,
-        user_id: user.id, // User ID from useAuth context
+        user_id: user.id,
         full_name: applicationFormData.full_name,
         email: applicationFormData.email,
         phone: applicationFormData.phone,
@@ -212,7 +210,7 @@ const Interns: React.FC = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` // Use token from useAuth context
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(submissionPayload)
       });
@@ -228,7 +226,6 @@ const Interns: React.FC = () => {
       setApplicationMessage(result.message || 'Application submitted successfully!');
       console.log("handleApplicationSubmit: Application submitted successfully:", result);
 
-      // Optimistically update UI
       setInternships(prevInternships =>
         prevInternships.map(int =>
           int.id === selectedInternship.id
@@ -248,7 +245,6 @@ const Interns: React.FC = () => {
     }
   };
 
-  // --- Filtering Logic (no change) ---
   const filteredInternships = internships.filter(internship => {
     const matchesSearch = internship.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          internship.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -262,17 +258,14 @@ const Interns: React.FC = () => {
     return matchesSearch && matchesLocation && matchesType && matchesLevel;
   });
 
-  // --- Pagination Calculations (no change) ---
   const totalPages = Math.ceil(filteredInternships.length / itemsPerPage);
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentInternships = filteredInternships.slice(indexOfFirstItem, indexOfLastItem);
 
-  // --- Reset current page when filters change (no change) ---
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, locationFilter, typeFilter, levelFilter]);
-
 
   const paginate = (pageNumber: number) => setCurrentPage(pageNumber);
 
@@ -312,12 +305,8 @@ const Interns: React.FC = () => {
     return pageNumbers;
   };
 
-  // isAuthenticated is directly from useAuth, which considers both user and token
-  // No need for a separate isAuthenticatedForForm variable if isAuthenticated from useAuth is robust
-
   return (
     <div className="min-h-screen flex flex-col">
-
       <section className="py-20 flex-grow bg-gradient-to-br from-orange-50/30 via-background to-orange-100/20">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           {loading && (
@@ -327,7 +316,6 @@ const Interns: React.FC = () => {
             </div>
           )}
 
-          {/* Search and Filters */}
           <div className="max-w-4xl mx-auto">
             <div className="grid md:grid-cols-4 gap-4 mb-8">
               <div className="relative">
@@ -389,7 +377,6 @@ const Interns: React.FC = () => {
                 <div className="space-y-6">
                   {currentInternships.map((internship) => (
                     <Card key={internship.id} className="group hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-0 bg-background/90 backdrop-blur-sm hover:bg-white relative overflow-hidden">
-                      {/* Orange accent line */}
                       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 to-orange-400 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300"></div>
 
                       <CardHeader className="pb-4">
@@ -488,12 +475,10 @@ const Interns: React.FC = () => {
                         </div>
                       </CardContent>
 
-                      {/* Subtle background pattern */}
                       <div className="absolute -bottom-2 -right-2 w-20 h-20 bg-orange-400/5 rounded-full blur-xl group-hover:bg-orange-400/10 transition-all duration-300"></div>
                     </Card>
                   ))}
 
-                  {/* Pagination Controls */}
                   {totalPages > 1 && (
                     <div className="flex justify-center items-center gap-2 mt-8">
                       <Button
@@ -532,26 +517,24 @@ const Interns: React.FC = () => {
         </div>
       </section>
 
-      {/* Internship Application Modal */}
       <Dialog open={isApplyModalOpen} onOpenChange={setIsApplyModalOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Apply for {selectedInternship?.title}</DialogTitle>
             <DialogDescription>
-              {isAuthenticated // Use isAuthenticated directly from useAuth
+              {isAuthenticated
                 ? `Fill out the form below to submit your application for the internship at ${selectedInternship?.company}.`
                 : "You need to be logged in to apply for an internship."
               }
             </DialogDescription>
           </DialogHeader>
 
-          {!isAuthenticated ? ( // Use isAuthenticated directly from useAuth
-            // Display message and login button if not authenticated
+          {!isAuthenticated ? (
             <div className="text-center py-6">
               <AlertCircle className="w-12 h-12 mx-auto mb-3 text-orange-500" />
               <p className="text-lg font-semibold mb-4">Please log in to submit your application.</p>
               <Button onClick={() => {
-                setIsApplyModalOpen(false); // Close modal before navigating
+                setIsApplyModalOpen(false);
                 navigate('/login');
               }} className="bg-orange-500 hover:bg-orange-600 text-white">
                 Go to Login
@@ -575,12 +558,9 @@ const Interns: React.FC = () => {
               <Button onClick={() => setApplicationStatus('idle')} className="mt-4">Try Again</Button>
             </div>
           ) : (
-            // Display the actual form if authenticated and no success/error state
             <form onSubmit={handleApplicationSubmit} className="grid gap-4 py-4">
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="full_name" className="text-right">
-                  Full Name
-                </Label>
+                <Label htmlFor="full_name" className="text-right">Full Name</Label>
                 <Input
                   id="full_name"
                   name="full_name"
@@ -588,13 +568,11 @@ const Interns: React.FC = () => {
                   onChange={handleApplicationFormChange}
                   required
                   className="col-span-3"
-                  disabled={applicationStatus === 'submitting'} // Disable during submission
+                  disabled={applicationStatus === 'submitting'}
                 />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="email" className="text-right">
-                  Email
-                </Label>
+                <Label htmlFor="email" className="text-right">Email</Label>
                 <Input
                   id="email"
                   name="email"
@@ -607,9 +585,7 @@ const Interns: React.FC = () => {
                 />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="phone" className="text-right">
-                  Phone
-                </Label>
+                <Label htmlFor="phone" className="text-right">Phone</Label>
                 <Input
                   id="phone"
                   name="phone"
@@ -622,9 +598,7 @@ const Interns: React.FC = () => {
                 />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="resume_url" className="text-right">
-                  Resume Link
-                </Label>
+                <Label htmlFor="resume_url" className="text-right">Resume Link</Label>
                 <Input
                   id="resume_url"
                   name="resume_url"
@@ -638,9 +612,7 @@ const Interns: React.FC = () => {
                 />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="cover_letter" className="text-right">
-                  Cover Letter
-                </Label>
+                <Label htmlFor="cover_letter" className="text-right">Cover Letter</Label>
                 <Textarea
                   id="cover_letter"
                   name="cover_letter"

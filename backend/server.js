@@ -3113,6 +3113,54 @@ app.delete('/api/admin/internships/:id', authenticateToken, async (req, res) => 
   }
 });
 
+// GET /api/admin/internships/applications - Get all internship applications across all internships
+app.get('/api/admin/internships/applications', authenticateToken, async (req, res) => {
+  try {
+    const applicationsSnap = await db.collection('internship_submissions')
+      .orderBy('submitted_at', 'desc')
+      .get();
+
+    const applications = [];
+    
+    for (const doc of applicationsSnap.docs) {
+      const app = doc.data();
+      
+      // Fetch internship details - handle case where internship may have been deleted
+      const internshipDoc = await db.collection('internships').doc(app.internship_id).get();
+      
+      let internshipTitle = 'Unknown';
+      let internshipCompany = 'Unknown';
+      
+      if (internshipDoc.exists) {
+        const internship = internshipDoc.data();
+        internshipTitle = internship?.title || 'Unknown';
+        internshipCompany = internship?.company || 'Unknown';
+      }
+
+      applications.push({
+        id: doc.id,
+        internship_id: app.internship_id,
+        internship_title: internshipTitle,
+        internship_company: internshipCompany,
+        user_id: app.user_id,
+        full_name: app.full_name,
+        email: app.email,
+        phone: app.phone,
+        resume_url: app.resume_url,
+        cover_letter: app.cover_letter,
+        status: app.status,
+        submitted_at: app.submitted_at
+      });
+    }
+
+    res.json(applications);
+  } catch (error) {
+    console.error('Error fetching all internship applications:', error);
+    res.status(500).json({ error: 'Internal server error while fetching applications.' });
+  }
+});
+
+
 // GET /api/admin/internships/:id/applications - Get all applications for a specific internship
 app.get('/api/admin/internships/:id/applications', authenticateToken, async (req, res) => {
   const { id } = req.params;
@@ -3185,44 +3233,6 @@ app.patch('/api/admin/internships/applications/:applicationId/status', authentic
   }
 });
 
-// GET /api/admin/internships/applications - Get all internship applications across all internships
-app.get('/api/admin/internships/applications', authenticateToken, async (req, res) => {
-  try {
-    const applicationsSnap = await db.collection('internship_submissions')
-      .orderBy('submitted_at', 'desc')
-      .get();
-
-    const applications = [];
-    
-    for (const doc of applicationsSnap.docs) {
-      const app = doc.data();
-      
-      // Fetch internship details
-      const internshipDoc = await db.collection('internships').doc(app.internship_id).get();
-      const internship = internshipDoc.exists ? internshipDoc.data() : null;
-
-      applications.push({
-        id: doc.id,
-        internship_id: app.internship_id,
-        internship_title: internship?.title || 'Unknown',
-        internship_company: internship?.company || 'Unknown',
-        user_id: app.user_id,
-        full_name: app.full_name,
-        email: app.email,
-        phone: app.phone,
-        resume_url: app.resume_url,
-        cover_letter: app.cover_letter,
-        status: app.status,
-        submitted_at: app.submitted_at
-      });
-    }
-
-    res.json(applications);
-  } catch (error) {
-    console.error('Error fetching all internship applications:', error);
-    res.status(500).json({ error: 'Internal server error while fetching applications.' });
-  }
-});
 
 // ==================== SERVICES ROUTES ====================
 
