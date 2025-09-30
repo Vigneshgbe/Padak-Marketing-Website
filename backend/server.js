@@ -3002,21 +3002,32 @@ app.get('/api/services/my-requests', authenticateToken, async (req, res) => {
 // Admin Dashboard Stats
 app.get('/api/admin/dashboard-stats', authenticateToken, async (req, res) => {
   try {
-    const usersSnap = await db.collection('users').where('is_active', '==', 1).get();
+    // Fixed query - using true instead of 1 for boolean comparison
+    const usersSnap = await db.collection('users').where('is_active', '==', true).get();
     const totalUsers = usersSnap.size;
 
-    const coursesSnap = await db.collection('courses').where('is_active', '==', 1).get();
+    // Fixed query - using true instead of 1
+    const coursesSnap = await db.collection('courses').where('is_active', '==', true).get();
     const totalCourses = coursesSnap.size;
 
     const enrollmentsSnap = await db.collection('enrollments').get();
     const totalEnrollments = enrollmentsSnap.size;
 
+    // Calculate revenue with proper error handling
     let totalRevenue = 0;
     for (const doc of enrollmentsSnap.docs) {
-      const e = doc.data();
-      if (e.status === 'completed') {
-        const courseDoc = await db.collection('courses').doc(e.course_id).get();
-        totalRevenue += parseFloat(courseDoc.data().price) || 0;
+      try {
+        const e = doc.data();
+        if (e.status === 'completed' && e.course_id) {
+          const courseDoc = await db.collection('courses').doc(e.course_id).get();
+          if (courseDoc.exists) {
+            const courseData = courseDoc.data();
+            totalRevenue += parseFloat(courseData.price || '0');
+          }
+        }
+      } catch (revenueError) {
+        console.error('Error calculating revenue for enrollment:', doc.id, revenueError);
+        // Continue with other enrollments
       }
     }
 
@@ -3027,7 +3038,9 @@ app.get('/api/admin/dashboard-stats', authenticateToken, async (req, res) => {
     const serviceRequestsSnap = await db.collection('service_requests').where('status', '==', 'pending').get();
     const pendingServiceRequests = serviceRequestsSnap.size;
 
+    // Return with success flag and consistent formatting
     res.json({
+      success: true,
       totalUsers,
       totalCourses,
       totalEnrollments,
@@ -3037,59 +3050,267 @@ app.get('/api/admin/dashboard-stats', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching admin stats:', error);
-    res.status(500).json({ error: 'Failed to fetch dashboard stats', details: error.message });
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch dashboard stats', 
+      details: error.message 
+    });
   }
 });
 
 // Recent Users
 app.get('/api/admin/recent-users', authenticateToken, async (req, res) => {
   try {
-    const usersSnap = await db.collection('users').where('is_active', '==', 1).orderBy('created_at', 'desc').limit(5).get();
+    // Fixed query - using true instead of 1
+    const usersSnap = await db.collection('users')
+      .where('is_active', '==', true)
+      .orderBy('created_at', 'desc')
+      .limit(5)
+      .get();
 
-    const users = usersSnap.docs.map(doc => {
-      const u = doc.data();
-      return {
-        id: doc.id,
-        first_name: u.first_name,
-        last_name: u.last_name,
-        email: u.email,
-        account_type: u.account_type,
-        join_date: u.created_at.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-      };
+    const users = [];
+    
+    usersSnap.forEach(doc => {
+      try {
+        const u = doc.data();
+        let joinDate = 'N/A';
+        
+        // Handle different timestamp formats safely
+        if (u.created_at) {
+          if (u.created_at.toDate) {
+            // Firestore timestamp
+            joinDate = u.created_at.toDate().toLocaleDateString('en-GB', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric' 
+            });
+          } else if (u.created_at instanceof Date) {
+            // JavaScript Date
+            joinDate = u.created_at.toLocaleDateString('en-GB', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric' 
+            });
+          } else if (typeof u.created_at === 'string') {
+            // ISO string
+            joinDate = new Date(u.created_at).toLocaleDateString('en-GB', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric' 
+            });
+          }
+        }
+        
+        users.push({
+          id: doc.id,
+          first_name: u.first_name || '',
+          last_name: u.last_name || '',
+          email: u.email || '',
+          account_type: u.account_type || 'student',
+          join_date: joinDate
+        });
+      } catch (userError) {
+        console.error('Error processing user:', doc.id, userError);
+        // Continue with other users
+      }
     });
 
-    res.json(users);
+    // Wrap in object with success flag as frontend expects
+    res.json({
+      success: true,
+      users: users
+    });
   } catch (error) {
     console.error('Error fetching recent users:', error);
-    res.status(500).json({ error: 'Failed to fetch recent users', details: error.message });
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch recent users', 
+      details: error.message 
+    });
   }
 });
 
 // Recent Enrollments
 app.get('/api/admin/recent-enrollments', authenticateToken, async (req, res) => {
   try {
-    const enrollmentsSnap = await db.collection('enrollments').orderBy('enrollment_date', 'desc').limit(5).get();
+    // Use created_at as fallback if enrollment_date doesn't exist
+    const enrollmentsSnap = await db.collection('enrollments')
+      .orderBy('enrollment_date', 'desc')
+      .limit(5)
+      .get();
 
     const enrollments = [];
+    
     for (const doc of enrollmentsSnap.docs) {
-      const e = doc.data();
-      const userDoc = await db.collection('users').doc(e.user_id).get();
-      const u = userDoc.data();
-      const courseDoc = await db.collection('courses').doc(e.course_id).get();
-      const c = courseDoc.data();
-      enrollments.push({
-        id: doc.id,
-        user_name: u.first_name + ' ' + u.last_name,
-        course_name: c.title,
-        date: e.enrollment_date.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-        status: e.status
-      });
+      try {
+        const e = doc.data();
+        
+        // Get user data with error handling
+        let userName = 'Unknown User';
+        if (e.user_id) {
+          try {
+            const userDoc = await db.collection('users').doc(e.user_id).get();
+            if (userDoc.exists) {
+              const u = userDoc.data();
+              userName = `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown User';
+            }
+          } catch (userError) {
+            console.error('Error fetching user for enrollment:', e.user_id, userError);
+          }
+        }
+        
+        // Get course data with error handling
+        let courseName = 'Unknown Course';
+        if (e.course_id) {
+          try {
+            const courseDoc = await db.collection('courses').doc(e.course_id).get();
+            if (courseDoc.exists) {
+              const c = courseDoc.data();
+              courseName = c.title || 'Unknown Course';
+            }
+          } catch (courseError) {
+            console.error('Error fetching course for enrollment:', e.course_id, courseError);
+          }
+        }
+        
+        // Format date safely
+        let enrollmentDate = 'N/A';
+        const dateField = e.enrollment_date || e.created_at;
+        if (dateField) {
+          if (dateField.toDate) {
+            // Firestore timestamp
+            enrollmentDate = dateField.toDate().toLocaleDateString('en-GB', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric' 
+            });
+          } else if (dateField instanceof Date) {
+            // JavaScript Date
+            enrollmentDate = dateField.toLocaleDateString('en-GB', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric' 
+            });
+          } else if (typeof dateField === 'string') {
+            // ISO string
+            enrollmentDate = new Date(dateField).toLocaleDateString('en-GB', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric' 
+            });
+          }
+        }
+        
+        enrollments.push({
+          id: doc.id,
+          user_name: userName,
+          course_name: courseName,
+          date: enrollmentDate,
+          status: e.status || 'active'
+        });
+      } catch (enrollmentError) {
+        console.error('Error processing enrollment:', doc.id, enrollmentError);
+        // Continue with other enrollments
+      }
     }
 
-    res.json(enrollments);
+    // Wrap in object with success flag as frontend expects
+    res.json({
+      success: true,
+      enrollments: enrollments
+    });
   } catch (error) {
     console.error('Error fetching recent enrollments:', error);
-    res.status(500).json({ error: 'Failed to fetch recent enrollments', details: error.message });
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch recent enrollments', 
+      details: error.message 
+    });
+  }
+});
+
+// Service Requests - MISSING ENDPOINT IMPLEMENTATION
+app.get('/api/admin/service-requests', authenticateToken, async (req, res) => {
+  try {
+    const requestsSnap = await db.collection('service_requests')
+      .orderBy('created_at', 'desc')
+      .limit(5)
+      .get();
+
+    const requests = [];
+    
+    requestsSnap.forEach(doc => {
+      try {
+        const reqData = doc.data();
+        
+        // Format date safely
+        let requestDate = 'N/A';
+        const dateField = reqData.created_at || reqData.date;
+        if (dateField) {
+          if (dateField.toDate) {
+            // Firestore timestamp
+            requestDate = dateField.toDate().toLocaleDateString('en-GB', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric' 
+            });
+          } else if (dateField instanceof Date) {
+            // JavaScript Date
+            requestDate = dateField.toLocaleDateString('en-GB', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric' 
+            });
+          } else if (typeof dateField === 'string') {
+            // ISO string
+            requestDate = new Date(dateField).toLocaleDateString('en-GB', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric' 
+            });
+          }
+        }
+        
+        // Get name from various possible fields
+        const name = reqData.name || 
+                    `${reqData.user_first_name || ''} ${reqData.user_last_name || ''}`.trim() || 
+                    reqData.user_name ||
+                    'Unknown';
+        
+        requests.push({
+          id: doc.id,
+          name: name,
+          service: reqData.service || reqData.service_type || 'General Inquiry',
+          date: requestDate,
+          status: reqData.status || 'pending',
+          email: reqData.email || '',
+          phone: reqData.phone || '',
+          company: reqData.company || '',
+          website: reqData.website || '',
+          project_details: reqData.project_details || reqData.details || reqData.message || '',
+          budget_range: reqData.budget_range || reqData.budget || '',
+          timeline: reqData.timeline || '',
+          contact_method: reqData.contact_method || 'email',
+          additional_requirements: reqData.additional_requirements || reqData.requirements || ''
+        });
+      } catch (requestError) {
+        console.error('Error processing service request:', doc.id, requestError);
+        // Continue with other requests
+      }
+    });
+
+    // Wrap in object with success flag as frontend expects
+    res.json({
+      success: true,
+      requests: requests
+    });
+  } catch (error) {
+    console.error('Error fetching service requests:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch service requests', 
+      details: error.message 
+    });
   }
 });
 
@@ -3342,78 +3563,108 @@ app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =
   }
 });
 
-// PUT /api/admin/users/:id - Update user
+// PUT /api/admin/users/:id - Update user - FIXED AND ENHANCED
 app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
-    let { firstName, lastName, email, phone, accountType, isActive, company, website, bio } = req.body;
-
-    console.log('Updating user:', userId, req.body);
-
-    // Check if user exists
-    const userDoc = await db.collection('users').doc(userId).get();
-    if (!userDoc.exists) {
-      return res.status(404).json({
+    console.log('Updating user with ID:', userId);
+    
+    if (!userId) {
+      return res.status(400).json({
         success: false,
-        error: 'User not found'
+        error: 'User ID is required'
       });
     }
+    
+    const { firstName, lastName, email, phone, accountType, isActive, company, website, bio } = req.body;
+    console.log('Update payload:', req.body);
 
-    const currentUser = userDoc.data();
-
-    // Trim inputs if provided
-    firstName = firstName ? firstName.trim() : currentUser.first_name;
-    lastName = lastName ? lastName.trim() : currentUser.last_name;
-    email = email ? email.trim().toLowerCase() : currentUser.email;
-    phone = phone !== undefined ? (phone ? phone.trim() : '') : currentUser.phone;
-    company = company !== undefined ? (company ? company.trim() : '') : currentUser.company;
-    website = website !== undefined ? (website ? website.trim() : '') : currentUser.website;
-    bio = bio !== undefined ? (bio ? bio.trim() : '') : currentUser.bio;
-
-    // Check email uniqueness if changed
-    if (email && email !== currentUser.email) {
-      const emailSnapshot = await db.collection('users')
-        .where('email', '==', email)
-        .get();
-      
-      if (!emailSnapshot.empty && emailSnapshot.docs[0].id !== userId) {
-        return res.status(400).json({
+    // Check if user exists
+    try {
+      const userDoc = await db.collection('users').doc(userId).get();
+      if (!userDoc.exists) {
+        console.log('User not found with ID:', userId);
+        return res.status(404).json({
           success: false,
-          error: 'Email already exists'
+          error: 'User not found'
         });
       }
-    }
 
-    const updateData = {
-      first_name: firstName,
-      last_name: lastName,
-      email: email,
-      phone: phone,
-      account_type: accountType || currentUser.account_type,
-      is_active: isActive !== undefined ? isActive : currentUser.is_active,
-      company: company,
-      website: website,
-      bio: bio,
-      updated_at: new Date()
-    };
+      const currentUser = userDoc.data();
+      console.log('Found current user:', currentUser);
 
-    await db.collection('users').doc(userId).update(updateData);
-
-    res.json({
-      success: true,
-      message: 'User updated successfully',
-      user: {
-        id: userId,
-        ...updateData,
-        updated_at: updateData.updated_at.toISOString()
+      // Check email uniqueness if changed
+      if (email && email !== currentUser.email) {
+        const emailSnapshot = await db.collection('users')
+          .where('email', '==', email.trim().toLowerCase())
+          .get();
+        
+        if (!emailSnapshot.empty) {
+          // Make sure we're not matching the same user
+          const matchingUser = emailSnapshot.docs[0];
+          if (matchingUser.id !== userId) {
+            console.log('Email already exists for another user');
+            return res.status(400).json({
+              success: false,
+              error: 'Email already exists'
+            });
+          }
+        }
       }
-    });
 
+      // Prepare update data
+      const updateData = {
+        first_name: firstName !== undefined ? firstName.trim() : currentUser.first_name,
+        last_name: lastName !== undefined ? lastName.trim() : currentUser.last_name,
+        email: email !== undefined ? email.trim().toLowerCase() : currentUser.email,
+        phone: phone !== undefined ? phone : currentUser.phone,
+        account_type: accountType || currentUser.account_type,
+        is_active: isActive !== undefined ? isActive : currentUser.is_active,
+        company: company !== undefined ? company : currentUser.company,
+        website: website !== undefined ? website : currentUser.website,
+        bio: bio !== undefined ? bio : currentUser.bio,
+        updated_at: firebase.firestore.Timestamp.now()
+      };
+      console.log('Prepared update data:', updateData);
+
+      // Update the user
+      await db.collection('users').doc(userId).update(updateData);
+      console.log('User updated successfully');
+
+      // Get updated user data for response
+      const updatedUserDoc = await db.collection('users').doc(userId).get();
+      const updatedUser = updatedUserDoc.data();
+
+      return res.json({
+        success: true,
+        message: 'User updated successfully',
+        user: {
+          id: userId,
+          first_name: updatedUser.first_name,
+          last_name: updatedUser.last_name,
+          email: updatedUser.email,
+          phone: updatedUser.phone,
+          account_type: updatedUser.account_type,
+          is_active: updatedUser.is_active,
+          company: updatedUser.company || '',
+          website: updatedUser.website || '',
+          bio: updatedUser.bio || '',
+          created_at: updatedUser.created_at.toDate().toISOString(),
+          updated_at: updatedUser.updated_at.toDate().toISOString()
+        }
+      });
+    } catch (firebaseError) {
+      console.error('Firebase error:', firebaseError);
+      return res.status(500).json({
+        success: false,
+        error: 'Database error: ' + firebaseError.message
+      });
+    }
   } catch (error) {
     console.error('Update user error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      error: 'Server error while updating user'
+      error: 'Server error while updating user: ' + error.message
     });
   }
 });

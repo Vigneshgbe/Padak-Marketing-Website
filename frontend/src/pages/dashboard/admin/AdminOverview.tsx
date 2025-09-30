@@ -1,6 +1,5 @@
-// src/pages/dashboard/admin/AdminOverview.tsx
 import React, { useState, useEffect } from 'react';
-import { Users, BookOpen, UserCheck, BarChart, PlusCircle, MessageSquare, GraduationCap, ChevronRight, RefreshCw, AlertCircle } from 'lucide-react';
+import { Users, BookOpen, UserCheck, BarChart, MessageSquare, ChevronRight, RefreshCw, AlertCircle } from 'lucide-react';
 import StatCard from '../../../components/dashboard/common/StatCard';
 import { DashboardStats, RecentUser, RecentEnrollment, ServiceRequest } from '../../../lib/admin-types';
 
@@ -21,6 +20,46 @@ const AdminOverview: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Helper function to get authentication headers
+  const getAuthHeaders = (): HeadersInit => {
+    const token = localStorage.getItem('token') || 
+                 localStorage.getItem('authToken') || 
+                 sessionStorage.getItem('token');
+                 
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json'
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    } else {
+      console.warn('No authentication token found');
+    }
+
+    return headers;
+  };
+
+  // Helper function to safely parse JSON responses
+  const safelyParseJson = async (response: Response, endpoint: string): Promise<any> => {
+    try {
+      const text = await response.text();
+      
+      if (!text) {
+        throw new Error(`Empty response from ${endpoint}`);
+      }
+      
+      try {
+        return JSON.parse(text);
+      } catch (parseError) {
+        console.error(`Failed to parse response from ${endpoint}:`, text.substring(0, 100));
+        throw new Error(`Invalid JSON response from ${endpoint}`);
+      }
+    } catch (error) {
+      console.error(`Error handling response from ${endpoint}:`, error);
+      throw error;
+    }
+  };
+
   const fetchDashboardData = async (isRefresh = false) => {
     try {
       if (!isRefresh) {
@@ -30,124 +69,158 @@ const AdminOverview: React.FC = () => {
       }
       setError(null);
 
-      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
+      const headers = getAuthHeaders();
       const baseURL = window.location.origin;
 
       // Fetch dashboard stats
-      const statsResponse = await fetch(`${baseURL}/api/admin/dashboard-stats`, {
-        method: 'GET',
-        headers,
-        credentials: 'include'
-      });
+      try {
+        const statsResponse = await fetch(`${baseURL}/api/admin/dashboard-stats`, {
+          method: 'GET',
+          headers,
+          credentials: 'include'
+        });
 
-      if (!statsResponse.ok) {
-        throw new Error(`Failed to fetch dashboard stats: ${statsResponse.status}`);
+        if (!statsResponse.ok) {
+          throw new Error(`Failed to fetch dashboard stats: ${statsResponse.status}`);
+        }
+
+        const statsData = await safelyParseJson(statsResponse, 'dashboard-stats');
+        
+        // Format revenue with Indian currency
+        const formattedRevenue = new Intl.NumberFormat('en-IN', {
+          style: 'currency',
+          currency: 'INR',
+          maximumFractionDigits: 0
+        }).format(statsData.totalRevenue || 0);
+
+        setAdminStats({
+          totalUsers: statsData.totalUsers || 0,
+          totalCourses: statsData.totalCourses || 0,
+          totalEnrollments: statsData.totalEnrollments || 0,
+          totalRevenue: formattedRevenue,
+          pendingContacts: statsData.pendingContacts || 0,
+          pendingServiceRequests: statsData.pendingServiceRequests || 0
+        });
+      } catch (statsError) {
+        console.error('Error fetching stats:', statsError);
+        // Don't reset stats on error, keep showing previous values
       }
 
-      const statsData = await statsResponse.json();
-      
-      // Format revenue with Indian currency
-      const formattedRevenue = new Intl.NumberFormat('en-IN', {
-        style: 'currency',
-        currency: 'INR',
-        maximumFractionDigits: 0
-      }).format(statsData.totalRevenue || 0);
-
-      setAdminStats({
-        totalUsers: statsData.totalUsers || 0,
-        totalCourses: statsData.totalCourses || 0,
-        totalEnrollments: statsData.totalEnrollments || 0,
-        totalRevenue: formattedRevenue,
-        pendingContacts: statsData.pendingContacts || 0,
-        pendingServiceRequests: statsData.pendingServiceRequests || 0
-      });
-
       // Fetch recent users
-      const usersResponse = await fetch(`${baseURL}/api/admin/recent-users`, {
-        method: 'GET',
-        headers,
-        credentials: 'include'
-      });
+      try {
+        const usersResponse = await fetch(`${baseURL}/api/admin/recent-users`, {
+          method: 'GET',
+          headers,
+          credentials: 'include'
+        });
 
-      if (usersResponse.ok) {
-        const usersData = await usersResponse.json();
-        setRecentUsers(usersData);
-      } else {
-        console.warn('Failed to fetch recent users');
-        setRecentUsers([]);
+        if (usersResponse.ok) {
+          const usersData = await safelyParseJson(usersResponse, 'recent-users');
+          
+          // Check if response contains users array
+          if (usersData.users && Array.isArray(usersData.users)) {
+            setRecentUsers(usersData.users);
+          } else if (Array.isArray(usersData)) {
+            // Fallback for legacy API format
+            setRecentUsers(usersData);
+          } else {
+            console.warn('Unexpected users data format:', usersData);
+            setRecentUsers([]);
+          }
+        } else {
+          console.warn('Failed to fetch recent users');
+          // Don't reset users on error, keep showing previous values
+        }
+      } catch (usersError) {
+        console.error('Error fetching users:', usersError);
+        // Don't reset users on error, keep showing previous values
       }
 
       // Fetch recent enrollments
-      const enrollmentsResponse = await fetch(`${baseURL}/api/admin/recent-enrollments`, {
-        method: 'GET',
-        headers,
-        credentials: 'include'
-      });
+      try {
+        const enrollmentsResponse = await fetch(`${baseURL}/api/admin/recent-enrollments`, {
+          method: 'GET',
+          headers,
+          credentials: 'include'
+        });
 
-      if (enrollmentsResponse.ok) {
-        const enrollmentsData = await enrollmentsResponse.json();
-        setRecentEnrollments(enrollmentsData);
-      } else {
-        console.warn('Failed to fetch recent enrollments');
-        setRecentEnrollments([]);
+        if (enrollmentsResponse.ok) {
+          const enrollmentsData = await safelyParseJson(enrollmentsResponse, 'recent-enrollments');
+          
+          // Check if response contains enrollments array
+          if (enrollmentsData.enrollments && Array.isArray(enrollmentsData.enrollments)) {
+            setRecentEnrollments(enrollmentsData.enrollments);
+          } else if (Array.isArray(enrollmentsData)) {
+            // Fallback for legacy API format
+            setRecentEnrollments(enrollmentsData);
+          } else {
+            console.warn('Unexpected enrollments data format:', enrollmentsData);
+            setRecentEnrollments([]);
+          }
+        } else {
+          console.warn('Failed to fetch recent enrollments');
+          // Don't reset enrollments on error, keep showing previous values
+        }
+      } catch (enrollmentsError) {
+        console.error('Error fetching enrollments:', enrollmentsError);
+        // Don't reset enrollments on error, keep showing previous values
       }
 
       // Fetch service requests
-      const serviceRequestsResponse = await fetch(`${baseURL}/api/admin/service-requests`, {
-        method: 'GET',
-        headers,
-        credentials: 'include'
-      });
+      try {
+        const serviceRequestsResponse = await fetch(`${baseURL}/api/admin/service-requests`, {
+          method: 'GET',
+          headers,
+          credentials: 'include'
+        });
 
-      if (serviceRequestsResponse.ok) {
-        const serviceRequestsData = await serviceRequestsResponse.json();
-        // Transform the data to match the ServiceRequest type
-        const transformedRequests = serviceRequestsData.map((request: any) => ({
-          id: request.id,
-          name: request.name || `${request.user_first_name} ${request.user_last_name}`,
-          service: request.service,
-          date: request.date,
-          status: request.status,
-          email: request.email,
-          phone: request.phone,
-          company: request.company,
-          website: request.website,
-          project_details: request.project_details,
-          budget_range: request.budget_range,
-          timeline: request.timeline,
-          contact_method: request.contact_method,
-          additional_requirements: request.additional_requirements
-        }));
-        setServiceRequests(transformedRequests);
-      } else {
-        console.warn('Failed to fetch service requests');
-        setServiceRequests([]);
+        if (serviceRequestsResponse.ok) {
+          const serviceRequestsData = await safelyParseJson(serviceRequestsResponse, 'service-requests');
+          
+          let requestsToProcess = [];
+          
+          // Check if response contains requests array
+          if (serviceRequestsData.requests && Array.isArray(serviceRequestsData.requests)) {
+            requestsToProcess = serviceRequestsData.requests;
+          } else if (Array.isArray(serviceRequestsData)) {
+            // Fallback for legacy API format
+            requestsToProcess = serviceRequestsData;
+          } else {
+            console.warn('Unexpected service requests data format:', serviceRequestsData);
+            requestsToProcess = [];
+          }
+          
+          // Transform the data to match the ServiceRequest type
+          const transformedRequests = requestsToProcess.map((request: any) => ({
+            id: request.id,
+            name: request.name || `${request.user_first_name || ''} ${request.user_last_name || ''}`.trim() || 'Unknown',
+            service: request.service || 'General Inquiry',
+            date: request.date || 'N/A',
+            status: request.status || 'pending',
+            email: request.email || '',
+            phone: request.phone || '',
+            company: request.company || '',
+            website: request.website || '',
+            project_details: request.project_details || '',
+            budget_range: request.budget_range || '',
+            timeline: request.timeline || '',
+            contact_method: request.contact_method || 'email',
+            additional_requirements: request.additional_requirements || ''
+          }));
+          
+          setServiceRequests(transformedRequests);
+        } else {
+          console.warn('Failed to fetch service requests');
+          // Don't reset service requests on error, keep showing previous values
+        }
+      } catch (requestsError) {
+        console.error('Error fetching service requests:', requestsError);
+        // Don't reset service requests on error, keep showing previous values
       }
 
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
       setError(error instanceof Error ? error.message : 'Failed to load dashboard data');
-      
-      // Reset all data on error
-      setAdminStats({
-        totalUsers: 0,
-        totalCourses: 0,
-        totalEnrollments: 0,
-        totalRevenue: "₹0",
-        pendingContacts: 0,
-        pendingServiceRequests: 0
-      });
-      setRecentUsers([]);
-      setRecentEnrollments([]);
-      setServiceRequests([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -263,14 +336,14 @@ const AdminOverview: React.FC = () => {
               recentUsers.map((user: RecentUser) => (
                 <div key={user.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                   <div>
-                    <p className="font-medium">{`${user.first_name} ${user.last_name}`}</p>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{user.email}</p>
+                    <p className="font-medium">{`${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unnamed User'}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{user.email || 'No email'}</p>
                   </div>
                   <div className="text-right">
                     <span className="inline-block px-2 py-1 text-xs rounded-full bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
-                      {user.account_type}
+                      {user.account_type || 'student'}
                     </span>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{user.join_date}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{user.join_date || 'N/A'}</p>
                   </div>
                 </div>
               ))
@@ -302,8 +375,8 @@ const AdminOverview: React.FC = () => {
               recentEnrollments.map((enrollment: RecentEnrollment) => (
                 <div key={enrollment.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                   <div>
-                    <p className="font-medium">{enrollment.user_name}</p>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{enrollment.course_name}</p>
+                    <p className="font-medium">{enrollment.user_name || 'Unknown User'}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{enrollment.course_name || 'Unknown Course'}</p>
                   </div>
                   <div className="text-right">
                     <span className={`inline-block px-2 py-1 text-xs rounded-full ${
@@ -313,9 +386,9 @@ const AdminOverview: React.FC = () => {
                         ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
                         : 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300'
                     }`}>
-                      {enrollment.status}
+                      {enrollment.status || 'pending'}
                     </span>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{enrollment.date}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{enrollment.date || 'N/A'}</p>
                   </div>
                 </div>
               ))
@@ -355,8 +428,8 @@ const AdminOverview: React.FC = () => {
             serviceRequests.map((request: ServiceRequest) => (
               <div key={request.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                 <div>
-                  <p className="font-medium">{request.name}</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">{request.service}</p>
+                  <p className="font-medium">{request.name || 'Unknown'}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">{request.service || 'General Inquiry'}</p>
                 </div>
                 <div className="text-right">
                   <span className={`inline-block px-2 py-1 text-xs rounded-full ${
@@ -366,9 +439,9 @@ const AdminOverview: React.FC = () => {
                       ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
                       : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
                   }`}>
-                    {request.status}
+                    {request.status || 'pending'}
                   </span>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{request.date}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{request.date || 'N/A'}</p>
                 </div>
               </div>
             ))
@@ -383,41 +456,6 @@ const AdminOverview: React.FC = () => {
           )}
         </div>
       </div>
-
-      {/* Quick Actions
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
-        <h2 className="text-xl font-bold mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <button
-            onClick={() => handleManagementClick('courses')}
-            className="p-4 bg-orange-50 dark:bg-gray-700 rounded-lg hover:bg-orange-100 dark:hover:bg-gray-600 transition-colors"
-          >
-            <PlusCircle size={24} className="text-orange-500 mx-auto mb-2" />
-            <p className="text-sm font-medium">Add Course</p>
-          </button>
-          <button
-            onClick={() => handleManagementClick('users')}
-            className="p-4 bg-orange-50 dark:bg-gray-700 rounded-lg hover:bg-orange-100 dark:hover:bg-gray-600 transition-colors"
-          >
-            <Users size={24} className="text-orange-500 mx-auto mb-2" />
-            <p className="text-sm font-medium">Manage Users</p>
-          </button>
-          <button
-            onClick={() => handleManagementClick('contacts')}
-            className="p-4 bg-orange-50 dark:bg-gray-700 rounded-lg hover:bg-orange-100 dark:hover:bg-gray-600 transition-colors"
-          >
-            <MessageSquare size={24} className="text-orange-500 mx-auto mb-2" />
-            <p className="text-sm font-medium">View Messages</p>
-          </button>
-          <button
-            onClick={() => handleManagementClick('assignments')}
-            className="p-4 bg-orange-50 dark:bg-gray-700 rounded-lg hover:bg-orange-100 dark:hover:bg-gray-600 transition-colors"
-          >
-            <GraduationCap size={24} className="text-orange-500 mx-auto mb-2" />
-            <p className="text-sm font-medium">Assignments</p>
-          </button>
-        </div>
-      </div> */}
       
     </div>
   );
