@@ -34,7 +34,7 @@ export const Team = () => {
   const teamMembers = [
     {
       name: "Thikilan P",
-      role: "CEO & Founder",
+      role: "Founder & CEO",
       bio: "Visionary entrepreneur and digital strategist, leading Padak with a mission to empower businesses and learners through cutting-edge marketing, design, and technology solutions. Passionate about innovation, growth, and building impactful digital experiences.",
       linkedin: "#",
       email: "padak.service@gmail.com",
@@ -42,7 +42,7 @@ export const Team = () => {
     },
     {
       name: "Vignesh G",
-      role: "Secretary",
+      role: "Co-Founder",
       bio: "Dedicated and detail-oriented professional ensuring smooth operations at Padak. Manages communications, schedules, and administrative tasks with precision, supporting the team’s mission to deliver excellence to clients and students.",
       linkedin: "https://www.linkedin.com/in/vigneshgbe/",
       email: "padak.service@gmail.com",
