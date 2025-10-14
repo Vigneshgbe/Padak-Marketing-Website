@@ -2,17 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Users, BookOpen, UserCheck, BarChart, MessageSquare, ChevronRight, RefreshCw, AlertCircle } from 'lucide-react';
 
 /**
- * AdminOverview Component - Fixed for port 5000 backend
+ * AdminOverview Component - Production Ready
  * 
- * Backend runs on: http://localhost:5000
- * Frontend runs on: http://localhost:8080 (or 3000)
- * 
- * API Endpoints:
- * - GET /api/admin/dashboard-stats
- * - GET /api/admin/recent-users
- * - GET /api/admin/recent-enrollments  
- * - GET /api/admin/service-requests
+ * Backend: http://localhost:5000
+ * Frontend: http://localhost:8080 (or 3000)
  */
+
+// ⚙️ CONFIGURATION - Change this for production
+const API_BASE_URL = 'http://localhost:5000';
 
 // StatCard Component
 const StatCard = ({ title, value, icon, color }) => (
@@ -122,9 +119,7 @@ const AdminOverview = () => {
       setError(null);
 
       const headers = getAuthHeaders();
-      
-      // ⚡ CRITICAL FIX: Backend runs on port 5000, not 8080
-      const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+      const baseURL = API_BASE_URL;
 
       console.log('🔍 Fetching dashboard data from:', baseURL);
       console.log('🔑 Token present:', !!headers['Authorization']);
