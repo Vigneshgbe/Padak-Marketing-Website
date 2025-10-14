@@ -2,13 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Users, BookOpen, UserCheck, BarChart, MessageSquare, ChevronRight, RefreshCw, AlertCircle } from 'lucide-react';
 
 /**
- * AdminOverview Component - Fully aligned with backend API
+ * AdminOverview Component - Fixed for port 5000 backend
  * 
- * Backend Endpoints:
- * - GET /api/admin/dashboard-stats -> { success: true, totalUsers, totalCourses, totalEnrollments, totalRevenue, pendingContacts, pendingServiceRequests }
- * - GET /api/admin/recent-users -> { success: true, users: [{id, first_name, last_name, email, account_type, join_date}] }
- * - GET /api/admin/recent-enrollments -> { success: true, enrollments: [{id, user_name, course_name, date, status}] }
- * - GET /api/admin/service-requests -> { success: true, requests: [{id, name, service, date, status, email, phone, ...}] }
+ * Backend runs on: http://localhost:5000
+ * Frontend runs on: http://localhost:8080 (or 3000)
+ * 
+ * API Endpoints:
+ * - GET /api/admin/dashboard-stats
+ * - GET /api/admin/recent-users
+ * - GET /api/admin/recent-enrollments  
+ * - GET /api/admin/service-requests
  */
 
 // StatCard Component
@@ -56,6 +59,8 @@ const AdminOverview = () => {
 
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
+    } else {
+      console.warn('⚠️ No authentication token found');
     }
 
     return headers;
@@ -66,21 +71,21 @@ const AdminOverview = () => {
     const contentType = response.headers.get('content-type');
     
     if (contentType && contentType.includes('text/html')) {
-      console.error(`Received HTML instead of JSON from ${endpoint}`);
+      console.error(`❌ Received HTML instead of JSON from ${endpoint}`);
       throw new Error(`Server returned HTML. Endpoint may not exist: ${endpoint}`);
     }
 
     const text = await response.text();
     
     if (!text || text.trim() === '') {
-      console.warn(`Empty response from ${endpoint}`);
+      console.warn(`⚠️ Empty response from ${endpoint}`);
       return { success: false };
     }
     
     try {
       return JSON.parse(text);
     } catch (parseError) {
-      console.error(`JSON parse error for ${endpoint}:`, text.substring(0, 200));
+      console.error(`❌ JSON parse error for ${endpoint}:`, text.substring(0, 200));
       throw new Error(`Invalid JSON from ${endpoint}: ${parseError.message}`);
     }
   };
@@ -100,7 +105,7 @@ const AdminOverview = () => {
     } catch (error) {
       clearTimeout(timeoutId);
       if (error.name === 'AbortError') {
-        throw new Error('Request timeout');
+        throw new Error('Request timeout - server may be down');
       }
       throw error;
     }
@@ -117,12 +122,16 @@ const AdminOverview = () => {
       setError(null);
 
       const headers = getAuthHeaders();
-      const baseURL = window.location.origin;
+      
+      // ⚡ CRITICAL FIX: Backend runs on port 5000, not 8080
+      const baseURL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
-      console.log('Fetching dashboard data from:', baseURL);
+      console.log('🔍 Fetching dashboard data from:', baseURL);
+      console.log('🔑 Token present:', !!headers['Authorization']);
 
       // 1. Fetch dashboard stats
       try {
+        console.log('📊 Fetching dashboard stats...');
         const statsResponse = await fetchWithTimeout(
           `${baseURL}/api/admin/dashboard-stats`,
           {
@@ -137,6 +146,7 @@ const AdminOverview = () => {
         }
 
         const statsData = await safelyParseJson(statsResponse, 'dashboard-stats');
+        console.log('📊 Stats data received:', statsData);
         
         if (statsData.success === false) {
           throw new Error(statsData.error || 'Failed to fetch stats');
@@ -159,14 +169,15 @@ const AdminOverview = () => {
           pendingServiceRequests: statsData.pendingServiceRequests || 0
         });
 
-        console.log('✓ Dashboard stats loaded successfully');
+        console.log('✅ Dashboard stats loaded successfully');
       } catch (statsError) {
-        console.error('Error fetching stats:', statsError);
+        console.error('❌ Error fetching stats:', statsError);
         setError(`Failed to load stats: ${statsError.message}`);
       }
 
       // 2. Fetch recent users
       try {
+        console.log('👥 Fetching recent users...');
         const usersResponse = await fetchWithTimeout(
           `${baseURL}/api/admin/recent-users`,
           {
@@ -178,26 +189,28 @@ const AdminOverview = () => {
 
         if (usersResponse.ok) {
           const usersData = await safelyParseJson(usersResponse, 'recent-users');
+          console.log('👥 Users data received:', usersData);
           
           if (usersData.success === false) {
-            console.warn('Recent users API returned success=false');
+            console.warn('⚠️ Recent users API returned success=false');
             setRecentUsers([]);
           } else {
             const usersList = usersData.users || [];
             setRecentUsers(Array.isArray(usersList) ? usersList : []);
-            console.log('✓ Recent users loaded:', usersList.length);
+            console.log('✅ Recent users loaded:', usersList.length);
           }
         } else {
-          console.warn('Failed to fetch recent users:', usersResponse.status);
+          console.warn('⚠️ Failed to fetch recent users:', usersResponse.status);
           setRecentUsers([]);
         }
       } catch (usersError) {
-        console.error('Error fetching users:', usersError);
+        console.error('❌ Error fetching users:', usersError);
         setRecentUsers([]);
       }
 
       // 3. Fetch recent enrollments
       try {
+        console.log('📚 Fetching recent enrollments...');
         const enrollmentsResponse = await fetchWithTimeout(
           `${baseURL}/api/admin/recent-enrollments`,
           {
@@ -209,26 +222,28 @@ const AdminOverview = () => {
 
         if (enrollmentsResponse.ok) {
           const enrollmentsData = await safelyParseJson(enrollmentsResponse, 'recent-enrollments');
+          console.log('📚 Enrollments data received:', enrollmentsData);
           
           if (enrollmentsData.success === false) {
-            console.warn('Recent enrollments API returned success=false');
+            console.warn('⚠️ Recent enrollments API returned success=false');
             setRecentEnrollments([]);
           } else {
             const enrollmentsList = enrollmentsData.enrollments || [];
             setRecentEnrollments(Array.isArray(enrollmentsList) ? enrollmentsList : []);
-            console.log('✓ Recent enrollments loaded:', enrollmentsList.length);
+            console.log('✅ Recent enrollments loaded:', enrollmentsList.length);
           }
         } else {
-          console.warn('Failed to fetch recent enrollments:', enrollmentsResponse.status);
+          console.warn('⚠️ Failed to fetch recent enrollments:', enrollmentsResponse.status);
           setRecentEnrollments([]);
         }
       } catch (enrollmentsError) {
-        console.error('Error fetching enrollments:', enrollmentsError);
+        console.error('❌ Error fetching enrollments:', enrollmentsError);
         setRecentEnrollments([]);
       }
 
       // 4. Fetch service requests
       try {
+        console.log('💼 Fetching service requests...');
         const serviceRequestsResponse = await fetchWithTimeout(
           `${baseURL}/api/admin/service-requests`,
           {
@@ -240,28 +255,29 @@ const AdminOverview = () => {
 
         if (serviceRequestsResponse.ok) {
           const serviceRequestsData = await safelyParseJson(serviceRequestsResponse, 'service-requests');
+          console.log('💼 Service requests data received:', serviceRequestsData);
           
           if (serviceRequestsData.success === false) {
-            console.warn('Service requests API returned success=false');
+            console.warn('⚠️ Service requests API returned success=false');
             setServiceRequests([]);
           } else {
             const requestsList = serviceRequestsData.requests || [];
             setServiceRequests(Array.isArray(requestsList) ? requestsList : []);
-            console.log('✓ Service requests loaded:', requestsList.length);
+            console.log('✅ Service requests loaded:', requestsList.length);
           }
         } else {
-          console.warn('Failed to fetch service requests:', serviceRequestsResponse.status);
+          console.warn('⚠️ Failed to fetch service requests:', serviceRequestsResponse.status);
           setServiceRequests([]);
         }
       } catch (requestsError) {
-        console.error('Error fetching service requests:', requestsError);
+        console.error('❌ Error fetching service requests:', requestsError);
         setServiceRequests([]);
       }
 
-      console.log('✓ All dashboard data loaded successfully');
+      console.log('🎉 All dashboard data loaded successfully');
 
     } catch (error) {
-      console.error('Error in fetchDashboardData:', error);
+      console.error('💥 Error in fetchDashboardData:', error);
       setError(error instanceof Error ? error.message : 'Failed to load dashboard data');
     } finally {
       setLoading(false);
@@ -276,12 +292,13 @@ const AdminOverview = () => {
 
   // Refresh handler
   const handleRefresh = () => {
+    console.log('🔄 Refreshing dashboard data...');
     fetchDashboardData(true);
   };
 
   // Navigation handler
   const handleManagementClick = (sectionId) => {
-    console.log(`Navigate to ${sectionId}`);
+    console.log(`🧭 Navigate to ${sectionId}`);
     window.dispatchEvent(new CustomEvent('admin-navigation', { 
       detail: { section: sectionId } 
     }));
@@ -290,8 +307,9 @@ const AdminOverview = () => {
   // Loading state
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+      <div className="flex flex-col items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mb-4"></div>
+        <p className="text-gray-600 dark:text-gray-400">Loading dashboard data...</p>
       </div>
     );
   }
@@ -319,13 +337,13 @@ const AdminOverview = () => {
               <AlertCircle size={20} className="text-red-500 mr-2 flex-shrink-0" />
               <div>
                 <h3 className="text-sm font-semibold text-red-800 dark:text-red-200">
-                  Failed to load some dashboard data
+                  Failed to load dashboard data
                 </h3>
                 <p className="text-sm text-red-600 dark:text-red-300 mt-1">
                   {error}
                 </p>
                 <p className="text-xs text-red-500 dark:text-red-400 mt-2">
-                  Make sure the backend server is running and all API endpoints are properly configured.
+                  Make sure backend server is running on port 5000 and you're logged in as admin.
                 </p>
               </div>
             </div>
