@@ -579,6 +579,11 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
 
 // ============== ENHANCED SOCIAL FEED FUNCTIONALITY ===============
 
+// =================================================================
+// ============== ENHANCED SOCIAL FEED FUNCTIONALITY ===============
+// =================================================================
+// Replace the existing social feed section in your server.js with this
+
 // --- Multer Configuration for Social Post Images ---
 const socialUploadDir = 'public/uploads/social';
 if (!fs.existsSync(socialUploadDir)) {
@@ -696,10 +701,20 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
     console.log(`User has ${connections.length} connections`);
 
     // Fetch all posts from social_activities collection
-    const allPostsSnap = await db.collection('social_activities')
-      .where('activity_type', '==', 'post')
-      .orderBy('created_at', 'desc')
-      .get();
+    // Note: If you get index errors, create the index in Firebase Console
+    let allPostsSnap;
+    try {
+      allPostsSnap = await db.collection('social_activities')
+        .where('activity_type', '==', 'post')
+        .orderBy('created_at', 'desc')
+        .get();
+    } catch (indexError) {
+      console.log('Index not found, fetching without orderBy:', indexError.message);
+      // Fallback: fetch without orderBy if index doesn't exist yet
+      allPostsSnap = await db.collection('social_activities')
+        .where('activity_type', '==', 'post')
+        .get();
+    }
 
     console.log(`Found ${allPostsSnap.size} total posts`);
 
@@ -720,6 +735,13 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
       if (isPublic || isConnectionPost || isPrivate) {
         visiblePosts.push({ id: postId, ...post });
       }
+    });
+
+    // Sort posts manually by created_at if orderBy wasn't used
+    visiblePosts.sort((a, b) => {
+      const dateA = a.created_at?.toDate ? a.created_at.toDate() : new Date(a.created_at || 0);
+      const dateB = b.created_at?.toDate ? b.created_at.toDate() : new Date(b.created_at || 0);
+      return dateB - dateA; // Descending order (newest first)
     });
 
     console.log(`${visiblePosts.length} posts visible to user`);
@@ -851,9 +873,15 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching posts:', error);
+    console.error('Error stack:', error.stack);
+    console.error('Error code:', error.code);
+    console.error('Error message:', error.message);
+    
     res.status(500).json({
       error: 'Failed to fetch posts.',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      message: error.message,
+      code: error.code,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
@@ -1303,6 +1331,10 @@ app.post('/api/posts/:id/share', authenticateToken, async (req, res) => {
     });
   }
 });
+
+// =================================================================
+// =================== END OF SOCIAL FEED SECTION ==================
+// =================================================================
 
 
 // ============ STUDENT DASHBOARD SPECIFIC ENDPOINTS  ====================
