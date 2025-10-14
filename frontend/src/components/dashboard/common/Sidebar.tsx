@@ -68,6 +68,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     const baseItems: NavItem[] = [
       { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
       { id: 'social', label: 'Social Feed', icon: <MessageSquare size={20} /> },
+      { id: 'courseslist', label: 'All Courses', icon: <BarChart size={20} /> },
       { id: 'courses', label: 'My Courses', icon: <BookOpen size={20} /> },
       { id: 'internships', label: 'Internships', icon: <Briefcase size={20} /> },
       { id: 'assignments', label: 'Assignments', icon: <ListChecks size={20} /> },

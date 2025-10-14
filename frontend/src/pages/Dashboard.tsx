@@ -36,6 +36,7 @@ import ResourceManagement from './dashboard/admin/ResourceManagement';
 import PaymentManagement from './dashboard/admin/PaymentManagement';
 import InternshipApplicationsManagement from './dashboard/admin/InternshipApplicationsManagement';
 import InternshipManagement from './dashboard/admin/InternshipManagement';
+import CoursesList from './CoursesList';
 
 const Dashboard: React.FC = () => {
   const { user, token, loading } = useAuth();
@@ -248,6 +249,8 @@ const Dashboard: React.FC = () => {
     switch (activeView) {
       case 'social':
         return <SocialFeed />;
+      case 'courseslist':
+        return <CoursesList />;
       case 'courses':
         return <MyCourses enrolledCourses={enrolledCourses} />;
       case 'internships':
