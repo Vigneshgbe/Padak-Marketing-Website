@@ -1,7 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Users, BookOpen, UserCheck, BarChart, MessageSquare, ChevronRight, RefreshCw, AlertCircle } from 'lucide-react';
 
-// StatCard Component (inline since we can't import)
+/**
+ * AdminOverview Component - Fully aligned with backend API
+ * 
+ * Backend Endpoints:
+ * - GET /api/admin/dashboard-stats -> { success: true, totalUsers, totalCourses, totalEnrollments, totalRevenue, pendingContacts, pendingServiceRequests }
+ * - GET /api/admin/recent-users -> { success: true, users: [{id, first_name, last_name, email, account_type, join_date}] }
+ * - GET /api/admin/recent-enrollments -> { success: true, enrollments: [{id, user_name, course_name, date, status}] }
+ * - GET /api/admin/service-requests -> { success: true, requests: [{id, name, service, date, status, email, phone, ...}] }
+ */
+
+// StatCard Component
 const StatCard = ({ title, value, icon, color }) => (
   <div className={`bg-gradient-to-br ${color} text-white rounded-xl shadow-lg p-6`}>
     <div className="flex items-center justify-between">
@@ -33,6 +43,7 @@ const AdminOverview = () => {
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Get authentication headers
   const getAuthHeaders = () => {
     const token = window.localStorage?.getItem('token') || 
                  window.localStorage?.getItem('authToken') || 
@@ -50,20 +61,20 @@ const AdminOverview = () => {
     return headers;
   };
 
+  // Safely parse JSON responses
   const safelyParseJson = async (response, endpoint) => {
     const contentType = response.headers.get('content-type');
     
-    // Check if response is HTML (error page)
     if (contentType && contentType.includes('text/html')) {
       console.error(`Received HTML instead of JSON from ${endpoint}`);
-      throw new Error(`Server returned HTML instead of JSON for ${endpoint}. This usually means the endpoint doesn't exist or there's a routing issue.`);
+      throw new Error(`Server returned HTML. Endpoint may not exist: ${endpoint}`);
     }
 
     const text = await response.text();
     
     if (!text || text.trim() === '') {
       console.warn(`Empty response from ${endpoint}`);
-      return { success: false, data: [] };
+      return { success: false };
     }
     
     try {
@@ -74,6 +85,7 @@ const AdminOverview = () => {
     }
   };
 
+  // Fetch with timeout
   const fetchWithTimeout = async (url, options, timeout = 10000) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -94,6 +106,7 @@ const AdminOverview = () => {
     }
   };
 
+  // Main data fetching function
   const fetchDashboardData = async (isRefresh = false) => {
     try {
       if (!isRefresh) {
@@ -108,7 +121,7 @@ const AdminOverview = () => {
 
       console.log('Fetching dashboard data from:', baseURL);
 
-      // Fetch dashboard stats
+      // 1. Fetch dashboard stats
       try {
         const statsResponse = await fetchWithTimeout(
           `${baseURL}/api/admin/dashboard-stats`,
@@ -120,16 +133,16 @@ const AdminOverview = () => {
         );
 
         if (!statsResponse.ok) {
-          console.error('Stats response not OK:', statsResponse.status, statsResponse.statusText);
           throw new Error(`HTTP ${statsResponse.status}: ${statsResponse.statusText}`);
         }
 
         const statsData = await safelyParseJson(statsResponse, 'dashboard-stats');
         
         if (statsData.success === false) {
-          console.error('Stats API returned success=false:', statsData);
+          throw new Error(statsData.error || 'Failed to fetch stats');
         }
         
+        // Parse revenue (backend returns as string)
         const revenue = parseFloat(statsData.totalRevenue || 0);
         const formattedRevenue = new Intl.NumberFormat('en-IN', {
           style: 'currency',
@@ -145,12 +158,14 @@ const AdminOverview = () => {
           pendingContacts: statsData.pendingContacts || 0,
           pendingServiceRequests: statsData.pendingServiceRequests || 0
         });
+
+        console.log('✓ Dashboard stats loaded successfully');
       } catch (statsError) {
         console.error('Error fetching stats:', statsError);
-        setError(`Stats: ${statsError.message}`);
+        setError(`Failed to load stats: ${statsError.message}`);
       }
 
-      // Fetch recent users
+      // 2. Fetch recent users
       try {
         const usersResponse = await fetchWithTimeout(
           `${baseURL}/api/admin/recent-users`,
@@ -164,20 +179,24 @@ const AdminOverview = () => {
         if (usersResponse.ok) {
           const usersData = await safelyParseJson(usersResponse, 'recent-users');
           
-          let usersList = [];
-          if (usersData.success !== false) {
-            usersList = usersData.users || usersData || [];
+          if (usersData.success === false) {
+            console.warn('Recent users API returned success=false');
+            setRecentUsers([]);
+          } else {
+            const usersList = usersData.users || [];
+            setRecentUsers(Array.isArray(usersList) ? usersList : []);
+            console.log('✓ Recent users loaded:', usersList.length);
           }
-          
-          setRecentUsers(Array.isArray(usersList) ? usersList : []);
         } else {
           console.warn('Failed to fetch recent users:', usersResponse.status);
+          setRecentUsers([]);
         }
       } catch (usersError) {
         console.error('Error fetching users:', usersError);
+        setRecentUsers([]);
       }
 
-      // Fetch recent enrollments
+      // 3. Fetch recent enrollments
       try {
         const enrollmentsResponse = await fetchWithTimeout(
           `${baseURL}/api/admin/recent-enrollments`,
@@ -191,20 +210,24 @@ const AdminOverview = () => {
         if (enrollmentsResponse.ok) {
           const enrollmentsData = await safelyParseJson(enrollmentsResponse, 'recent-enrollments');
           
-          let enrollmentsList = [];
-          if (enrollmentsData.success !== false) {
-            enrollmentsList = enrollmentsData.enrollments || enrollmentsData || [];
+          if (enrollmentsData.success === false) {
+            console.warn('Recent enrollments API returned success=false');
+            setRecentEnrollments([]);
+          } else {
+            const enrollmentsList = enrollmentsData.enrollments || [];
+            setRecentEnrollments(Array.isArray(enrollmentsList) ? enrollmentsList : []);
+            console.log('✓ Recent enrollments loaded:', enrollmentsList.length);
           }
-          
-          setRecentEnrollments(Array.isArray(enrollmentsList) ? enrollmentsList : []);
         } else {
           console.warn('Failed to fetch recent enrollments:', enrollmentsResponse.status);
+          setRecentEnrollments([]);
         }
       } catch (enrollmentsError) {
         console.error('Error fetching enrollments:', enrollmentsError);
+        setRecentEnrollments([]);
       }
 
-      // Fetch service requests
+      // 4. Fetch service requests
       try {
         const serviceRequestsResponse = await fetchWithTimeout(
           `${baseURL}/api/admin/service-requests`,
@@ -218,35 +241,24 @@ const AdminOverview = () => {
         if (serviceRequestsResponse.ok) {
           const serviceRequestsData = await safelyParseJson(serviceRequestsResponse, 'service-requests');
           
-          let requestsList = [];
-          if (serviceRequestsData.success !== false) {
-            requestsList = serviceRequestsData.requests || serviceRequestsData || [];
+          if (serviceRequestsData.success === false) {
+            console.warn('Service requests API returned success=false');
+            setServiceRequests([]);
+          } else {
+            const requestsList = serviceRequestsData.requests || [];
+            setServiceRequests(Array.isArray(requestsList) ? requestsList : []);
+            console.log('✓ Service requests loaded:', requestsList.length);
           }
-          
-          const transformedRequests = (Array.isArray(requestsList) ? requestsList : []).map((request) => ({
-            id: request.id,
-            name: request.name || `${request.user_first_name || ''} ${request.user_last_name || ''}`.trim() || 'Unknown',
-            service: request.service || 'General Inquiry',
-            date: request.date || 'N/A',
-            status: request.status || 'pending',
-            email: request.email || '',
-            phone: request.phone || '',
-            company: request.company || '',
-            website: request.website || '',
-            project_details: request.project_details || '',
-            budget_range: request.budget_range || '',
-            timeline: request.timeline || '',
-            contact_method: request.contact_method || 'email',
-            additional_requirements: request.additional_requirements || ''
-          }));
-          
-          setServiceRequests(transformedRequests);
         } else {
           console.warn('Failed to fetch service requests:', serviceRequestsResponse.status);
+          setServiceRequests([]);
         }
       } catch (requestsError) {
         console.error('Error fetching service requests:', requestsError);
+        setServiceRequests([]);
       }
+
+      console.log('✓ All dashboard data loaded successfully');
 
     } catch (error) {
       console.error('Error in fetchDashboardData:', error);
@@ -257,14 +269,17 @@ const AdminOverview = () => {
     }
   };
 
+  // Load data on mount
   useEffect(() => {
     fetchDashboardData();
   }, []);
 
+  // Refresh handler
   const handleRefresh = () => {
     fetchDashboardData(true);
   };
 
+  // Navigation handler
   const handleManagementClick = (sectionId) => {
     console.log(`Navigate to ${sectionId}`);
     window.dispatchEvent(new CustomEvent('admin-navigation', { 
@@ -272,6 +287,7 @@ const AdminOverview = () => {
     }));
   };
 
+  // Loading state
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -309,7 +325,7 @@ const AdminOverview = () => {
                   {error}
                 </p>
                 <p className="text-xs text-red-500 dark:text-red-400 mt-2">
-                  This usually means the API endpoint doesn't exist or Firestore indexes are missing. Check the browser console for details.
+                  Make sure the backend server is running and all API endpoints are properly configured.
                 </p>
               </div>
             </div>
