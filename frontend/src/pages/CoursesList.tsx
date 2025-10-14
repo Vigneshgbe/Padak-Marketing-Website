@@ -105,22 +105,18 @@ export default function CoursesList() {
   if (loading) {
     return (
       <div className="min-h-screen">
-        <Header />
         <div className="flex items-center justify-center min-h-[60vh]">
           <div className="text-center">
             <RefreshCw className="w-8 h-8 animate-spin text-orange-500 mx-auto mb-4" />
             <p className="text-gray-600">Loading courses...</p>
           </div>
         </div>
-        <Footer />
       </div>
     );
   }
 
   return (
     <div className="min-h-screen">
-      <Header />
-      
       {/* Hero Section */}
       <section className="py-20 bg-gradient-to-br from-orange-50/50 via-background to-orange-100/30 relative">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -278,8 +274,6 @@ export default function CoursesList() {
           )}
         </div>
       </section>
-
-      <Footer />
     </div>
   );
 }
@@ -463,8 +457,6 @@ function CheckoutPage({ course, onBack }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50/30 via-background to-orange-100/20">
-      <Header />
-      
       <div className="container mx-auto px-4 py-8">
         <Button 
           variant="outline" 
@@ -771,8 +763,7 @@ function CheckoutPage({ course, onBack }) {
           </div>
         </div>
       </div>
-      
-      <Footer />
+    
     </div>
   );
 }
@@ -783,8 +774,6 @@ function ThankYouPage({ course }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50/30 via-background to-orange-100/20">
-      <Header />
-      
       <div className="container mx-auto px-4 py-16">
         <div className="max-w-2xl mx-auto text-center">
           {/* Success Animation */}
@@ -934,8 +923,6 @@ function ThankYouPage({ course }) {
           </div>
         </div>
       )}
-      
-      <Footer />
     </div>
   );
 }
