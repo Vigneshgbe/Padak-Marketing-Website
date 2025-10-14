@@ -1,14 +1,118 @@
 import React, { useState, useEffect } from 'react';
 import { Edit, Trash2, Plus, Search, Filter, Key } from 'lucide-react';
-import DataTable from '../../../components/admin/DataTable';
-import StatusBadge from '../../../components/admin/StatusBadge';
-import Modal from '../../../components/admin/Modal';
-import { User } from '../../../lib/admin-types';
-import { useAdminData } from '../../../hooks/useAdminData';
-import { toast } from 'react-hot-toast';
+
+/**
+ * User Management Component - Fixed for port 5000 backend
+ * 
+ * Backend: http://localhost:5000
+ * Frontend: http://localhost:8080 (or 3000)
+ */
+
+// ⚙️ CONFIGURATION - Change this for production
+const API_BASE_URL = 'http://localhost:5000';
+
+interface User {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone?: string;
+  account_type: string;
+  is_active: boolean;
+  company?: string;
+  website?: string;
+  bio?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Simple StatusBadge component
+const StatusBadge: React.FC<{ status: string }> = ({ status }) => (
+  <span className={`px-2 py-1 text-xs rounded-full ${
+    status === 'Active' 
+      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+      : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
+  }`}>
+    {status}
+  </span>
+);
+
+// Simple Modal component
+const Modal: React.FC<{
+  isOpen: boolean;
+  title: string;
+  onClose: () => void;
+  size?: 'sm' | 'md' | 'lg';
+  children: React.ReactNode;
+}> = ({ isOpen, title, onClose, size = 'md', children }) => {
+  if (!isOpen) return null;
+
+  const sizeClasses = {
+    sm: 'max-w-md',
+    md: 'max-w-lg',
+    lg: 'max-w-2xl'
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="flex items-center justify-center min-h-screen px-4">
+        <div className="fixed inset-0 bg-black opacity-50" onClick={onClose}></div>
+        <div className={`relative bg-white dark:bg-gray-800 rounded-lg shadow-xl ${sizeClasses[size]} w-full`}>
+          <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
+            <h3 className="text-lg font-semibold">{title}</h3>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+              ✕
+            </button>
+          </div>
+          <div className="p-6">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Simple DataTable component
+const DataTable: React.FC<{
+  data: User[];
+  columns: Array<{ header: string; accessor: string | ((user: User) => any) }>;
+  actions: (user: User) => React.ReactNode;
+}> = ({ data, columns, actions }) => (
+  <div className="overflow-x-auto">
+    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+      <thead className="bg-gray-50 dark:bg-gray-800">
+        <tr>
+          {columns.map((col, idx) => (
+            <th key={idx} className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              {col.header}
+            </th>
+          ))}
+          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            Actions
+          </th>
+        </tr>
+      </thead>
+      <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+        {data.map((user) => (
+          <tr key={user.id}>
+            {columns.map((col, idx) => (
+              <td key={idx} className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                {typeof col.accessor === 'function' ? col.accessor(user) : user[col.accessor as keyof User]}
+              </td>
+            ))}
+            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+              {actions(user)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+);
 
 const UserManagement: React.FC = () => {
-  const { data: usersData, loading, error, refetch } = useAdminData('/api/admin/users');
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'create' | 'edit' | 'delete' | 'password'>('create');
@@ -31,7 +135,66 @@ const UserManagement: React.FC = () => {
     bio: ''
   });
 
-  const users = usersData?.users || [];
+  const getAuthToken = (): string | null => {
+    return localStorage.getItem('token') || 
+           localStorage.getItem('authToken') || 
+           sessionStorage.getItem('token') ||
+           null;
+  };
+
+  const getAuthHeaders = (): HeadersInit => {
+    const token = getAuthToken();
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json'
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    } else {
+      console.error('⚠️ No authentication token found');
+    }
+
+    return headers;
+  };
+
+  const fetchUsers = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      console.log('🔍 Fetching users from:', `${API_BASE_URL}/api/admin/users`);
+
+      const response = await fetch(`${API_BASE_URL}/api/admin/users`, {
+        method: 'GET',
+        headers: getAuthHeaders(),
+        credentials: 'include'
+      });
+
+      console.log('📊 Response status:', response.status);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Users data received:', data);
+
+      if (data.success === false) {
+        throw new Error(data.error || 'Failed to fetch users');
+      }
+
+      setUsers(data.users || []);
+    } catch (err) {
+      console.error('❌ Error fetching users:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch users');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
 
   useEffect(() => {
     if (!isModalOpen) {
@@ -60,7 +223,7 @@ const UserManagement: React.FC = () => {
       email: user.email || '',
       phone: user.phone || '',
       password: '',
-      accountType: user.account_type as 'student' | 'professional' | 'business' | 'agency' | 'admin',
+      accountType: user.account_type as any,
       isActive: user.is_active ?? true,
       company: user.company || '',
       website: user.website || '',
@@ -84,7 +247,7 @@ const UserManagement: React.FC = () => {
       email: user.email || '',
       phone: user.phone || '',
       password: '',
-      accountType: user.account_type as 'student' | 'professional' | 'business' | 'agency' | 'admin',
+      accountType: user.account_type as any,
       isActive: user.is_active ?? true,
       company: user.company || '',
       website: user.website || '',
@@ -128,76 +291,33 @@ const UserManagement: React.FC = () => {
 
   const validatePassword = (password: string): string[] => {
     const errors: string[] = [];
-    
-    if (password.length < 6) {
-      errors.push("Password must be at least 6 characters long");
-    }
-    
-    if (!/[A-Z]/.test(password)) {
-      errors.push("Password must contain at least one uppercase letter");
-    }
-    
-    if (!/[a-z]/.test(password)) {
-      errors.push("Password must contain at least one lowercase letter");
-    }
-    
-    if (!/[0-9]/.test(password)) {
-      errors.push("Password must contain at least one number");
-    }
-    
-    if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
-      errors.push("Password must contain at least one special character");
-    }
-    
+    if (password.length < 6) errors.push("Password must be at least 6 characters long");
+    if (!/[A-Z]/.test(password)) errors.push("Password must contain at least one uppercase letter");
+    if (!/[a-z]/.test(password)) errors.push("Password must contain at least one lowercase letter");
+    if (!/[0-9]/.test(password)) errors.push("Password must contain at least one number");
+    if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) errors.push("Password must contain at least one special character");
     return errors;
   };
 
-  const getPasswordStrength = (password: string): { strength: string; color: string; feedback: string[] } => {
+  const getPasswordStrength = (password: string) => {
     if (password.length === 0) return { strength: "", color: "", feedback: [] };
-    
     const errors = validatePassword(password);
-    
     if (errors.length === 0) {
-      return { 
-        strength: "Strong", 
-        color: "text-green-600 dark:text-green-400",
-        feedback: ["Password meets all requirements"]
-      };
+      return { strength: "Strong", color: "text-green-600 dark:text-green-400", feedback: ["Password meets all requirements"] };
     } else if (errors.length <= 2) {
-      return { 
-        strength: "Medium", 
-        color: "text-yellow-600 dark:text-yellow-400",
-        feedback: errors
-      };
+      return { strength: "Medium", color: "text-yellow-600 dark:text-yellow-400", feedback: errors };
     } else {
-      return { 
-        strength: "Weak", 
-        color: "text-red-600 dark:text-red-400",
-        feedback: errors
-      };
+      return { strength: "Weak", color: "text-red-600 dark:text-red-400", feedback: errors };
     }
   };
 
   const validateForm = () => {
     const errors: {[key: string]: string} = {};
     
-    if (!formData.firstName.trim()) {
-      errors.firstName = 'First name is required';
-    } else if (formData.firstName.trim().length < 2) {
-      errors.firstName = 'First name must be at least 2 characters';
-    }
-    
-    if (!formData.lastName.trim()) {
-      errors.lastName = 'Last name is required';
-    } else if (formData.lastName.trim().length < 1) {
-      errors.lastName = 'Last name must be at least 1 character';
-    }
-    
-    if (!formData.email.trim()) {
-      errors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      errors.email = 'Please enter a valid email address';
-    }
+    if (!formData.firstName.trim()) errors.firstName = 'First name is required';
+    if (!formData.lastName.trim()) errors.lastName = 'Last name is required';
+    if (!formData.email.trim()) errors.email = 'Email is required';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) errors.email = 'Please enter a valid email';
     
     if ((modalType === 'create' || modalType === 'password') && !formData.password) {
       errors.password = 'Password is required';
@@ -205,221 +325,152 @@ const UserManagement: React.FC = () => {
     
     if ((modalType === 'create' || modalType === 'password') && formData.password) {
       const passwordErrors = validatePassword(formData.password);
-      if (passwordErrors.length > 0) {
-        errors.password = passwordErrors[0];
-      }
-    }
-    
-    if (formData.phone && !/^\+?[\d\s\-()]+$/.test(formData.phone)) {
-      errors.phone = 'Please enter a valid phone number';
-    }
-    
-    if (formData.website && formData.website.trim() && !/^https?:\/\/.+\..+/.test(formData.website)) {
-      errors.website = 'Please enter a valid website URL (include http:// or https://)';
+      if (passwordErrors.length > 0) errors.password = passwordErrors[0];
     }
     
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
-  const filteredUsers = users.filter((user: User) => {
-    const searchText = `${user.first_name || ''} ${user.last_name || ''} ${user.email || ''}`.toLowerCase();
-    if (searchTerm && !searchText.includes(searchTerm.toLowerCase())) {
-      return false;
+  const showToast = (message: string, type: 'success' | 'error') => {
+    alert(`${type.toUpperCase()}: ${message}`);
+  };
+
+  const handleSaveUser = async () => {
+    if (!validateForm()) {
+      showToast('Please fix the form errors', 'error');
+      return;
     }
+
+    setIsSubmitting(true);
     
+    try {
+      let url, method, body;
+
+      if (modalType === 'create') {
+        url = `${API_BASE_URL}/api/admin/users`;
+        method = 'POST';
+        body = {
+          firstName: formData.firstName.trim(),
+          lastName: formData.lastName.trim(),
+          email: formData.email.trim(),
+          phone: formData.phone.trim(),
+          password: formData.password,
+          accountType: formData.accountType,
+          isActive: formData.isActive,
+          company: formData.company.trim(),
+          website: formData.website.trim(),
+          bio: formData.bio.trim()
+        };
+      } else if (modalType === 'edit' && selectedUser) {
+        url = `${API_BASE_URL}/api/admin/users/${selectedUser.id}`;
+        method = 'PUT';
+        body = {
+          firstName: formData.firstName.trim(),
+          lastName: formData.lastName.trim(),
+          email: formData.email.trim(),
+          phone: formData.phone.trim(),
+          accountType: formData.accountType,
+          isActive: formData.isActive,
+          company: formData.company.trim(),
+          website: formData.website.trim(),
+          bio: formData.bio.trim()
+        };
+      } else if (modalType === 'password' && selectedUser) {
+        url = `${API_BASE_URL}/api/admin/users/${selectedUser.id}/password`;
+        method = 'PUT';
+        body = { password: formData.password };
+      } else {
+        throw new Error('Invalid operation');
+      }
+
+      console.log('🔄 Making request to:', url);
+      console.log('📤 Request method:', method);
+
+      const response = await fetch(url, {
+        method,
+        headers: getAuthHeaders(),
+        credentials: 'include',
+        body: JSON.stringify(body)
+      });
+
+      console.log('📥 Response status:', response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server error (${response.status})`);
+      }
+
+      const result = await response.json();
+      console.log('✅ Success response:', result);
+
+      if (!result.success) {
+        throw new Error(result.error || 'Operation failed');
+      }
+
+      setIsModalOpen(false);
+      await fetchUsers();
+      
+      const successMessage = modalType === 'create' ? 'User created successfully' : 
+                           modalType === 'password' ? 'Password reset successfully' : 
+                           'User updated successfully';
+      showToast(successMessage, 'success');
+      
+    } catch (error) {
+      console.error(`❌ Error ${modalType} user:`, error);
+      showToast(error instanceof Error ? error.message : 'An unexpected error occurred', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedUser) return;
+
+    setIsSubmitting(true);
+    
+    try {
+      console.log('🗑️ Deleting user:', selectedUser.id);
+
+      const response = await fetch(`${API_BASE_URL}/api/admin/users/${selectedUser.id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+        credentials: 'include'
+      });
+      
+      console.log('📥 Delete response status:', response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Server error (${response.status})`);
+      }
+      
+      const result = await response.json();
+      console.log('✅ Delete success:', result);
+
+      setIsModalOpen(false);
+      await fetchUsers();
+      
+      showToast('User deleted successfully', 'success');
+      
+    } catch (error) {
+      console.error('❌ Error deleting user:', error);
+      showToast(error instanceof Error ? error.message : 'An unexpected error occurred', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const filteredUsers = users.filter((user) => {
+    const searchText = `${user.first_name || ''} ${user.last_name || ''} ${user.email || ''}`.toLowerCase();
+    if (searchTerm && !searchText.includes(searchTerm.toLowerCase())) return false;
     if (selectedFilter !== 'all') {
       if (selectedFilter === 'active' && !user.is_active) return false;
       if (selectedFilter === 'inactive' && user.is_active) return false;
     }
-    
-    if (selectedAccountType !== 'all' && user.account_type !== selectedAccountType) {
-      return false;
-    }
-    
+    if (selectedAccountType !== 'all' && user.account_type !== selectedAccountType) return false;
     return true;
   });
-
-  const getAuthToken = (): string | null => {
-    // Check multiple possible token storage locations
-    return localStorage.getItem('token') || 
-           localStorage.getItem('authToken') || 
-           localStorage.getItem('adminToken') ||
-           sessionStorage.getItem('token') ||
-           null;
-  };
-
-  const getAuthHeaders = (): HeadersInit => {
-    const token = getAuthToken();
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json'
-    };
-
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    } else {
-      console.error('No authentication token found');
-    }
-
-    return headers;
-  };
-
-  const handleSaveUser = async () => {
-  if (!validateForm()) {
-    toast.error('Please fix the form errors before submitting');
-    return;
-  }
-
-  setIsSubmitting(true);
-  
-  try {
-    let url, method, body;
-
-    // Determine the endpoint and data based on modal type
-    if (modalType === 'create') {
-      url = '/api/admin/users';
-      method = 'POST';
-      body = {
-        firstName: formData.firstName.trim(),
-        lastName: formData.lastName.trim(),
-        email: formData.email.trim(),
-        phone: formData.phone.trim(),
-        password: formData.password,
-        accountType: formData.accountType,
-        isActive: formData.isActive,
-        company: formData.company.trim(),
-        website: formData.website.trim(),
-        bio: formData.bio.trim()
-      };
-    } else if (modalType === 'edit' && selectedUser) {
-      url = `/api/admin/users/${selectedUser.id}`;
-      method = 'PUT';
-      body = {
-        firstName: formData.firstName.trim(),
-        lastName: formData.lastName.trim(),
-        email: formData.email.trim(),
-        phone: formData.phone.trim(),
-        accountType: formData.accountType,
-        isActive: formData.isActive,
-        company: formData.company.trim(),
-        website: formData.website.trim(),
-        bio: formData.bio.trim()
-      };
-    } else if (modalType === 'password' && selectedUser) {
-      url = `/api/admin/users/${selectedUser.id}/password`;
-      method = 'PUT';
-      body = {
-        password: formData.password
-      };
-    } else {
-      throw new Error('Invalid operation');
-    }
-
-    console.log('Making request to:', url);
-    console.log('Request method:', method);
-    console.log('Request body:', body);
-
-    const response = await fetch(url, {
-      method,
-      headers: getAuthHeaders(),
-      credentials: 'include',
-      body: JSON.stringify(body)
-    });
-
-    console.log('Response status:', response.status);
-
-    const responseText = await response.text();
-    console.log('Response text:', responseText);
-
-    if (!response.ok) {
-      let errorMessage = `Server error (${response.status})`;
-      
-      try {
-        const errorData = JSON.parse(responseText);
-        errorMessage = errorData.error || errorMessage;
-      } catch {
-        errorMessage = responseText || errorMessage;
-      }
-      
-      throw new Error(errorMessage);
-    }
-
-    // Parse successful response
-    const result = JSON.parse(responseText);
-    console.log('Success response:', result);
-
-    if (!result.success) {
-      throw new Error(result.error || 'Operation failed');
-    }
-
-    setIsModalOpen(false);
-    await refetch();
-    
-    const successMessage = modalType === 'create' ? 'User created successfully' : 
-                         modalType === 'password' ? 'Password reset successfully' : 
-                         'User updated successfully';
-    toast.success(successMessage);
-    
-  } catch (error) {
-    console.error(`Error ${modalType} user:`, error);
-    toast.error(error instanceof Error ? error.message : 'An unexpected error occurred');
-  } finally {
-    setIsSubmitting(false);
-  }
-};
-
-  const handleDeleteConfirm = async () => {
-  if (!selectedUser) return;
-
-  const token = getAuthToken();
-  if (!token) {
-    toast.error('Authentication token not found. Please login again.');
-    return;
-  }
-  
-  setIsSubmitting(true);
-  
-  try {
-    const baseURL = window.location.origin;
-    
-    console.log('Deleting user:', selectedUser.id);
-
-    const response = await fetch(`${baseURL}/api/admin/users/${selectedUser.id}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders(),
-      credentials: 'include'
-    });
-    
-    console.log('Delete response status:', response.status);
-
-    if (!response.ok) {
-      let errorMessage = `Server error (${response.status})`;
-      
-      try {
-        const errorData = await response.json();
-        errorMessage = errorData.error || errorMessage;
-      } catch (parseError) {
-        console.error('Could not parse error response');
-      }
-      
-      throw new Error(errorMessage);
-    }
-    
-    const result = await response.json();
-    console.log('Delete success:', result);
-
-    setIsModalOpen(false);
-    await refetch();
-    
-    toast.success('User deleted successfully');
-    
-  } catch (error) {
-    console.error('Error deleting user:', error);
-    toast.error(error instanceof Error ? error.message : 'An unexpected error occurred');
-  } finally {
-    setIsSubmitting(false);
-  }
-};
 
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
@@ -434,17 +485,12 @@ const UserManagement: React.FC = () => {
     }
   };
 
-  const capitalizeAccountType = (type: string) => {
-    if (!type) return 'Student';
-    return type.charAt(0).toUpperCase() + type.slice(1);
-  };
-
   const passwordStrength = getPasswordStrength(formData.password);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <h2 className="text-2xl font-bold">User Management</h2>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">User Management</h2>
 
         <div className="flex flex-col md:flex-row gap-2">
           <div className="relative">
@@ -454,46 +500,39 @@ const UserManagement: React.FC = () => {
               placeholder="Search users..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
             />
           </div>
 
-          <div className="relative">
-            <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-            <select
-              value={selectedFilter}
-              onChange={(e) => setSelectedFilter(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none"
-            >
-              <option value="all">All Status</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </div>
+          <select
+            value={selectedFilter}
+            onChange={(e) => setSelectedFilter(e.target.value)}
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+          >
+            <option value="all">All Status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
 
-          <div className="relative">
-            <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
-            <select
-              value={selectedAccountType}
-              onChange={(e) => setSelectedAccountType(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none"
-            >
-              <option value="all">All Types</option>
-              <option value="student">Student</option>
-              <option value="professional">Professional</option>
-              <option value="business">Business</option>
-              <option value="agency">Agency</option>
-              <option value="admin">Admin</option>
-            </select>
-          </div>
+          <select
+            value={selectedAccountType}
+            onChange={(e) => setSelectedAccountType(e.target.value)}
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+          >
+            <option value="all">All Types</option>
+            <option value="student">Student</option>
+            <option value="professional">Professional</option>
+            <option value="business">Business</option>
+            <option value="admin">Admin</option>
+          </select>
 
           <button
             onClick={handleCreateUser}
-            className="flex items-center justify-center gap-1 px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-1 px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600"
             disabled={isSubmitting}
           >
             <Plus size={16} />
-            <span>Add New</span>
+            Add New
           </button>
         </div>
       </div>
@@ -506,15 +545,11 @@ const UserManagement: React.FC = () => {
 
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6">
-          <div className="flex items-center mb-4">
-            <span className="text-red-500 mr-2">⚠️</span>
-            <h3 className="text-lg font-semibold text-red-700 dark:text-red-300">Error Loading Users</h3>
-          </div>
+          <h3 className="text-lg font-semibold text-red-700 dark:text-red-300 mb-2">Error Loading Users</h3>
           <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
           <button
-            onClick={() => refetch()}
-            className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={isSubmitting}
+            onClick={fetchUsers}
+            className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
           >
             Retry
           </button>
@@ -525,59 +560,21 @@ const UserManagement: React.FC = () => {
         <DataTable<User>
           data={filteredUsers}
           columns={[
-            { 
-              header: 'Name', 
-              accessor: (user) => `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'N/A'
-            },
+            { header: 'Name', accessor: (user) => `${user.first_name} ${user.last_name}` },
             { header: 'Email', accessor: 'email' },
-            { 
-              header: 'Account Type', 
-              accessor: (user) => capitalizeAccountType(user.account_type || 'student')
-            },
-            {
-              header: 'Status',
-              accessor: (user) => (
-                <StatusBadge status={user.is_active ? 'Active' : 'Inactive'} />
-              )
-            },
-            { 
-              header: 'Join Date', 
-              accessor: (user) => formatDate(user.created_at)
-            }
+            { header: 'Account Type', accessor: (user) => user.account_type?.toUpperCase() || 'STUDENT' },
+            { header: 'Status', accessor: (user) => <StatusBadge status={user.is_active ? 'Active' : 'Inactive'} /> },
+            { header: 'Join Date', accessor: (user) => formatDate(user.created_at) }
           ]}
           actions={(user) => (
             <div className="flex space-x-2">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleEditUser(user);
-                }}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Edit User"
-                disabled={isSubmitting}
-              >
+              <button onClick={() => handleEditUser(user)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded" title="Edit">
                 <Edit size={16} className="text-blue-500" />
               </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleResetPassword(user);
-                }}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Reset Password"
-                disabled={isSubmitting}
-              >
+              <button onClick={() => handleResetPassword(user)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded" title="Reset Password">
                 <Key size={16} className="text-green-500" />
               </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDeleteUser(user);
-                }}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Delete User"
-                disabled={isSubmitting}
-              >
+              <button onClick={() => handleDeleteUser(user)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded" title="Delete">
                 <Trash2 size={16} className="text-red-500" />
               </button>
             </div>
@@ -585,7 +582,7 @@ const UserManagement: React.FC = () => {
         />
       )}
 
-      {/* Edit/Create User Modal */}
+      {/* Edit/Create Modal */}
       <Modal
         isOpen={isModalOpen && (modalType === 'create' || modalType === 'edit')}
         title={modalType === 'create' ? 'Create New User' : 'Edit User'}
@@ -593,231 +590,72 @@ const UserManagement: React.FC = () => {
         size="lg"
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                First Name *
-              </label>
+              <label className="block text-sm font-medium mb-1">First Name *</label>
               <input
                 type="text"
                 value={formData.firstName}
                 onChange={(e) => handleInputChange('firstName', e.target.value)}
-                className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${
-                  formErrors.firstName 
-                    ? 'border-red-500 dark:border-red-500' 
-                    : 'border-gray-300 dark:border-gray-600'
-                }`}
-                placeholder="Enter first name"
+                className={`w-full px-3 py-2 border rounded-md ${formErrors.firstName ? 'border-red-500' : 'border-gray-300'}`}
                 disabled={isSubmitting}
               />
-              {formErrors.firstName && (
-                <p className="text-red-500 text-sm mt-1">{formErrors.firstName}</p>
-              )}
+              {formErrors.firstName && <p className="text-red-500 text-sm mt-1">{formErrors.firstName}</p>}
             </div>
-            
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Last Name *
-              </label>
+              <label className="block text-sm font-medium mb-1">Last Name *</label>
               <input
                 type="text"
                 value={formData.lastName}
                 onChange={(e) => handleInputChange('lastName', e.target.value)}
-                className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${
-                  formErrors.lastName 
-                    ? 'border-red-500 dark:border-red-500' 
-                    : 'border-gray-300 dark:border-gray-600'
-                }`}
-                placeholder="Enter last name"
+                className={`w-full px-3 py-2 border rounded-md ${formErrors.lastName ? 'border-red-500' : 'border-gray-300'}`}
                 disabled={isSubmitting}
               />
-              {formErrors.lastName && (
-                <p className="text-red-500 text-sm mt-1">{formErrors.lastName}</p>
-              )}
+              {formErrors.lastName && <p className="text-red-500 text-sm mt-1">{formErrors.lastName}</p>}
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Email *
-            </label>
+            <label className="block text-sm font-medium mb-1">Email *</label>
             <input
               type="email"
               value={formData.email}
               onChange={(e) => handleInputChange('email', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${
-                formErrors.email 
-                  ? 'border-red-500 dark:border-red-500' 
-                  : 'border-gray-300 dark:border-gray-600'
-              }`}
-              placeholder="Enter email address"
+              className={`w-full px-3 py-2 border rounded-md ${formErrors.email ? 'border-red-500' : 'border-gray-300'}`}
               disabled={isSubmitting}
             />
-            {formErrors.email && (
-              <p className="text-red-500 text-sm mt-1">{formErrors.email}</p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Phone
-            </label>
-            <input
-              type="text"
-              value={formData.phone}
-              onChange={(e) => handleInputChange('phone', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${
-                formErrors.phone 
-                  ? 'border-red-500 dark:border-red-500' 
-                  : 'border-gray-300 dark:border-gray-600'
-              }`}
-              placeholder="Enter phone number"
-              disabled={isSubmitting}
-            />
-            {formErrors.phone && (
-              <p className="text-red-500 text-sm mt-1">{formErrors.phone}</p>
-            )}
+            {formErrors.email && <p className="text-red-500 text-sm mt-1">{formErrors.email}</p>}
           </div>
 
           {modalType === 'create' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Password *
-              </label>
+              <label className="block text-sm font-medium mb-1">Password *</label>
               <input
                 type="password"
                 value={formData.password}
                 onChange={(e) => handleInputChange('password', e.target.value)}
-                className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${
-                  formErrors.password 
-                    ? 'border-red-500 dark:border-red-500' 
-                    : 'border-gray-300 dark:border-gray-600'
-                }`}
-                placeholder="Must include uppercase, lowercase, number, special character"
+                className={`w-full px-3 py-2 border rounded-md ${formErrors.password ? 'border-red-500' : 'border-gray-300'}`}
                 disabled={isSubmitting}
               />
-              {formData.password && passwordStrength.strength && (
-                <div className={`text-sm mt-1 ${passwordStrength.color}`}>
-                  Password strength: {passwordStrength.strength}
-                  {passwordStrength.feedback.length > 0 && passwordStrength.strength !== "Strong" && (
-                    <ul className="mt-1 ml-4 text-xs list-disc">
-                      {passwordStrength.feedback.map((item, index) => (
-                        <li key={index}>{item}</li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
-              {formErrors.password && (
-                <p className="text-red-500 text-sm mt-1">{formErrors.password}</p>
-              )}
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Requirements: 6+ characters, uppercase, lowercase, number, special character
-              </p>
+              {formData.password && <p className={`text-sm mt-1 ${passwordStrength.color}`}>{passwordStrength.strength}</p>}
+              {formErrors.password && <p className="text-red-500 text-sm mt-1">{formErrors.password}</p>}
             </div>
           )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Account Type
-              </label>
-              <select
-                value={formData.accountType}
-                onChange={(e) => handleInputChange('accountType', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
-                disabled={isSubmitting}
-              >
-                <option value="student">Student</option>
-                <option value="professional">Professional</option>
-                <option value="business">Business</option>
-                <option value="agency">Agency</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Status
-              </label>
-              <select
-                value={formData.isActive ? "1" : "0"}
-                onChange={(e) => handleInputChange('isActive', e.target.value === "1")}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
-                disabled={isSubmitting}
-              >
-                <option value="1">Active</option>
-                <option value="0">Inactive</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Company
-            </label>
-            <input
-              type="text"
-              value={formData.company}
-              onChange={(e) => handleInputChange('company', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
-              placeholder="Enter company name"
-              disabled={isSubmitting}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Website
-            </label>
-            <input
-              type="url"
-              value={formData.website}
-              onChange={(e) => handleInputChange('website', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${
-                formErrors.website 
-                  ? 'border-red-500 dark:border-red-500' 
-                  : 'border-gray-300 dark:border-gray-600'
-              }`}
-              placeholder="https://example.com"
-              disabled={isSubmitting}
-            />
-            {formErrors.website && (
-              <p className="text-red-500 text-sm mt-1">{formErrors.website}</p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Bio
-            </label>
-            <textarea
-              value={formData.bio}
-              onChange={(e) => handleInputChange('bio', e.target.value)}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800"
-              placeholder="Enter user bio"
-              disabled={isSubmitting}
-            />
-          </div>
 
           <div className="flex justify-end gap-2 mt-6">
             <button
               onClick={() => setIsModalOpen(false)}
               disabled={isSubmitting}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 border rounded-md hover:bg-gray-100"
             >
               Cancel
             </button>
             <button
               onClick={handleSaveUser}
               disabled={isSubmitting}
-              className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600"
             >
-              {isSubmitting && (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-              )}
-              {modalType === 'create' ? 'Create' : 'Update'}
+              {isSubmitting ? 'Saving...' : modalType === 'create' ? 'Create' : 'Update'}
             </button>
           </div>
         </div>
@@ -831,70 +669,29 @@ const UserManagement: React.FC = () => {
         size="md"
       >
         <div className="space-y-4">
-          <p className="text-gray-700 dark:text-gray-300">
-            Reset password for <strong>{selectedUser?.first_name} {selectedUser?.last_name}</strong>
-          </p>
-
+          <p>Reset password for <strong>{selectedUser?.first_name} {selectedUser?.last_name}</strong></p>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              New Password *
-            </label>
+            <label className="block text-sm font-medium mb-1">New Password *</label>
             <input
               type="password"
               value={formData.password}
               onChange={(e) => handleInputChange('password', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-md bg-white dark:bg-gray-800 ${
-                formErrors.password 
-                  ? 'border-red-500 dark:border-red-500' 
-                  : 'border-gray-300 dark:border-gray-600'
-              }`}
-              placeholder="Must include uppercase, lowercase, number, special character"
+              className={`w-full px-3 py-2 border rounded-md ${formErrors.password ? 'border-red-500' : 'border-gray-300'}`}
               disabled={isSubmitting}
-              autoFocus
             />
-            {formData.password && passwordStrength.strength && (
-              <div className={`text-sm mt-1 ${passwordStrength.color}`}>
-                Password strength: {passwordStrength.strength}
-                {passwordStrength.feedback.length > 0 && passwordStrength.strength !== "Strong" && (
-                  <ul className="mt-1 ml-4 text-xs list-disc">
-                    {passwordStrength.feedback.map((item, index) => (
-                      <li key={index}>{item}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-            {formErrors.password && (
-              <p className="text-red-500 text-sm mt-1">{formErrors.password}</p>
-            )}
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Requirements: 6+ characters, uppercase, lowercase, number, special character
-            </p>
+            {formData.password && <p className={`text-sm mt-1 ${passwordStrength.color}`}>{passwordStrength.strength}</p>}
+            {formErrors.password && <p className="text-red-500 text-sm mt-1">{formErrors.password}</p>}
           </div>
-
           <div className="flex justify-end gap-2 mt-6">
-            <button
-              onClick={() => setIsModalOpen(false)}
-              disabled={isSubmitting}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSaveUser}
-              disabled={isSubmitting}
-              className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {isSubmitting && (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-              )}
-              Reset Password
+            <button onClick={() => setIsModalOpen(false)} disabled={isSubmitting} className="px-4 py-2 border rounded-md">Cancel</button>
+            <button onClick={handleSaveUser} disabled={isSubmitting} className="px-4 py-2 bg-orange-500 text-white rounded-md">
+              {isSubmitting ? 'Resetting...' : 'Reset Password'}
             </button>
           </div>
         </div>
       </Modal>
 
-      {/* Delete Confirmation Modal */}
+      {/* Delete Modal */}
       <Modal
         isOpen={isModalOpen && modalType === 'delete'}
         title="Delete User"
@@ -902,34 +699,14 @@ const UserManagement: React.FC = () => {
         size="md"
       >
         <div className="space-y-4">
-          <p className="text-gray-700 dark:text-gray-300">
-            Are you sure you want to delete user <strong>{selectedUser?.first_name} {selectedUser?.last_name}</strong>? 
-            This action will deactivate the account.
-          </p>
-
-          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-            <p className="text-yellow-800 dark:text-yellow-200 text-sm">
-              ⚠️ This will deactivate the user account. The user will no longer be able to log in.
-            </p>
+          <p>Delete user <strong>{selectedUser?.first_name} {selectedUser?.last_name}</strong>?</p>
+          <div className="bg-yellow-50 border border-yellow-200 rounded p-4">
+            <p className="text-yellow-800 text-sm">⚠️ This will deactivate the user account.</p>
           </div>
-
           <div className="flex justify-end gap-2 mt-6">
-            <button
-              onClick={() => setIsModalOpen(false)}
-              disabled={isSubmitting}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleDeleteConfirm}
-              disabled={isSubmitting}
-              className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {isSubmitting && (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-              )}
-              Delete
+            <button onClick={() => setIsModalOpen(false)} disabled={isSubmitting} className="px-4 py-2 border rounded-md">Cancel</button>
+            <button onClick={handleDeleteConfirm} disabled={isSubmitting} className="px-4 py-2 bg-red-500 text-white rounded-md">
+              {isSubmitting ? 'Deleting...' : 'Delete'}
             </button>
           </div>
         </div>
