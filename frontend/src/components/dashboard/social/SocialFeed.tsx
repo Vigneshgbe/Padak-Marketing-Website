@@ -131,22 +131,25 @@ const SocialFeed: React.FC = () => {
   }, [page, loadingMore, hasMore]);
 
   // Close dropdowns when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (showDropdown && !(e.target as Element).closest('.post-dropdown')) {
-        setShowDropdown(null);
-      }
-      if (showVisibilityDropdown && !(e.target as Element).closest('.visibility-dropdown')) {
-        setShowVisibilityDropdown(false);
-      }
-      if (showEmojiPicker && !(e.target as Element).closest('.emoji-picker')) {
-        setShowEmojiPicker(false);
-      }
-    };
+    useEffect(() => {
+      const handleClickOutside = (e: MouseEvent) => {
+        const target = e.target as Element;
+        
+        if (showDropdown && !target.closest('.post-dropdown')) {
+          setShowDropdown(null);
+        }
+        if (showVisibilityDropdown && !target.closest('.visibility-dropdown')) {
+          setShowVisibilityDropdown(false);
+        }
+        if (showEmojiPicker && !target.closest('.emoji-picker-container')) {
+          setShowEmojiPicker(false);
+        }
+      };
 
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, [showDropdown, showVisibilityDropdown, showEmojiPicker]);
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [showDropdown, showVisibilityDropdown, showEmojiPicker]);
+    
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
@@ -570,7 +573,7 @@ const SocialFeed: React.FC = () => {
                 </button>
               </div>
             </div>
-            
+
           </div>
         </div>
       )}
