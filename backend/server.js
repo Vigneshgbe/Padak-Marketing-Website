@@ -396,6 +396,9 @@ app.post('/api/login', async (req, res) => {
       updated_at: firebase.firestore.FieldValue.serverTimestamp()
     });
 
+    // Link any guest enrollments to this user
+    await linkGuestEnrollments(userId, user.email);
+
     console.log('User logged in successfully:', { userId, email: user.email });
 
     // Send success response
