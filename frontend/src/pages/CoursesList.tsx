@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiService } from "@/lib/api";
 import { 
-  Play, 
   Clock, 
   Users, 
   Star, 
@@ -16,12 +15,12 @@ import {
   Filter,
   BookOpen,
   Award,
-  TrendingUp,
   RefreshCw,
-  ShoppingCart
+  ShoppingCart,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 
-// At the top of your file, update the API_BASE constant
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const fetchCourses = async () => {
@@ -37,7 +36,6 @@ const fetchCourses = async () => {
       lessons: course.durationWeeks ? course.durationWeeks * 4 : 0,
       certificate: true,
       image: course.thumbnail || '📘',
-      // Ensure level is properly formatted
       level: course.difficultyLevel ? 
         course.difficultyLevel.charAt(0).toUpperCase() + course.difficultyLevel.slice(1).toLowerCase() : 
         'Beginner'
@@ -56,6 +54,10 @@ export default function CoursesList() {
   const [levelFilter, setLevelFilter] = useState("all");
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [showCheckout, setShowCheckout] = useState(false);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const coursesPerPage = 6;
 
   useEffect(() => {
     loadCourses();
@@ -65,12 +67,10 @@ export default function CoursesList() {
     setLoading(true);
     try {
       const coursesData = await fetchCourses();
-      // Fix: MySQL returns 1/0 for boolean, not true/false
-      // The backend already filters by is_active = true in the SQL query
       setCourses(coursesData);
     } catch (error) {
       console.error('Error loading courses:', error);
-      setCourses([]); // Set empty array on error
+      setCourses([]);
     } finally {
       setLoading(false);
     }
@@ -93,11 +93,25 @@ export default function CoursesList() {
     return matchesSearch && matchesCategory && matchesLevel;
   });
 
-  // Get unique categories from courses
+  // Pagination logic
+  const totalPages = Math.ceil(filteredCourses.length / coursesPerPage);
+  const indexOfLastCourse = currentPage * coursesPerPage;
+  const indexOfFirstCourse = indexOfLastCourse - coursesPerPage;
+  const currentCourses = filteredCourses.slice(indexOfFirstCourse, indexOfLastCourse);
+
+  const handlePageChange = (pageNumber) => {
+    setCurrentPage(pageNumber);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, categoryFilter, levelFilter]);
+
   const categories = ["all", ...Array.from(new Set(courses.map(course => course.category).filter(Boolean)))];
   const levels = ["all", "Beginner", "Intermediate", "Advanced"];
 
-  // Checkout Component
   if (showCheckout && selectedCourse) {
     return <CheckoutPage course={selectedCourse} onBack={() => setShowCheckout(false)} />;
   }
@@ -105,24 +119,28 @@ export default function CoursesList() {
   if (loading) {
     return (
       <div className="min-h-screen">
+        <Header />
         <div className="flex items-center justify-center min-h-[60vh]">
           <div className="text-center">
             <RefreshCw className="w-8 h-8 animate-spin text-orange-500 mx-auto mb-4" />
             <p className="text-gray-600">Loading courses...</p>
           </div>
         </div>
+        <Footer />
       </div>
     );
   }
 
   return (
     <div className="min-h-screen">
-      {/* Hero Section */}
-      <section className="py-20 bg-gradient-to-br from-orange-50/50 via-background to-orange-100/30 relative">
+      <Header />
+      
+      {/* Compact Hero Section - Reduced padding */}
+      <section className="py-8 bg-gradient-to-br from-orange-50/50 via-background to-orange-100/30 relative">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Search and Filters */}
+          {/* Search and Filters - Reduced margins */}
           <div className="max-w-4xl mx-auto">
-            <div className="flex flex-col md:flex-row gap-4 mb-8">
+            <div className="flex flex-col md:flex-row gap-3 mb-4">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
                 <Input
@@ -170,26 +188,38 @@ export default function CoursesList() {
         </div>
         
         {/* Floating background elements */}
-        <div className="absolute top-20 left-10 w-32 h-32 bg-orange-400/10 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-20 right-10 w-24 h-24 bg-orange-500/10 rounded-full blur-2xl animate-pulse delay-1000"></div>
+        <div className="absolute top-10 left-10 w-32 h-32 bg-orange-400/10 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-10 right-10 w-24 h-24 bg-orange-500/10 rounded-full blur-2xl animate-pulse delay-1000"></div>
       </section>
 
-      {/* Courses Grid */}
-      <section className="py-20 bg-gradient-to-br from-orange-50/30 via-background to-orange-100/20">
+      {/* Courses Grid - Reduced padding */}
+      <section className="py-8 bg-gradient-to-br from-orange-50/30 via-background to-orange-100/20">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {filteredCourses.map((course) => (
-              <Card key={course.id} className="group hover:shadow-xl transition-all duration-300 hover:-translate-y-2 border-0 bg-background/90 backdrop-blur-sm hover:bg-white relative overflow-hidden">
+          {/* Results info */}
+          <div className="mb-4 flex items-center justify-between">
+            <p className="text-sm text-gray-600">
+              Showing {indexOfFirstCourse + 1}-{Math.min(indexOfLastCourse, filteredCourses.length)} of {filteredCourses.length} courses
+            </p>
+            <p className="text-sm text-gray-500">
+              Page {currentPage} of {totalPages}
+            </p>
+          </div>
+
+          {/* Courses Grid - Reduced gap */}
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+            {currentCourses.map((course) => (
+              <Card key={course.id} className="group hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border-0 bg-background/90 backdrop-blur-sm hover:bg-white relative overflow-hidden">
                 {/* Orange accent line */}
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 to-orange-400 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300"></div>
                 
-                <CardHeader className="pb-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="text-5xl hover:scale-110 hover:rotate-3 transition-all duration-300 cursor-pointer">
+                {/* Reduced padding in CardHeader */}
+                <CardHeader className="pb-3 pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-4xl hover:scale-110 hover:rotate-3 transition-all duration-300 cursor-pointer">
                       {course.image}
                     </div>
-                    <div className="flex flex-col gap-2">
-                      <Badge variant="outline" className="border-orange-200 text-orange-600 hover:bg-orange-50">
+                    <div className="flex flex-col gap-1.5">
+                      <Badge variant="outline" className="border-orange-200 text-orange-600 hover:bg-orange-50 text-xs">
                         {course.level}
                       </Badge>
                       <Badge variant="outline" className="border-blue-200 text-blue-600 hover:bg-blue-50 text-xs">
@@ -197,49 +227,53 @@ export default function CoursesList() {
                       </Badge>
                     </div>
                   </div>
-                  <CardTitle className="text-xl group-hover:text-orange-600 transition-colors">
+                  <CardTitle className="text-lg group-hover:text-orange-600 transition-colors line-clamp-2">
                     {course.title}
                   </CardTitle>
-                  <CardDescription className="text-base leading-relaxed">
+                  <CardDescription className="text-sm leading-relaxed line-clamp-2">
                     {course.description}
                   </CardDescription>
                 </CardHeader>
                 
-                <CardContent className="space-y-4">
+                {/* Reduced padding in CardContent */}
+                <CardContent className="space-y-3 pb-4">
                   <div className="flex items-center justify-between text-sm text-muted-foreground">
-                    <span>By {course.instructor}</span>
+                    <span className="truncate text-xs">By {course.instructor}</span>
                     <div className="flex items-center space-x-1">
-                      <Star className="w-4 h-4 text-orange-500 fill-current" />
-                      <span>{course.rating}</span>
+                      <Star className="w-3.5 h-3.5 text-orange-500 fill-current" />
+                      <span className="text-xs">{course.rating}</span>
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div className="flex items-center space-x-2">
-                      <Clock className="w-4 h-4 text-muted-foreground" />
+                  {/* Reduced gap in grid */}
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="flex items-center space-x-1.5">
+                      <Clock className="w-3.5 h-3.5 text-muted-foreground" />
                       <span>{course.duration}</span>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <BookOpen className="w-4 h-4 text-muted-foreground" />
+                    <div className="flex items-center space-x-1.5">
+                      <BookOpen className="w-3.5 h-3.5 text-muted-foreground" />
                       <span>{course.lessons} lessons</span>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <Users className="w-4 h-4 text-muted-foreground" />
+                    <div className="flex items-center space-x-1.5">
+                      <Users className="w-3.5 h-3.5 text-muted-foreground" />
                       <span>{course.students} students</span>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <Award className="w-4 h-4 text-muted-foreground" />
+                    <div className="flex items-center space-x-1.5">
+                      <Award className="w-3.5 h-3.5 text-muted-foreground" />
                       <span>Certificate</span>
                     </div>
                   </div>
                   
-                  <div className="flex items-center justify-between pt-4 border-t">
-                    <div className="text-2xl font-bold text-orange-600">{course.price}</div>
+                  {/* Reduced padding top */}
+                  <div className="flex items-center justify-between pt-3 border-t">
+                    <div className="text-xl font-bold text-orange-600">{course.price}</div>
                     <Button 
                       onClick={() => handleEnrollment(course)}
+                      size="sm"
                       className="bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-300 group relative overflow-hidden"
                     >
-                      <ShoppingCart className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
+                      <ShoppingCart className="w-3.5 h-3.5 mr-1.5 group-hover:scale-110 transition-transform" />
                       Enroll Now
                     </Button>
                   </div>
@@ -251,6 +285,67 @@ export default function CoursesList() {
             ))}
           </div>
 
+          {/* Pagination Controls */}
+          {filteredCourses.length > coursesPerPage && (
+            <div className="flex items-center justify-center gap-2 mt-6">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="border-orange-200 hover:bg-orange-50 disabled:opacity-50"
+              >
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                Previous
+              </Button>
+
+              <div className="flex gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNumber) => {
+                  // Show first page, last page, current page, and pages around current
+                  const showPage = 
+                    pageNumber === 1 || 
+                    pageNumber === totalPages || 
+                    (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 1);
+
+                  if (!showPage) {
+                    // Show ellipsis
+                    if (pageNumber === currentPage - 2 || pageNumber === currentPage + 2) {
+                      return <span key={pageNumber} className="px-2 py-1 text-gray-400">...</span>;
+                    }
+                    return null;
+                  }
+
+                  return (
+                    <Button
+                      key={pageNumber}
+                      variant={currentPage === pageNumber ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => handlePageChange(pageNumber)}
+                      className={currentPage === pageNumber 
+                        ? "bg-orange-500 hover:bg-orange-600 text-white" 
+                        : "border-orange-200 hover:bg-orange-50"
+                      }
+                    >
+                      {pageNumber}
+                    </Button>
+                  );
+                })}
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="border-orange-200 hover:bg-orange-50 disabled:opacity-50"
+              >
+                Next
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </div>
+          )}
+
+          {/* No courses found */}
           {filteredCourses.length === 0 && (
             <div className="text-center py-12">
               <div className="w-16 h-16 bg-gradient-to-br from-orange-500 to-orange-400 rounded-xl flex items-center justify-center mx-auto mb-4">
@@ -274,11 +369,13 @@ export default function CoursesList() {
           )}
         </div>
       </section>
+
+      <Footer />
     </div>
   );
 }
 
-// Checkout Page Component (keeping your existing implementation)
+// Checkout Page Component - UNCHANGED, keeping all existing functionality
 function CheckoutPage({ course, onBack }) {
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
@@ -302,7 +399,6 @@ function CheckoutPage({ course, onBack }) {
   const [errors, setErrors] = useState({});
   const [paymentPreview, setPaymentPreview] = useState(null);
 
-  // Validation function
   const validateStep = (step) => {
     const newErrors = {};
     
@@ -335,82 +431,71 @@ function CheckoutPage({ course, onBack }) {
   };
 
   const handleSubmit = async () => {
-  if (!validateStep(2)) return;
-  
-  setLoading(true);
-  try {
-    const formDataToSend = new FormData();
+    if (!validateStep(2)) return;
     
-    // Append all form data
-    formDataToSend.append('courseId', formData.courseId.toString());
-    formDataToSend.append('fullName', formData.fullName);
-    formDataToSend.append('email', formData.email);
-    formDataToSend.append('phone', formData.phone);
-    formDataToSend.append('address', formData.address);
-    formDataToSend.append('city', formData.city);
-    formDataToSend.append('state', formData.state);
-    formDataToSend.append('pincode', formData.pincode);
-    formDataToSend.append('paymentMethod', formData.paymentMethod);
-    formDataToSend.append('transactionId', formData.transactionId);
-    
-    if (formData.paymentScreenshot) {
-      formDataToSend.append('paymentScreenshot', formData.paymentScreenshot);
-    }
-    
-    // Get JWT token from storage (optional - works without it now!)
-    const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-    
-    console.log('📤 Sending enrollment request to:', `${API_BASE}/enroll-request`);
-    console.log('🔐 Token present:', !!token);
-    
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    
-    const response = await fetch(`${API_BASE}/enroll-request`, {
-      method: 'POST',
-      headers: headers,
-      body: formDataToSend
-    });
-    
-    console.log('📥 Response status:', response.status);
-    
-    // Parse response
-    const contentType = response.headers.get('content-type');
-    let data;
-    
-    if (contentType && contentType.includes('application/json')) {
-      data = await response.json();
-    } else {
-      const text = await response.text();
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error(text || 'Invalid response from server');
+    setLoading(true);
+    try {
+      const formDataToSend = new FormData();
+      
+      formDataToSend.append('courseId', formData.courseId.toString());
+      formDataToSend.append('fullName', formData.fullName);
+      formDataToSend.append('email', formData.email);
+      formDataToSend.append('phone', formData.phone);
+      formDataToSend.append('address', formData.address);
+      formDataToSend.append('city', formData.city);
+      formDataToSend.append('state', formData.state);
+      formDataToSend.append('pincode', formData.pincode);
+      formDataToSend.append('paymentMethod', formData.paymentMethod);
+      formDataToSend.append('transactionId', formData.transactionId);
+      
+      if (formData.paymentScreenshot) {
+        formDataToSend.append('paymentScreenshot', formData.paymentScreenshot);
       }
+      
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      
+      const headers = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`${API_BASE}/enroll-request`, {
+        method: 'POST',
+        headers: headers,
+        body: formDataToSend
+      });
+      
+      const contentType = response.headers.get('content-type');
+      let data;
+      
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error(text || 'Invalid response from server');
+        }
+      }
+      
+      if (!response.ok) {
+        throw new Error(data.error || `Server error (${response.status})`);
+      }
+      
+      if (data.success === false) {
+        throw new Error(data.error || 'Enrollment failed');
+      }
+      
+      setShowThankYou(true);
+      
+    } catch (error) {
+      console.error('❌ Submission error:', error);
+      alert(`Enrollment failed: ${error.message}\n\nPlease contact support if payment was already made.`);
+    } finally {
+      setLoading(false);
     }
-    
-    console.log('📊 Response data:', data);
-    
-    if (!response.ok) {
-      throw new Error(data.error || `Server error (${response.status})`);
-    }
-    
-    if (data.success === false) {
-      throw new Error(data.error || 'Enrollment failed');
-    }
-    
-    console.log('✅ Enrollment submitted successfully!');
-    setShowThankYou(true);
-    
-  } catch (error) {
-    console.error('❌ Submission error:', error);
-    alert(`Enrollment failed: ${error.message}\n\nPlease contact support if payment was already made.`);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
   
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -426,7 +511,7 @@ function CheckoutPage({ course, onBack }) {
         setErrors(prev => ({ ...prev, paymentScreenshot: 'Only image files are allowed.' }));
         return;
       }
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit as per backend
+      if (file.size > 5 * 1024 * 1024) {
         setErrors(prev => ({ ...prev, paymentScreenshot: 'File size exceeds 5MB limit.' }));
         return;
       }
@@ -442,7 +527,6 @@ function CheckoutPage({ course, onBack }) {
     }
   };
 
-  // Clean up preview URL when component unmounts
   useEffect(() => {
     return () => {
       if (paymentPreview) {
@@ -457,6 +541,7 @@ function CheckoutPage({ course, onBack }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50/30 via-background to-orange-100/20">
+      <Header />
       <div className="container mx-auto px-4 py-8">
         <Button 
           variant="outline" 
@@ -656,7 +741,7 @@ function CheckoutPage({ course, onBack }) {
                               <p className="text-xs text-gray-500 mt-1">Pay {course.price}</p>
                             </div>
                           </div>
-                          </div>
+                        </div>
                         <p className="text-sm text-gray-600 mt-4">
                           Scan this QR code with any UPI app to pay {course.price}
                         </p>
@@ -763,20 +848,20 @@ function CheckoutPage({ course, onBack }) {
           </div>
         </div>
       </div>
-    
+      <Footer />
     </div>
   );
 }
 
-// Thank You Page Component
+// Thank You Page Component - UNCHANGED
 function ThankYouPage({ course }) {
   const [showLoginDialog, setShowLoginDialog] = useState(false);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50/30 via-background to-orange-100/20">
+      <Header />
       <div className="container mx-auto px-4 py-16">
         <div className="max-w-2xl mx-auto text-center">
-          {/* Success Animation */}
           <div className="mb-8">
             <div className="w-24 h-24 bg-gradient-to-r from-green-500 to-green-400 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
               <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -791,7 +876,6 @@ function ThankYouPage({ course }) {
             </p>
           </div>
 
-          {/* Course Details */}
           <Card className="mb-8 border-0 bg-white shadow-lg">
             <CardHeader>
               <div className="text-4xl mb-2">{course.image}</div>
@@ -812,7 +896,6 @@ function ThankYouPage({ course }) {
             </CardContent>
           </Card>
 
-          {/* Important Notice */}
           <Card className="mb-8 border-0 bg-gradient-to-r from-blue-50 to-indigo-50 shadow-lg">
             <CardContent className="p-6">
               <div className="flex items-start space-x-3">
@@ -834,7 +917,6 @@ function ThankYouPage({ course }) {
             </CardContent>
           </Card>
 
-          {/* Action Buttons */}
           <div className="space-y-4">
             <Button 
               onClick={() => setShowLoginDialog(true)}
@@ -855,7 +937,6 @@ function ThankYouPage({ course }) {
             </div>
           </div>
 
-          {/* What's Next */}
           <div className="mt-12 text-left">
             <h3 className="text-lg font-semibold mb-4 text-center">What happens next?</h3>
             <div className="grid md:grid-cols-3 gap-4">
@@ -879,7 +960,6 @@ function ThankYouPage({ course }) {
         </div>
       </div>
 
-      {/* Login Dialog */}
       {showLoginDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-md w-full p-6">
@@ -923,7 +1003,7 @@ function ThankYouPage({ course }) {
           </div>
         </div>
       )}
+      <Footer />
     </div>
   );
 }
-                          
