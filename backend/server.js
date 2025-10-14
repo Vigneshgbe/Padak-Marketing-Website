@@ -2146,40 +2146,35 @@ app.post('/api/enroll-request',
   }
 );
 
-// ==================== ADMIN ENROLLMENT REQUEST MANAGEMENT ====================
+// ==================== ADMIN ENROLLMENT REQUESTS MANAGEMENT ====================
 
 // GET all enrollment requests (admin only)
 app.get('/api/admin/enrollment-requests', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { status } = req.query;
-    
-    let query = db.collection('course_enroll_requests');
-    
-    if (status && status !== 'all') {
-      query = query.where('status', '==', status);
-    }
-    
-    const requestsSnap = await query.orderBy('created_at', 'desc').get();
+    const requestsSnap = await db.collection('course_enroll_requests')
+      .orderBy('created_at', 'desc')
+      .get();
 
     const requests = [];
     for (const doc of requestsSnap.docs) {
       const req = doc.data();
       
       // Get course details
-      const courseDoc = await db.collection('courses').doc(req.course_id).get();
-      const course = courseDoc.exists ? courseDoc.data() : null;
-      
-      // Get user details if user_id exists
-      let user = null;
-      if (req.user_id) {
-        const userDoc = await db.collection('users').doc(req.user_id).get();
-        user = userDoc.exists ? userDoc.data() : null;
+      let courseName = 'Unknown Course';
+      try {
+        const courseDoc = await db.collection('courses').doc(req.course_id).get();
+        if (courseDoc.exists) {
+          courseName = courseDoc.data().title;
+        }
+      } catch (err) {
+        console.error('Error fetching course:', err);
       }
-      
+
       requests.push({
         id: doc.id,
-        user_id: req.user_id,
+        user_id: req.user_id || null,
         course_id: req.course_id,
+        course_name: courseName,
         full_name: req.full_name,
         email: req.email,
         phone: req.phone,
@@ -2191,206 +2186,128 @@ app.get('/api/admin/enrollment-requests', authenticateToken, requireAdmin, async
         transaction_id: req.transaction_id,
         payment_screenshot: req.payment_screenshot,
         status: req.status,
-        is_guest: req.is_guest,
-        created_at: req.created_at,
-        course_title: course?.title || 'Unknown Course',
-        course_price: course?.price || 0,
-        user_account_email: user?.email || null
+        is_guest: req.is_guest || false,
+        created_at: req.created_at
       });
     }
 
     res.json(requests);
   } catch (error) {
     console.error('Error fetching enrollment requests:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch enrollment requests',
-      details: error.message 
-    });
-  }
-});
-
-// GET single enrollment request (admin only)
-app.get('/api/admin/enrollment-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    const requestDoc = await db.collection('course_enroll_requests').doc(id).get();
-    
-    if (!requestDoc.exists) {
-      return res.status(404).json({ error: 'Enrollment request not found' });
-    }
-    
-    const req = requestDoc.data();
-    
-    // Get course details
-    const courseDoc = await db.collection('courses').doc(req.course_id).get();
-    const course = courseDoc.exists ? courseDoc.data() : null;
-    
-    res.json({
-      id: requestDoc.id,
-      ...req,
-      course_title: course?.title || 'Unknown Course',
-      course_price: course?.price || 0
-    });
-  } catch (error) {
-    console.error('Error fetching enrollment request:', error);
-    res.status(500).json({ error: 'Failed to fetch enrollment request' });
+    res.status(500).json({ error: 'Failed to fetch enrollment requests' });
   }
 });
 
 // APPROVE enrollment request (admin only)
-app.post('/api/admin/enrollment-requests/:id/approve', authenticateToken, requireAdmin, async (req, res) => {
+app.put('/api/admin/enrollment-requests/:id/approve', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     
+    // Get the enrollment request
     const requestDoc = await db.collection('course_enroll_requests').doc(id).get();
-    
     if (!requestDoc.exists) {
       return res.status(404).json({ error: 'Enrollment request not found' });
     }
+
+    const request = requestDoc.data();
     
-    const enrollRequest = requestDoc.data();
-    
-    if (enrollRequest.status !== 'pending') {
-      return res.status(400).json({ error: 'Request has already been processed' });
+    // Check if course exists
+    const courseDoc = await db.collection('courses').doc(request.course_id).get();
+    if (!courseDoc.exists) {
+      return res.status(404).json({ error: 'Course not found' });
     }
-    
-    // Check if user exists with this email
-    let userId = enrollRequest.user_id;
-    
+
+    // Find user by email (for guest enrollments)
+    let userId = request.user_id;
     if (!userId) {
-      // Try to find user by email
       const usersSnap = await db.collection('users')
-        .where('email', '==', enrollRequest.email.toLowerCase())
+        .where('email', '==', request.email.toLowerCase())
         .limit(1)
         .get();
       
       if (!usersSnap.empty) {
         userId = usersSnap.docs[0].id;
-        console.log(`Found existing user with email ${enrollRequest.email}, linking enrollment`);
       }
     }
-    
-    // Check if enrollment already exists
-    let existingEnrollment = null;
-    
+
     if (userId) {
-      const enrollmentSnap = await db.collection('enrollments')
+      // Check if already enrolled
+      const existingEnrollment = await db.collection('enrollments')
         .where('user_id', '==', userId)
-        .where('course_id', '==', enrollRequest.course_id)
-        .limit(1)
+        .where('course_id', '==', request.course_id)
         .get();
-      
-      if (!enrollmentSnap.empty) {
-        existingEnrollment = enrollmentSnap.docs[0];
-      }
-    } else {
-      // Check by email for guest enrollments
-      const enrollmentSnap = await db.collection('enrollments')
-        .where('guest_email', '==', enrollRequest.email.toLowerCase())
-        .where('course_id', '==', enrollRequest.course_id)
-        .limit(1)
-        .get();
-      
-      if (!enrollmentSnap.empty) {
-        existingEnrollment = enrollmentSnap.docs[0];
+
+      if (existingEnrollment.empty) {
+        // Create enrollment
+        const enrollmentRef = db.collection('enrollments').doc();
+        await enrollmentRef.set({
+          user_id: userId,
+          course_id: request.course_id,
+          enrollment_date: firebase.firestore.Timestamp.now(),
+          progress: 0,
+          status: 'active',
+          completion_date: null
+        });
+
+        // Update user stats
+        const userStatsRef = db.collection('user_stats').doc(userId);
+        const userStatsDoc = await userStatsRef.get();
+        
+        if (userStatsDoc.exists) {
+          await userStatsRef.update({
+            courses_enrolled: firebase.firestore.FieldValue.increment(1)
+          });
+        } else {
+          await userStatsRef.set({
+            courses_enrolled: 1,
+            courses_completed: 0,
+            certificates_earned: 0,
+            learning_streak: 0
+          });
+        }
       }
     }
-    
-    if (existingEnrollment) {
-      return res.status(400).json({ error: 'User is already enrolled in this course' });
-    }
-    
-    // Create enrollment
-    const enrollmentRef = db.collection('enrollments').doc();
-    const enrollmentData = {
-      user_id: userId || null,
-      guest_email: !userId ? enrollRequest.email.toLowerCase() : null,
-      guest_name: !userId ? enrollRequest.full_name : null,
-      course_id: enrollRequest.course_id,
-      enrollment_date: firebase.firestore.Timestamp.now(),
-      progress: 0,
-      status: 'active',
-      completion_date: null,
-      payment_verified: true,
-      payment_method: enrollRequest.payment_method,
-      transaction_id: enrollRequest.transaction_id,
-      created_at: firebase.firestore.Timestamp.now(),
-      updated_at: firebase.firestore.Timestamp.now()
-    };
-    
-    await enrollmentRef.set(enrollmentData);
-    
-    // Update enrollment request status
+
+    // Update request status
     await db.collection('course_enroll_requests').doc(id).update({
       status: 'approved',
-      processed_at: firebase.firestore.Timestamp.now(),
-      processed_by: req.user.id,
-      enrollment_id: enrollmentRef.id
+      approved_at: firebase.firestore.Timestamp.now(),
+      approved_by: req.user.id,
+      user_id: userId || null
     });
-    
-    // Update user stats if user exists
-    if (userId) {
-      const statsRef = db.collection('user_stats').doc(userId);
-      const statsDoc = await statsRef.get();
-      
-      if (statsDoc.exists) {
-        await statsRef.update({
-          courses_enrolled: firebase.firestore.FieldValue.increment(1),
-          last_activity: new Date().toISOString()
-        });
-      } else {
-        await statsRef.set({
-          user_id: userId,
-          courses_enrolled: 1,
-          courses_completed: 0,
-          certificates_earned: 0,
-          learning_streak: 0,
-          last_activity: new Date().toISOString()
-        });
-      }
-    }
-    
+
     res.json({ 
       message: 'Enrollment request approved successfully',
-      enrollmentId: enrollmentRef.id,
-      linkedToUser: !!userId
+      userId: userId,
+      userFound: !!userId
     });
+
   } catch (error) {
     console.error('Error approving enrollment request:', error);
-    res.status(500).json({ 
-      error: 'Failed to approve enrollment request',
-      details: error.message 
-    });
+    res.status(500).json({ error: 'Failed to approve enrollment request' });
   }
 });
 
 // REJECT enrollment request (admin only)
-app.post('/api/admin/enrollment-requests/:id/reject', authenticateToken, requireAdmin, async (req, res) => {
+app.put('/api/admin/enrollment-requests/:id/reject', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
-    
+
     const requestDoc = await db.collection('course_enroll_requests').doc(id).get();
-    
     if (!requestDoc.exists) {
       return res.status(404).json({ error: 'Enrollment request not found' });
     }
-    
-    const enrollRequest = requestDoc.data();
-    
-    if (enrollRequest.status !== 'pending') {
-      return res.status(400).json({ error: 'Request has already been processed' });
-    }
-    
+
     await db.collection('course_enroll_requests').doc(id).update({
       status: 'rejected',
-      rejection_reason: reason || 'Payment verification failed',
-      processed_at: firebase.firestore.Timestamp.now(),
-      processed_by: req.user.id
+      rejected_at: firebase.firestore.Timestamp.now(),
+      rejected_by: req.user.id,
+      rejection_reason: reason || 'No reason provided'
     });
-    
+
     res.json({ message: 'Enrollment request rejected successfully' });
+
   } catch (error) {
     console.error('Error rejecting enrollment request:', error);
     res.status(500).json({ error: 'Failed to reject enrollment request' });
@@ -2401,79 +2318,109 @@ app.post('/api/admin/enrollment-requests/:id/reject', authenticateToken, require
 app.delete('/api/admin/enrollment-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const requestDoc = await db.collection('course_enroll_requests').doc(id).get();
-    
     if (!requestDoc.exists) {
       return res.status(404).json({ error: 'Enrollment request not found' });
     }
-    
+
+    // Delete payment screenshot file if exists
+    const request = requestDoc.data();
+    if (request.payment_screenshot) {
+      const filePath = path.join(__dirname, request.payment_screenshot.replace(/^\//, ''));
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (fileError) {
+          console.error('Error deleting payment screenshot:', fileError);
+        }
+      }
+    }
+
     await db.collection('course_enroll_requests').doc(id).delete();
-    
+
     res.json({ message: 'Enrollment request deleted successfully' });
+
   } catch (error) {
     console.error('Error deleting enrollment request:', error);
     res.status(500).json({ error: 'Failed to delete enrollment request' });
   }
 });
 
-// ==================== AUTO-LINK ENROLLMENTS ON LOGIN ====================
-
-// Add this function to link guest enrollments when user logs in
-const linkGuestEnrollments = async (userId, email) => {
+// AUTO-LINK guest enrollments when user logs in
+app.post('/api/link-guest-enrollments', authenticateToken, async (req, res) => {
   try {
-    // Find all guest enrollments with matching email
-    const guestEnrollmentsSnap = await db.collection('enrollments')
-      .where('guest_email', '==', email.toLowerCase())
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+
+    // Find approved enrollment requests with matching email
+    const requestsSnap = await db.collection('course_enroll_requests')
+      .where('email', '==', userEmail.toLowerCase())
+      .where('status', '==', 'approved')
       .where('user_id', '==', null)
       .get();
-    
-    if (guestEnrollmentsSnap.empty) {
-      return 0;
-    }
-    
+
     let linkedCount = 0;
-    
-    // Link each enrollment to the user
-    for (const doc of guestEnrollmentsSnap.docs) {
-      await db.collection('enrollments').doc(doc.id).update({
-        user_id: userId,
-        guest_email: null,
-        guest_name: null,
-        linked_at: firebase.firestore.Timestamp.now(),
-        updated_at: firebase.firestore.Timestamp.now()
+
+    for (const doc of requestsSnap.docs) {
+      const request = doc.data();
+
+      // Check if already enrolled
+      const existingEnrollment = await db.collection('enrollments')
+        .where('user_id', '==', userId)
+        .where('course_id', '==', request.course_id)
+        .get();
+
+      if (existingEnrollment.empty) {
+        // Create enrollment
+        const enrollmentRef = db.collection('enrollments').doc();
+        await enrollmentRef.set({
+          user_id: userId,
+          course_id: request.course_id,
+          enrollment_date: request.created_at || firebase.firestore.Timestamp.now(),
+          progress: 0,
+          status: 'active',
+          completion_date: null
+        });
+
+        linkedCount++;
+      }
+
+      // Update request to link user_id
+      await db.collection('course_enroll_requests').doc(doc.id).update({
+        user_id: userId
       });
-      linkedCount++;
     }
-    
-    // Update user stats
+
     if (linkedCount > 0) {
-      const statsRef = db.collection('user_stats').doc(userId);
-      const statsDoc = await statsRef.get();
+      // Update user stats
+      const userStatsRef = db.collection('user_stats').doc(userId);
+      const userStatsDoc = await userStatsRef.get();
       
-      if (statsDoc.exists) {
-        await statsRef.update({
+      if (userStatsDoc.exists) {
+        await userStatsRef.update({
           courses_enrolled: firebase.firestore.FieldValue.increment(linkedCount)
         });
       } else {
-        await statsRef.set({
-          user_id: userId,
+        await userStatsRef.set({
           courses_enrolled: linkedCount,
           courses_completed: 0,
           certificates_earned: 0,
-          learning_streak: 0,
-          last_activity: new Date().toISOString()
+          learning_streak: 0
         });
       }
     }
-    
-    console.log(`Linked ${linkedCount} guest enrollments to user ${userId}`);
-    return linkedCount;
+
+    res.json({ 
+      message: `Successfully linked ${linkedCount} guest enrollment(s)`,
+      linkedCount 
+    });
+
   } catch (error) {
     console.error('Error linking guest enrollments:', error);
-    return 0;
+    res.status(500).json({ error: 'Failed to link guest enrollments' });
   }
-};
+});
 
 
 // ==================== COURSES ROUTES ====================
@@ -5417,6 +5364,44 @@ app.post('/api/login', async (req, res) => {
       JWT_SECRET,
       { expiresIn: tokenExpiry }
     );
+
+    // ✅ AUTO-LINK GUEST ENROLLMENTS - ADD THIS
+    try {
+      const requestsSnap = await db.collection('course_enroll_requests')
+        .where('email', '==', email.toLowerCase())
+        .where('status', '==', 'approved')
+        .where('user_id', '==', null)
+        .get();
+
+      for (const doc of requestsSnap.docs) {
+        const request = doc.data();
+
+        // Check if already enrolled
+        const existingEnrollment = await db.collection('enrollments')
+          .where('user_id', '==', userId)
+          .where('course_id', '==', request.course_id)
+          .get();
+
+        if (existingEnrollment.empty) {
+          // Create enrollment
+          await db.collection('enrollments').add({
+            user_id: userId,
+            course_id: request.course_id,
+            enrollment_date: request.created_at || firebase.firestore.Timestamp.now(),
+            progress: 0,
+            status: 'active',
+            completion_date: null
+          });
+        }
+
+        // Update request to link user_id
+        await db.collection('course_enroll_requests').doc(doc.id).update({
+          user_id: userId
+        });
+      }
+    } catch (linkError) {
+      console.error('Error auto-linking guest enrollments:', linkError);
+    }
 
     // Update last login timestamp
     await db.collection('users').doc(userId).update({

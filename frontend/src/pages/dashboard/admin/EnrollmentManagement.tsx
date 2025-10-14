@@ -1,41 +1,108 @@
 // src/pages/dashboard/admin/EnrollmentManagement.tsx
 import React, { useState, useEffect } from 'react';
-import { Edit, Search, Filter, Save, X } from 'lucide-react';
+import { Edit, Search, Filter, Save, X, Check, XCircle, Eye, Trash2, Download } from 'lucide-react';
 import DataTable from '../../../components/admin/DataTable';
 import StatusBadge from '../../../components/admin/StatusBadge';
 import Modal from '../../../components/admin/Modal';
-import { Enrollment } from '../../../lib/admin-types';
+
+interface EnrollmentRequest {
+  id: string;
+  user_id: string | null;
+  course_id: string;
+  course_name: string;
+  full_name: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  state: string;
+  pincode: string;
+  payment_method: string;
+  transaction_id: string;
+  payment_screenshot: string;
+  status: string;
+  is_guest: boolean;
+  created_at: any;
+}
+
+interface Enrollment {
+  id: string;
+  user_id: string;
+  user_name: string;
+  course_id: string;
+  course_name: string;
+  progress: number;
+  status: 'active' | 'completed' | 'dropped';
+  enrollment_date: any;
+  completion_date: any;
+}
 
 const EnrollmentManagement: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'requests' | 'enrollments'>('requests');
+  
+  // Enrollment Requests State
+  const [requests, setRequests] = useState<EnrollmentRequest[]>([]);
+  const [requestsLoading, setRequestsLoading] = useState(true);
+  const [selectedRequest, setSelectedRequest] = useState<EnrollmentRequest | null>(null);
+  const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  
+  // Enrollments State
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [enrollmentsLoading, setEnrollmentsLoading] = useState(true);
   const [selectedEnrollment, setSelectedEnrollment] = useState<Enrollment | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEnrollmentModalOpen, setIsEnrollmentModalOpen] = useState(false);
+  
+  // Common State
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    fetchRequests();
     fetchEnrollments();
   }, []);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+  };
+
+  const fetchRequests = async () => {
+    try {
+      setRequestsLoading(true);
+      const response = await fetch('http://localhost:5000/api/admin/enrollment-requests', {
+        method: 'GET',
+        headers: getAuthHeaders(),
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setRequests(data);
+      } else {
+        throw new Error('Failed to fetch enrollment requests');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setRequestsLoading(false);
+    }
+  };
+
   const fetchEnrollments = async () => {
     try {
-      setLoading(true);
-      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const baseURL = 'http://localhost:5000';
-      const response = await fetch(`${baseURL}/api/admin/enrollments`, {
+      setEnrollmentsLoading(true);
+      const response = await fetch('http://localhost:5000/api/admin/enrollments', {
         method: 'GET',
-        headers,
+        headers: getAuthHeaders(),
         credentials: 'include'
       });
 
@@ -48,13 +115,94 @@ const EnrollmentManagement: React.FC = () => {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
-      setLoading(false);
+      setEnrollmentsLoading(false);
     }
+  };
+
+  const handleApproveRequest = async (requestId: string) => {
+    if (!confirm('Are you sure you want to approve this enrollment request?')) return;
+
+    try {
+      setSaving(true);
+      const response = await fetch(`http://localhost:5000/api/admin/enrollment-requests/${requestId}/approve`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        alert(result.userFound 
+          ? 'Enrollment request approved and enrollment created successfully!' 
+          : 'Enrollment request approved! Enrollment will be created when user registers with this email.');
+        fetchRequests();
+        fetchEnrollments();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to approve request');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to approve request');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRejectRequest = async (requestId: string) => {
+    const reason = prompt('Enter rejection reason (optional):');
+    if (reason === null) return; // User cancelled
+
+    try {
+      setSaving(true);
+      const response = await fetch(`http://localhost:5000/api/admin/enrollment-requests/${requestId}/reject`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+        body: JSON.stringify({ reason })
+      });
+
+      if (response.ok) {
+        alert('Enrollment request rejected successfully!');
+        fetchRequests();
+      } else {
+        throw new Error('Failed to reject request');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reject request');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteRequest = async (requestId: string) => {
+    if (!confirm('Are you sure you want to delete this enrollment request?')) return;
+
+    try {
+      const response = await fetch(`http://localhost:5000/api/admin/enrollment-requests/${requestId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+        credentials: 'include'
+      });
+
+      if (response.ok) {
+        alert('Enrollment request deleted successfully!');
+        fetchRequests();
+      } else {
+        throw new Error('Failed to delete request');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete request');
+    }
+  };
+
+  const handleViewRequest = (request: EnrollmentRequest) => {
+    setSelectedRequest(request);
+    setIsRequestModalOpen(true);
   };
 
   const handleEditEnrollment = (enrollment: Enrollment) => {
     setSelectedEnrollment(enrollment);
-    setIsModalOpen(true);
+    setIsEnrollmentModalOpen(true);
   };
 
   const handleSaveEnrollment = async () => {
@@ -62,19 +210,9 @@ const EnrollmentManagement: React.FC = () => {
 
     try {
       setSaving(true);
-      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const baseURL = 'http://localhost:5000';
-      const response = await fetch(`${baseURL}/api/admin/enrollments/${selectedEnrollment.id}`, {
+      const response = await fetch(`http://localhost:5000/api/admin/enrollments/${selectedEnrollment.id}`, {
         method: 'PUT',
-        headers,
+        headers: getAuthHeaders(),
         credentials: 'include',
         body: JSON.stringify({
           status: selectedEnrollment.status,
@@ -84,8 +222,8 @@ const EnrollmentManagement: React.FC = () => {
       });
 
       if (response.ok) {
-        setIsModalOpen(false);
-        fetchEnrollments(); // Refresh the data
+        setIsEnrollmentModalOpen(false);
+        fetchEnrollments();
       } else {
         throw new Error('Failed to update enrollment');
       }
@@ -96,28 +234,18 @@ const EnrollmentManagement: React.FC = () => {
     }
   };
 
-  const handleDeleteEnrollment = async (id: number) => {
+  const handleDeleteEnrollment = async (id: string) => {
     if (!confirm('Are you sure you want to delete this enrollment?')) return;
 
     try {
-      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const baseURL = 'http://localhost:5000';
-      const response = await fetch(`${baseURL}/api/admin/enrollments/${id}`, {
+      const response = await fetch(`http://localhost:5000/api/admin/enrollments/${id}`, {
         method: 'DELETE',
-        headers,
+        headers: getAuthHeaders(),
         credentials: 'include'
       });
 
       if (response.ok) {
-        fetchEnrollments(); // Refresh the data
+        fetchEnrollments();
       } else {
         throw new Error('Failed to delete enrollment');
       }
@@ -126,17 +254,23 @@ const EnrollmentManagement: React.FC = () => {
     }
   };
 
+  const filteredRequests = requests.filter((request) => {
+    if (searchTerm && !`${request.full_name} ${request.email} ${request.course_name}`.toLowerCase().includes(searchTerm.toLowerCase())) {
+      return false;
+    }
+    if (selectedFilter !== 'all' && request.status !== selectedFilter) {
+      return false;
+    }
+    return true;
+  });
+
   const filteredEnrollments = enrollments.filter((enrollment) => {
-    // Apply search filter
     if (searchTerm && !`${enrollment.user_name} ${enrollment.course_name}`.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false;
     }
-
-    // Apply status filter
     if (selectedFilter !== 'all' && enrollment.status !== selectedFilter) {
       return false;
     }
-
     return true;
   });
 
@@ -150,7 +284,7 @@ const EnrollmentManagement: React.FC = () => {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
             <input
               type="text"
-              placeholder="Search enrollments..."
+              placeholder="Search..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500"
@@ -165,29 +299,62 @@ const EnrollmentManagement: React.FC = () => {
               className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none"
             >
               <option value="all">All Statuses</option>
-              <option value="active">Active</option>
-              <option value="completed">Completed</option>
-              <option value="dropped">Dropped</option>
+              {activeTab === 'requests' ? (
+                <>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                </>
+              ) : (
+                <>
+                  <option value="active">Active</option>
+                  <option value="completed">Completed</option>
+                  <option value="dropped">Dropped</option>
+                </>
+              )}
             </select>
           </div>
         </div>
       </div>
 
-      {loading && (
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
-        </div>
-      )}
+      {/* Tabs */}
+      <div className="border-b border-gray-200 dark:border-gray-700">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setActiveTab('requests')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'requests'
+                ? 'border-orange-500 text-orange-600 dark:text-orange-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+            }`}
+          >
+            Enrollment Requests ({requests.filter(r => r.status === 'pending').length})
+          </button>
+          <button
+            onClick={() => setActiveTab('enrollments')}
+            className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'enrollments'
+                ? 'border-orange-500 text-orange-600 dark:text-orange-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+            }`}
+          >
+            Active Enrollments ({enrollments.filter(e => e.status === 'active').length})
+          </button>
+        </nav>
+      </div>
 
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6">
           <div className="flex items-center mb-4">
             <span className="text-red-500 mr-2">⚠️</span>
-            <h3 className="text-lg font-semibold text-red-700 dark:text-red-300">Error Loading Enrollments</h3>
+            <h3 className="text-lg font-semibold text-red-700 dark:text-red-300">Error</h3>
           </div>
           <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
           <button
-            onClick={fetchEnrollments}
+            onClick={() => {
+              fetchRequests();
+              fetchEnrollments();
+            }}
             className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
           >
             Retry
@@ -195,73 +362,246 @@ const EnrollmentManagement: React.FC = () => {
         </div>
       )}
 
-      {!loading && !error && (
-        <DataTable<Enrollment>
-          data={filteredEnrollments}
-          columns={[
-            { header: 'Student', accessor: 'user_name' },
-            { header: 'Course', accessor: 'course_name' },
-            {
-              header: 'Progress',
-              accessor: (enrollment) => (
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
-                  <div
-                    className="bg-green-600 h-2.5 rounded-full"
-                    style={{ width: `${enrollment.progress}%` }}
-                  ></div>
-                  <span className="text-xs ml-2">{enrollment.progress}%</span>
-                </div>
-              )
-            },
-            {
-              header: 'Status',
-              accessor: (enrollment) => (
-                <StatusBadge status={enrollment.status} />
-              )
-            },
-            { 
-              header: 'Enrollment Date', 
-              accessor: (enrollment) => new Date(enrollment.enrollment_date).toLocaleDateString() 
-            },
-            { 
-              header: 'Completion Date', 
-              accessor: (enrollment) => enrollment.completion_date 
-                ? new Date(enrollment.completion_date).toLocaleDateString() 
-                : 'N/A' 
-            }
-          ]}
-          actions={(enrollment) => (
-            <div className="flex space-x-2">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleEditEnrollment(enrollment);
-                }}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                title="Edit enrollment"
-              >
-                <Edit size={16} className="text-blue-500" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDeleteEnrollment(enrollment.id);
-                }}
-                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                title="Delete enrollment"
-              >
-                <X size={16} className="text-red-500" />
-              </button>
+      {/* Enrollment Requests Tab */}
+      {activeTab === 'requests' && (
+        <>
+          {requestsLoading ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
             </div>
+          ) : (
+            <DataTable<EnrollmentRequest>
+              data={filteredRequests}
+              columns={[
+                { header: 'Name', accessor: 'full_name' },
+                { header: 'Email', accessor: 'email' },
+                { header: 'Course', accessor: 'course_name' },
+                { 
+                  header: 'Type', 
+                  accessor: (req) => (
+                    <span className={`px-2 py-1 rounded-full text-xs ${req.is_guest ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
+                      {req.is_guest ? 'Guest' : 'User'}
+                    </span>
+                  )
+                },
+                {
+                  header: 'Status',
+                  accessor: (req) => <StatusBadge status={req.status} />
+                },
+                { 
+                  header: 'Date', 
+                  accessor: (req) => req.created_at?.toDate ? new Date(req.created_at.toDate()).toLocaleDateString() : 'N/A'
+                }
+              ]}
+              actions={(request) => (
+                <div className="flex space-x-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleViewRequest(request);
+                    }}
+                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    title="View details"
+                  >
+                    <Eye size={16} className="text-blue-500" />
+                  </button>
+                  {request.status === 'pending' && (
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleApproveRequest(request.id);
+                        }}
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                        title="Approve"
+                        disabled={saving}
+                      >
+                        <Check size={16} className="text-green-500" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRejectRequest(request.id);
+                        }}
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                        title="Reject"
+                        disabled={saving}
+                      >
+                        <XCircle size={16} className="text-red-500" />
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteRequest(request.id);
+                    }}
+                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    title="Delete"
+                  >
+                    <Trash2 size={16} className="text-red-500" />
+                  </button>
+                </div>
+              )}
+            />
           )}
-        />
+        </>
       )}
+
+      {/* Active Enrollments Tab */}
+      {activeTab === 'enrollments' && (
+        <>
+          {enrollmentsLoading ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+            </div>
+          ) : (
+            <DataTable<Enrollment>
+              data={filteredEnrollments}
+              columns={[
+                { header: 'Student', accessor: 'user_name' },
+                { header: 'Course', accessor: 'course_name' },
+                {
+                  header: 'Progress',
+                  accessor: (enrollment) => (
+                    <div className="flex items-center gap-2">
+                      <div className="w-24 bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                        <div
+                          className="bg-green-600 h-2.5 rounded-full"
+                          style={{ width: `${enrollment.progress}%` }}
+                        ></div>
+                      </div>
+                      <span className="text-xs">{enrollment.progress}%</span>
+                    </div>
+                  )
+                },
+                {
+                  header: 'Status',
+                  accessor: (enrollment) => <StatusBadge status={enrollment.status} />
+                },
+                { 
+                  header: 'Enrolled', 
+                  accessor: (enrollment) => enrollment.enrollment_date?.toDate ? new Date(enrollment.enrollment_date.toDate()).toLocaleDateString() : 'N/A'
+                }
+              ]}
+              actions={(enrollment) => (
+                <div className="flex space-x-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEditEnrollment(enrollment);
+                    }}
+                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    title="Edit enrollment"
+                  >
+                    <Edit size={16} className="text-blue-500" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteEnrollment(enrollment.id);
+                    }}
+                    className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                    title="Delete enrollment"
+                  >
+                    <Trash2 size={16} className="text-red-500" />
+                  </button>
+                </div>
+              )}
+            />
+          )}
+        </>
+      )}
+
+      {/* View Request Modal */}
+      <Modal
+        isOpen={isRequestModalOpen}
+        title="Enrollment Request Details"
+        onClose={() => setIsRequestModalOpen(false)}
+        size="lg"
+      >
+        {selectedRequest && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Full Name</label>
+                <p className="mt-1">{selectedRequest.full_name}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+                <p className="mt-1">{selectedRequest.email}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Phone</label>
+                <p className="mt-1">{selectedRequest.phone}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Course</label>
+                <p className="mt-1">{selectedRequest.course_name}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Payment Method</label>
+                <p className="mt-1">{selectedRequest.payment_method}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Transaction ID</label>
+                <p className="mt-1">{selectedRequest.transaction_id}</p>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Address</label>
+                <p className="mt-1">{`${selectedRequest.address}, ${selectedRequest.city}, ${selectedRequest.state} - ${selectedRequest.pincode}`}</p>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Payment Screenshot</label>
+                {selectedRequest.payment_screenshot && (
+                  <img 
+                    src={`http://localhost:5000${selectedRequest.payment_screenshot}`} 
+                    alt="Payment Proof"
+                    className="max-w-full h-auto rounded border"
+                  />
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => setIsRequestModalOpen(false)}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                Close
+              </button>
+              {selectedRequest.status === 'pending' && (
+                <>
+                  <button
+                    onClick={() => {
+                      setIsRequestModalOpen(false);
+                      handleApproveRequest(selectedRequest.id);
+                    }}
+                    className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsRequestModalOpen(false);
+                      handleRejectRequest(selectedRequest.id);
+                    }}
+                    className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
+                  >
+                    Reject
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Edit Enrollment Modal */}
       <Modal
-        isOpen={isModalOpen}
+        isOpen={isEnrollmentModalOpen}
         title="Edit Enrollment"
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => setIsEnrollmentModalOpen(false)}
         size="lg"
       >
         {selectedEnrollment && (
@@ -322,7 +662,7 @@ const EnrollmentManagement: React.FC = () => {
 
             <div className="flex justify-end gap-2 mt-6">
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={() => setIsEnrollmentModalOpen(false)}
                 className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
                 disabled={saving}
               >

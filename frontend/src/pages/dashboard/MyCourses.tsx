@@ -11,6 +11,14 @@ const MyCourses: React.FC = () => {
   useEffect(() => {
     const fetchEnrollments = async () => {
       try {
+        // Auto-link guest enrollments first
+        try {
+          await apiService.post('/link-guest-enrollments', {});
+        } catch (linkError) {
+          console.log('No guest enrollments to link or already linked');
+        }
+
+        // Fetch enrollments
         const data = await apiService.get<Enrollment[]>('/enrollments/my-courses');
         setEnrollments(data);
       } catch (error) {
