@@ -348,6 +348,7 @@ app.post('/api/register', async (req, res) => {
 });
 
 // Login endpoint
+// Login endpoint - ENHANCED WITH DEBUGGING
 app.post('/api/login', async (req, res) => {
   const { email, password, rememberMe } = req.body;
 
@@ -373,6 +374,10 @@ app.post('/api/login', async (req, res) => {
     const userDoc = users.docs[0];
     const user = userDoc.data();
     const userId = userDoc.id;
+
+    console.log('=== LOGIN DEBUG ===');
+    console.log('User ID:', userId);
+    console.log('User Email:', email.toLowerCase());
 
     // Check if user is active
     if (user.is_active === false) {
@@ -403,25 +408,47 @@ app.post('/api/login', async (req, res) => {
       { expiresIn: tokenExpiry }
     );
 
-    // ✅ AUTO-LINK GUEST ENROLLMENTS - INLINE CODE
+    // ✅ AUTO-LINK GUEST ENROLLMENTS - ENHANCED WITH DEBUGGING
     try {
-      console.log(`Checking for guest enrollments for email: ${email.toLowerCase()}`);
+      console.log('🔍 Checking for approved enrollment requests...');
       
-      const requestsSnap = await db.collection('course_enroll_requests')
+      // Find ALL enrollment requests with this email (not just approved ones initially)
+      const allRequestsSnap = await db.collection('course_enroll_requests')
+        .where('email', '==', email.toLowerCase())
+        .get();
+
+      console.log(`📋 Found ${allRequestsSnap.size} total enrollment requests for this email`);
+
+      // Log details of each request
+      allRequestsSnap.forEach(doc => {
+        const req = doc.data();
+        console.log(`  - Request ID: ${doc.id}`);
+        console.log(`    Status: ${req.status}`);
+        console.log(`    User ID: ${req.user_id || 'null'}`);
+        console.log(`    Course ID: ${req.course_id}`);
+        console.log(`    Is Guest: ${req.is_guest}`);
+      });
+
+      // Now process only approved requests
+      const approvedRequestsSnap = await db.collection('course_enroll_requests')
         .where('email', '==', email.toLowerCase())
         .where('status', '==', 'approved')
         .get();
 
-      console.log(`Found ${requestsSnap.size} approved enrollment requests`);
+      console.log(`✅ Found ${approvedRequestsSnap.size} APPROVED enrollment requests`);
 
       let linkedCount = 0;
+      let skippedCount = 0;
 
-      for (const doc of requestsSnap.docs) {
+      for (const doc of approvedRequestsSnap.docs) {
         const request = doc.data();
+
+        console.log(`\n🔗 Processing request ${doc.id}...`);
 
         // Skip if already linked to this user
         if (request.user_id === userId) {
-          console.log(`Request ${doc.id} already linked to user ${userId}`);
+          console.log(`  ⏭️  Already linked to user ${userId}`);
+          skippedCount++;
           continue;
         }
 
@@ -432,6 +459,8 @@ app.post('/api/login', async (req, res) => {
           .get();
 
         if (existingEnrollment.empty) {
+          console.log(`  ➕ Creating new enrollment...`);
+          
           // Create enrollment
           const enrollmentRef = db.collection('enrollments').doc();
           await enrollmentRef.set({
@@ -443,20 +472,26 @@ app.post('/api/login', async (req, res) => {
             completion_date: null
           });
 
-          console.log(`Created enrollment for user ${userId} in course ${request.course_id}`);
+          console.log(`  ✅ Enrollment created: ${enrollmentRef.id}`);
           linkedCount++;
         } else {
-          console.log(`User ${userId} already enrolled in course ${request.course_id}`);
+          console.log(`  ⚠️  Already enrolled in course ${request.course_id}`);
+          console.log(`     Existing enrollment ID: ${existingEnrollment.docs[0].id}`);
         }
 
         // Update request to link user_id
         await db.collection('course_enroll_requests').doc(doc.id).update({
           user_id: userId
         });
+        console.log(`  🔗 Request linked to user ${userId}`);
       }
 
+      console.log(`\n📊 Summary:`);
+      console.log(`   - Linked: ${linkedCount} new enrollments`);
+      console.log(`   - Skipped: ${skippedCount} already linked`);
+
       if (linkedCount > 0) {
-        console.log(`Linked ${linkedCount} guest enrollments to user ${userId}`);
+        console.log(`\n📈 Updating user stats...`);
         
         // Update user stats
         const userStatsRef = db.collection('user_stats').doc(userId);
@@ -466,6 +501,7 @@ app.post('/api/login', async (req, res) => {
           await userStatsRef.update({
             courses_enrolled: firebase.firestore.FieldValue.increment(linkedCount)
           });
+          console.log(`   ✅ User stats updated (+${linkedCount})`);
         } else {
           await userStatsRef.set({
             courses_enrolled: linkedCount,
@@ -474,10 +510,15 @@ app.post('/api/login', async (req, res) => {
             learning_streak: 0,
             last_activity: new Date().toISOString()
           });
+          console.log(`   ✅ User stats created with ${linkedCount} enrollments`);
         }
       }
+
+      console.log('=== END LOGIN DEBUG ===\n');
+
     } catch (linkError) {
-      console.error('Error auto-linking guest enrollments:', linkError);
+      console.error('❌ Error auto-linking guest enrollments:', linkError);
+      console.error('Stack trace:', linkError.stack);
       // Don't fail login if linking fails - just log the error
     }
 
@@ -486,7 +527,7 @@ app.post('/api/login', async (req, res) => {
       updated_at: firebase.firestore.FieldValue.serverTimestamp()
     });
 
-    console.log('User logged in successfully:', { userId, email: user.email });
+    console.log('✅ User logged in successfully:', { userId, email: user.email });
 
     // Send success response
     res.status(200).json({
@@ -510,7 +551,8 @@ app.post('/api/login', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('❌ Login error:', error);
+    console.error('Stack trace:', error.stack);
     res.status(500).json({ 
       success: false,
       error: 'Server error during login' 
@@ -2234,6 +2276,74 @@ app.post('/api/enroll-request',
     }
   }
 );
+
+// ===================== MANUAL ENROLMENT =====================
+// Manual sync endpoint for testing - Add this after the login endpoint
+app.post('/api/sync-enrollments', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+
+    console.log(`\n🔄 Manual sync triggered for user ${userId} (${userEmail})`);
+
+    // Find approved enrollment requests
+    const requestsSnap = await db.collection('course_enroll_requests')
+      .where('email', '==', userEmail.toLowerCase())
+      .where('status', '==', 'approved')
+      .get();
+
+    console.log(`Found ${requestsSnap.size} approved requests`);
+
+    let linked = 0;
+    let existing = 0;
+
+    for (const doc of requestsSnap.docs) {
+      const request = doc.data();
+
+      // Check if already enrolled
+      const enrollmentSnap = await db.collection('enrollments')
+        .where('user_id', '==', userId)
+        .where('course_id', '==', request.course_id)
+        .get();
+
+      if (enrollmentSnap.empty) {
+        // Create enrollment
+        await db.collection('enrollments').add({
+          user_id: userId,
+          course_id: request.course_id,
+          enrollment_date: request.created_at || firebase.firestore.Timestamp.now(),
+          progress: 0,
+          status: 'active',
+          completion_date: null
+        });
+        linked++;
+        console.log(`✅ Created enrollment for course ${request.course_id}`);
+      } else {
+        existing++;
+        console.log(`⏭️  Already enrolled in course ${request.course_id}`);
+      }
+
+      // Link request to user
+      await db.collection('course_enroll_requests').doc(doc.id).update({
+        user_id: userId
+      });
+    }
+
+    console.log(`\n📊 Sync complete: ${linked} new, ${existing} existing`);
+
+    res.json({
+      success: true,
+      message: `Synced ${linked} enrollments`,
+      linked,
+      existing,
+      total: requestsSnap.size
+    });
+
+  } catch (error) {
+    console.error('Sync error:', error);
+    res.status(500).json({ error: 'Failed to sync enrollments' });
+  }
+});
 
 // ==================== ADMIN ENROLLMENT REQUESTS MANAGEMENT ====================
 
