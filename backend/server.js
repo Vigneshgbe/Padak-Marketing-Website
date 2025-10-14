@@ -760,62 +760,70 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
           // Get user data
           let userData = null;
           if (post.user_id) {
-            const userDoc = await db.collection('users').doc(post.user_id).get();
-            if (userDoc.exists) {
-              const u = userDoc.data();
-              userData = {
-                id: post.user_id,
-                first_name: u.first_name || '',
-                last_name: u.last_name || '',
-                profile_image: getFullImageUrl(req, u.profile_image),
-                account_type: u.account_type || 'student'
-              };
+            try {
+              const userDoc = await db.collection('users').doc(post.user_id).get();
+              if (userDoc.exists) {
+                const u = userDoc.data();
+                userData = {
+                  id: post.user_id,
+                  first_name: u.first_name || '',
+                  last_name: u.last_name || '',
+                  profile_image: getFullImageUrl(req, u.profile_image),
+                  account_type: u.account_type || 'student'
+                };
+              }
+            } catch (userError) {
+              console.error(`Error fetching user ${post.user_id}:`, userError.message);
             }
           }
 
-          // Get likes count
-          const likesSnap = await db.collection('social_activities')
-            .where('activity_type', '==', 'like')
-            .where('target_id', '==', post.id)
-            .get();
-          const likesCount = likesSnap.size;
+          // Fetch ALL activities related to this post in ONE query
+          // This avoids complex composite indexes
+          let allActivities = [];
+          try {
+            const activitiesSnap = await db.collection('social_activities')
+              .where('target_id', '==', post.id)
+              .get();
+            
+            allActivities = activitiesSnap.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            }));
+          } catch (activitiesError) {
+            console.log(`Could not fetch activities for post ${post.id}:`, activitiesError.message);
+          }
 
-          // Check if current user has liked
-          const userLikeSnap = await db.collection('social_activities')
-            .where('activity_type', '==', 'like')
-            .where('target_id', '==', post.id)
-            .where('user_id', '==', userId)
-            .get();
-          const hasLiked = !userLikeSnap.empty;
+          // Filter activities by type in memory
+          const likes = allActivities.filter(a => a.activity_type === 'like');
+          const userLikes = likes.filter(a => a.user_id === userId);
+          const bookmarks = allActivities.filter(a => a.activity_type === 'bookmark' && a.user_id === userId);
+          const commentActivities = allActivities.filter(a => a.activity_type === 'comment');
 
-          // Get comments
-          const commentsSnap = await db.collection('social_activities')
-            .where('activity_type', '==', 'comment')
-            .where('target_id', '==', post.id)
-            .orderBy('created_at', 'asc')
-            .get();
-
+          // Get comment user data
           const comments = await Promise.all(
-            commentsSnap.docs.map(async (commentDoc) => {
-              const comment = commentDoc.data();
+            commentActivities.map(async (comment) => {
               let commentUser = null;
               
               if (comment.user_id) {
-                const commentUserDoc = await db.collection('users').doc(comment.user_id).get();
-                if (commentUserDoc.exists) {
-                  const cu = commentUserDoc.data();
-                  commentUser = {
-                    id: comment.user_id,
-                    first_name: cu.first_name || '',
-                    last_name: cu.last_name || '',
-                    profile_image: getFullImageUrl(req, cu.profile_image),
-                    account_type: cu.account_type || 'student'
-                  };
+                try {
+                  const commentUserDoc = await db.collection('users').doc(comment.user_id).get();
+                  if (commentUserDoc.exists) {
+                    const cu = commentUserDoc.data();
+                    commentUser = {
+                      id: comment.user_id,
+                      first_name: cu.first_name || '',
+                      last_name: cu.last_name || '',
+                      profile_image: getFullImageUrl(req, cu.profile_image),
+                      account_type: cu.account_type || 'student'
+                    };
+                  }
+                } catch (userError) {
+                  console.error(`Error fetching comment user:`, userError.message);
                 }
               }
 
               return {
-                id: commentDoc.id,
+                id: comment.id,
                 content: comment.content || '',
                 created_at: timestampToISO(comment.created_at),
                 user: commentUser
@@ -823,13 +831,8 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
             })
           );
 
-          // Check if current user has bookmarked
-          const userBookmarkSnap = await db.collection('social_activities')
-            .where('activity_type', '==', 'bookmark')
-            .where('target_id', '==', post.id)
-            .where('user_id', '==', userId)
-            .get();
-          const hasBookmarked = !userBookmarkSnap.empty;
+          // Sort comments by date manually (oldest first)
+          comments.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
           return {
             id: post.id,
@@ -843,9 +846,9 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
             visibility: post.visibility || 'public',
             achievement: post.achievement || false,
             share_count: post.share_count || 0,
-            likes: likesCount,
-            has_liked: hasLiked,
-            has_bookmarked: hasBookmarked,
+            likes: likes.length,
+            has_liked: userLikes.length > 0,
+            has_bookmarked: bookmarks.length > 0,
             comment_count: comments.length,
             user: userData,
             comments: comments
@@ -1335,7 +1338,6 @@ app.post('/api/posts/:id/share', authenticateToken, async (req, res) => {
 // =================================================================
 // =================== END OF SOCIAL FEED SECTION ==================
 // =================================================================
-
 
 // ============ STUDENT DASHBOARD SPECIFIC ENDPOINTS  ====================
 
