@@ -26,9 +26,9 @@ interface CalendarEvent {
   id: string;
   title: string;
   description: string;
-  date: string;
+  date: string | Date; // Can be string OR Date
   time?: string;
-  type: 'assignment' | 'live_session' | 'course_start' | 'course_end' | 'deadline';
+  type: 'assignment' | 'live_session' | 'course_start' | 'course_end' | 'deadline' | 'custom';
   course?: {
     id: number;
     title: string;
@@ -45,6 +45,32 @@ interface User {
   account_type: 'student' | 'professional' | 'business' | 'agency' | 'admin';
 }
 
+// Helper function to safely convert any date format to Date object
+const parseDate = (date: string | Date | any): Date => {
+  if (date instanceof Date) {
+    return date;
+  }
+  
+  if (typeof date === 'string') {
+    return new Date(date);
+  }
+  
+  // Handle Firestore Timestamp
+  if (date && typeof date === 'object' && 'toDate' in date && typeof date.toDate === 'function') {
+    return date.toDate();
+  }
+  
+  // Fallback to current date
+  console.warn('Unknown date format:', date);
+  return new Date();
+};
+
+// Helper function to format date to YYYY-MM-DD string
+const formatDateString = (date: string | Date | any): string => {
+  const dateObj = parseDate(date);
+  return dateObj.toISOString().split('T')[0];
+};
+
 const Calendar: React.FC = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -53,11 +79,13 @@ const Calendar: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
+        setError(null);
         
         // Get current user
         const userData = await apiService.get<User>('/auth/me');
@@ -65,13 +93,19 @@ const Calendar: React.FC = () => {
         
         // Get assignments
         const assignmentsData = await apiService.get<Assignment[]>('/assignments/my-assignments');
-        setAssignments(assignmentsData);
+        setAssignments(assignmentsData || []);
         
         // Get calendar events
-        const eventsData = await apiService.get<CalendarEvent[]>('/calendar/events');
+        let eventsData: CalendarEvent[] = [];
+        try {
+          eventsData = await apiService.get<CalendarEvent[]>('/calendar/events');
+        } catch (err) {
+          console.warn('No calendar events available:', err);
+          eventsData = [];
+        }
         
         // Convert assignments to calendar events
-        const assignmentEvents: CalendarEvent[] = assignmentsData.map(assignment => {
+        const assignmentEvents: CalendarEvent[] = (assignmentsData || []).map(assignment => {
           const dueDate = new Date(assignment.due_date);
           const isOverdue = dueDate < new Date() && !assignment.submission;
           const isCompleted = assignment.submission?.status === 'graded';
@@ -81,16 +115,17 @@ const Calendar: React.FC = () => {
             title: assignment.title,
             description: `${assignment.course.title} - ${assignment.description}`,
             date: assignment.due_date,
-            type: 'assignment',
+            type: 'assignment' as const,
             course: assignment.course,
             status: isOverdue ? 'overdue' : isCompleted ? 'completed' : 'pending',
             color: isOverdue ? 'red' : isCompleted ? 'green' : 'orange'
           };
         });
         
-        setEvents([...eventsData, ...assignmentEvents]);
+        setEvents([...(eventsData || []), ...assignmentEvents]);
       } catch (error) {
         console.error('Failed to fetch calendar data:', error);
+        setError('Failed to load calendar data. Please try again.');
       } finally {
         setLoading(false);
       }
@@ -122,22 +157,47 @@ const Calendar: React.FC = () => {
     return days;
   };
 
-  const getEventsForDate = (date: Date) => {
+  const getEventsForDate = (date: Date): CalendarEvent[] => {
     const dateStr = date.toISOString().split('T')[0];
-    return events.filter(event => event.date.startsWith(dateStr));
+    
+    return events.filter(event => {
+      try {
+        const eventDateStr = formatDateString(event.date);
+        return eventDateStr === dateStr;
+      } catch (err) {
+        console.warn('Error comparing dates:', err, event);
+        return false;
+      }
+    });
   };
 
   const getUpcomingEvents = () => {
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const nextWeek = new Date();
     nextWeek.setDate(today.getDate() + 7);
+    nextWeek.setHours(23, 59, 59, 999);
     
     return events
       .filter(event => {
-        const eventDate = new Date(event.date);
-        return eventDate >= today && eventDate <= nextWeek;
+        try {
+          const eventDate = parseDate(event.date);
+          return eventDate >= today && eventDate <= nextWeek;
+        } catch (err) {
+          console.warn('Error filtering event:', err, event);
+          return false;
+        }
       })
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .sort((a, b) => {
+        try {
+          const dateA = parseDate(a.date);
+          const dateB = parseDate(b.date);
+          return dateA.getTime() - dateB.getTime();
+        } catch (err) {
+          console.warn('Error sorting events:', err);
+          return 0;
+        }
+      })
       .slice(0, 5);
   };
 
@@ -170,13 +230,13 @@ const Calendar: React.FC = () => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'completed':
-        return 'text-green-600 bg-green-100 border-green-300';
+        return 'text-green-600 bg-green-100 border-green-300 dark:bg-green-900/20 dark:text-green-400';
       case 'overdue':
-        return 'text-red-600 bg-red-100 border-red-300';
+        return 'text-red-600 bg-red-100 border-red-300 dark:bg-red-900/20 dark:text-red-400';
       case 'pending':
-        return 'text-orange-600 bg-orange-100 border-orange-300';
+        return 'text-orange-600 bg-orange-100 border-orange-300 dark:bg-orange-900/20 dark:text-orange-400';
       default:
-        return 'text-blue-600 bg-blue-100 border-blue-300';
+        return 'text-blue-600 bg-blue-100 border-blue-300 dark:bg-blue-900/20 dark:text-blue-400';
     }
   };
 
@@ -184,6 +244,23 @@ const Calendar: React.FC = () => {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <AlertCircle size={48} className="mx-auto text-red-500 mb-4" />
+          <p className="text-gray-600 dark:text-gray-400">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
@@ -243,7 +320,7 @@ const Calendar: React.FC = () => {
             
             {days.map((day, index) => {
               if (!day) {
-                return <div key={index} className="p-3 h-24"></div>;
+                return <div key={`empty-${index}`} className="p-3 h-24"></div>;
               }
               
               const dayEvents = getEventsForDate(day);
@@ -252,7 +329,7 @@ const Calendar: React.FC = () => {
               
               return (
                 <div
-                  key={day.getDate()}
+                  key={`day-${day.getDate()}`}
                   onClick={() => setSelectedDate(day)}
                   className={`p-2 h-24 border rounded-lg cursor-pointer transition-colors relative ${
                     isToday ? 'bg-orange-50 border-orange-200 dark:bg-orange-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-700'
@@ -267,17 +344,17 @@ const Calendar: React.FC = () => {
                       <div
                         key={event.id}
                         className={`text-xs px-1 py-0.5 rounded truncate ${
-                          event.color === 'red' ? 'bg-red-100 text-red-800' :
-                          event.color === 'green' ? 'bg-green-100 text-green-800' :
-                          event.color === 'orange' ? 'bg-orange-100 text-orange-800' :
-                          'bg-blue-100 text-blue-800'
+                          event.color === 'red' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' :
+                          event.color === 'green' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' :
+                          event.color === 'orange' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300' :
+                          'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
                         }`}
                       >
                         {event.title}
                       </div>
                     ))}
                     {dayEvents.length > 2 && (
-                      <div className="text-xs text-gray-500">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
                         +{dayEvents.length - 2} more
                       </div>
                     )}
@@ -317,7 +394,7 @@ const Calendar: React.FC = () => {
                       
                       <div className="flex items-center text-xs text-gray-500 dark:text-gray-400">
                         <Clock size={12} className="mr-1" />
-                        {new Date(event.date).toLocaleDateString()}
+                        {parseDate(event.date).toLocaleDateString()}
                         {event.time && `, ${event.time}`}
                       </div>
                       
@@ -363,8 +440,14 @@ const Calendar: React.FC = () => {
 
       {/* Selected Date Events Modal */}
       {selectedDate && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md mx-4">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={() => setSelectedDate(null)}
+        >
+          <div 
+            className="bg-white dark:bg-gray-800 rounded-xl p-6 w-full max-w-md mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold">
                 {selectedDate.toLocaleDateString('en-US', { 
@@ -376,7 +459,7 @@ const Calendar: React.FC = () => {
               </h3>
               <button
                 onClick={() => setSelectedDate(null)}
-                className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-2xl leading-none"
               >
                 ×
               </button>
