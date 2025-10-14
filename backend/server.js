@@ -579,11 +579,6 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
 
 // ============== ENHANCED SOCIAL FEED FUNCTIONALITY ===============
 
-// =================================================================
-// ============== ENHANCED SOCIAL FEED FUNCTIONALITY ===============
-// =================================================================
-// Replace the existing social feed section in your server.js with this
-
 // --- Multer Configuration for Social Post Images ---
 const socialUploadDir = 'public/uploads/social';
 if (!fs.existsSync(socialUploadDir)) {
@@ -1334,10 +1329,6 @@ app.post('/api/posts/:id/share', authenticateToken, async (req, res) => {
     });
   }
 });
-
-// =================================================================
-// =================== END OF SOCIAL FEED SECTION ==================
-// =================================================================
 
 // ============ STUDENT DASHBOARD SPECIFIC ENDPOINTS  ====================
 

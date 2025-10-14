@@ -482,9 +482,11 @@ const SocialFeed: React.FC = () => {
             <div className="p-4 border-t border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center space-x-2">
+                  {/* Camera Button */}
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 transition-colors"
+                    type="button"
                   >
                     <Camera size={20} />
                   </button>
@@ -496,20 +498,33 @@ const SocialFeed: React.FC = () => {
                     className="hidden"
                   />
 
-                  <button
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                    className="emoji-picker p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 transition-colors relative"
-                  >
-                    <Smile size={20} />
+                  {/* Emoji Picker - FIXED VERSION */}
+                  <div className="relative emoji-picker-container">
+                    <button
+                      onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                      className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 transition-colors"
+                      type="button"
+                      title="Add emoji"
+                    >
+                      <Smile size={20} />
+                    </button>
 
                     {showEmojiPicker && (
-                      <div className="absolute bottom-full left-0 mb-2 p-2 bg-white dark:bg-gray-700 rounded-lg shadow-lg border border-gray-200 dark:border-gray-600">
-                        <div className="grid grid-cols-5 gap-1">
+                      <div className="absolute bottom-full left-0 mb-2 bg-white dark:bg-gray-700 rounded-xl shadow-2xl border-2 border-gray-200 dark:border-gray-600 p-3 z-[100] min-w-[240px] emoji-picker-container">
+                        {/* Pointer */}
+                        <div className="absolute -bottom-2 left-4 w-4 h-4 bg-white dark:bg-gray-700 border-r-2 border-b-2 border-gray-200 dark:border-gray-600 transform rotate-45"></div>
+                        
+                        {/* Emoji Grid */}
+                        <div className="grid grid-cols-5 gap-2">
                           {commonEmojis.map(emoji => (
                             <button
                               key={emoji}
-                              onClick={() => insertEmoji(emoji)}
-                              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-600 rounded transition-colors text-xl"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                insertEmoji(emoji);
+                              }}
+                              className="w-10 h-10 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-600 rounded-lg transition-all duration-150 text-2xl hover:scale-110 active:scale-95"
+                              type="button"
                             >
                               {emoji}
                             </button>
@@ -517,26 +532,32 @@ const SocialFeed: React.FC = () => {
                         </div>
                       </div>
                     )}
-                  </button>
+                  </div>
 
+                  {/* Achievement Button */}
                   <button
                     onClick={() => setIsAchievement(!isAchievement)}
-                    className={`p-2 rounded-lg transition-colors ${isAchievement
+                    className={`p-2 rounded-lg transition-colors ${
+                      isAchievement
                         ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
                         : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400'
-                      }`}
+                    }`}
+                    type="button"
                   >
                     <BadgeCheck size={20} />
                   </button>
                 </div>
 
+                {/* Post Button */}
                 <button
                   onClick={handleCreatePost}
                   disabled={(!newPostContent.trim() && !selectedImage) || isPosting}
-                  className={`px-6 py-2 rounded-full font-medium transition-all duration-200 ${newPostContent.trim() || selectedImage
+                  className={`px-6 py-2 rounded-full font-medium transition-all duration-200 ${
+                    newPostContent.trim() || selectedImage
                       ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:shadow-lg transform hover:scale-105'
                       : 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
-                    }`}
+                  }`}
+                  type="button"
                 >
                   {isPosting ? (
                     <div className="flex items-center space-x-2">
@@ -549,6 +570,7 @@ const SocialFeed: React.FC = () => {
                 </button>
               </div>
             </div>
+            
           </div>
         </div>
       )}
