@@ -119,21 +119,18 @@ export default function CoursesList() {
   if (loading) {
     return (
       <div className="min-h-screen">
-        <Header />
         <div className="flex items-center justify-center min-h-[60vh]">
           <div className="text-center">
             <RefreshCw className="w-8 h-8 animate-spin text-orange-500 mx-auto mb-4" />
             <p className="text-gray-600">Loading courses...</p>
           </div>
         </div>
-        <Footer />
       </div>
     );
   }
 
   return (
     <div className="min-h-screen">
-      <Header />
       
       {/* Compact Hero Section - Reduced padding */}
       <section className="py-8 bg-gradient-to-br from-orange-50/50 via-background to-orange-100/30 relative">
@@ -370,7 +367,6 @@ export default function CoursesList() {
         </div>
       </section>
 
-      <Footer />
     </div>
   );
 }
@@ -541,7 +537,6 @@ function CheckoutPage({ course, onBack }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50/30 via-background to-orange-100/20">
-      <Header />
       <div className="container mx-auto px-4 py-8">
         <Button 
           variant="outline" 
@@ -848,7 +843,6 @@ function CheckoutPage({ course, onBack }) {
           </div>
         </div>
       </div>
-      <Footer />
     </div>
   );
 }
@@ -859,7 +853,6 @@ function ThankYouPage({ course }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50/30 via-background to-orange-100/20">
-      <Header />
       <div className="container mx-auto px-4 py-16">
         <div className="max-w-2xl mx-auto text-center">
           <div className="mb-8">
@@ -895,47 +888,6 @@ function ThankYouPage({ course }) {
               </div>
             </CardContent>
           </Card>
-
-          <Card className="mb-8 border-0 bg-gradient-to-r from-blue-50 to-indigo-50 shadow-lg">
-            <CardContent className="p-6">
-              <div className="flex items-start space-x-3">
-                <div className="text-2xl">📋</div>
-                <div className="text-left">
-                  <h3 className="font-semibold text-blue-900 mb-2">Important Note:</h3>
-                  <p className="text-blue-800 text-sm leading-relaxed mb-4">
-                    Your submission and details will be updated in our dashboard within 24 hours. 
-                    Once verified, you'll receive access to your personalized dashboard where you can 
-                    track your progress, access course materials, and connect with instructors.
-                  </p>
-                  <div className="bg-white/60 p-3 rounded-lg">
-                    <p className="text-blue-700 text-sm font-medium">
-                      Please login and check your personalized dashboard for updates!
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="space-y-4">
-            <Button 
-              onClick={() => setShowLoginDialog(true)}
-              size="lg"
-              className="w-full bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500 text-white py-3"
-            >
-              Access Your Dashboard
-            </Button>
-            
-            <div className="text-center">
-              <Button 
-                variant="outline" 
-                onClick={() => window.location.href = '/courses'}
-                className="border-orange-200 hover:bg-orange-50"
-              >
-                Browse More Courses
-              </Button>
-            </div>
-          </div>
 
           <div className="mt-12 text-left">
             <h3 className="text-lg font-semibold mb-4 text-center">What happens next?</h3>
@@ -1003,7 +955,6 @@ function ThankYouPage({ course }) {
           </div>
         </div>
       )}
-      <Footer />
     </div>
   );
 }
