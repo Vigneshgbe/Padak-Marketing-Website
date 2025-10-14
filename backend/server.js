@@ -354,14 +354,20 @@ app.post('/api/login', async (req, res) => {
   try {
     // Validate input
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'Email and password are required' 
+      });
     }
 
     // Check if user exists in Firestore
-    const users = await db.collection('users').where('email', '==', email).get();
+    const users = await db.collection('users').where('email', '==', email.toLowerCase()).get();
 
     if (users.empty) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      return res.status(401).json({ 
+        success: false,
+        error: 'Invalid email or password' 
+      });
     }
 
     const userDoc = users.docs[0];
@@ -369,14 +375,20 @@ app.post('/api/login', async (req, res) => {
     const userId = userDoc.id;
 
     // Check if user is active
-    if (!user.is_active) {
-      return res.status(401).json({ error: 'Account deactivated. Please contact administrator.' });
+    if (user.is_active === false) {
+      return res.status(401).json({ 
+        success: false,
+        error: 'Account deactivated. Please contact administrator.' 
+      });
     }
 
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
     if (!isPasswordValid) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      return res.status(401).json({ 
+        success: false,
+        error: 'Invalid email or password' 
+      });
     }
 
     // Generate JWT token
@@ -391,18 +403,94 @@ app.post('/api/login', async (req, res) => {
       { expiresIn: tokenExpiry }
     );
 
+    // ✅ AUTO-LINK GUEST ENROLLMENTS - INLINE CODE
+    try {
+      console.log(`Checking for guest enrollments for email: ${email.toLowerCase()}`);
+      
+      const requestsSnap = await db.collection('course_enroll_requests')
+        .where('email', '==', email.toLowerCase())
+        .where('status', '==', 'approved')
+        .get();
+
+      console.log(`Found ${requestsSnap.size} approved enrollment requests`);
+
+      let linkedCount = 0;
+
+      for (const doc of requestsSnap.docs) {
+        const request = doc.data();
+
+        // Skip if already linked to this user
+        if (request.user_id === userId) {
+          console.log(`Request ${doc.id} already linked to user ${userId}`);
+          continue;
+        }
+
+        // Check if already enrolled
+        const existingEnrollment = await db.collection('enrollments')
+          .where('user_id', '==', userId)
+          .where('course_id', '==', request.course_id)
+          .get();
+
+        if (existingEnrollment.empty) {
+          // Create enrollment
+          const enrollmentRef = db.collection('enrollments').doc();
+          await enrollmentRef.set({
+            user_id: userId,
+            course_id: request.course_id,
+            enrollment_date: request.created_at || firebase.firestore.Timestamp.now(),
+            progress: 0,
+            status: 'active',
+            completion_date: null
+          });
+
+          console.log(`Created enrollment for user ${userId} in course ${request.course_id}`);
+          linkedCount++;
+        } else {
+          console.log(`User ${userId} already enrolled in course ${request.course_id}`);
+        }
+
+        // Update request to link user_id
+        await db.collection('course_enroll_requests').doc(doc.id).update({
+          user_id: userId
+        });
+      }
+
+      if (linkedCount > 0) {
+        console.log(`Linked ${linkedCount} guest enrollments to user ${userId}`);
+        
+        // Update user stats
+        const userStatsRef = db.collection('user_stats').doc(userId);
+        const userStatsDoc = await userStatsRef.get();
+        
+        if (userStatsDoc.exists) {
+          await userStatsRef.update({
+            courses_enrolled: firebase.firestore.FieldValue.increment(linkedCount)
+          });
+        } else {
+          await userStatsRef.set({
+            courses_enrolled: linkedCount,
+            courses_completed: 0,
+            certificates_earned: 0,
+            learning_streak: 0,
+            last_activity: new Date().toISOString()
+          });
+        }
+      }
+    } catch (linkError) {
+      console.error('Error auto-linking guest enrollments:', linkError);
+      // Don't fail login if linking fails - just log the error
+    }
+
     // Update last login timestamp
     await db.collection('users').doc(userId).update({
       updated_at: firebase.firestore.FieldValue.serverTimestamp()
     });
 
-    // Link any guest enrollments to this user
-    await linkGuestEnrollments(userId, user.email);
-
     console.log('User logged in successfully:', { userId, email: user.email });
 
     // Send success response
     res.status(200).json({
+      success: true,
       message: 'Login successful',
       token: token,
       user: {
@@ -417,15 +505,16 @@ app.post('/api/login', async (req, res) => {
         website: user.website || '',
         bio: user.bio || '',
         isActive: user.is_active,
-        emailVerified: user.email_verified,
-        createdAt: user.created_at,
-        updatedAt: user.updated_at
+        emailVerified: user.email_verified
       }
     });
 
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ error: 'Server error during login' });
+    res.status(500).json({ 
+      success: false,
+      error: 'Server error during login' 
+    });
   }
 });
 
