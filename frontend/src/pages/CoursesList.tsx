@@ -29,7 +29,7 @@ const fetchCourses = async () => {
     
     return courses.map(course => ({
       ...course,
-      instructor: course.instructorName || 'Unknown Instructor',
+      instructor: course.instructorName || 'Padak Instructor',
       duration: course.durationWeeks ? `${course.durationWeeks} weeks` : 'TBD',
       students: Math.floor(Math.random() * 2000) + 500,
       rating: (Math.random() * 0.5 + 4.5).toFixed(1),
