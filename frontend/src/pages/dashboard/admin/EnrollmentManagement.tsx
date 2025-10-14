@@ -390,7 +390,30 @@ const EnrollmentManagement: React.FC = () => {
                 },
                 { 
                   header: 'Date', 
-                  accessor: (req) => req.created_at?.toDate ? new Date(req.created_at.toDate()).toLocaleDateString() : 'N/A'
+                  accessor: (req) => {
+                    if (!req.created_at) return 'N/A';
+                    
+                    try {
+                      if (req.created_at.toDate && typeof req.created_at.toDate === 'function') {
+                        return new Date(req.created_at.toDate()).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric'
+                        });
+                      }
+                      
+                      const date = new Date(req.created_at);
+                      if (isNaN(date.getTime())) return 'N/A';
+                      
+                      return date.toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                      });
+                    } catch {
+                      return 'N/A';
+                    }
+                  }
                 }
               ]}
               actions={(request) => (
@@ -479,9 +502,34 @@ const EnrollmentManagement: React.FC = () => {
                   header: 'Status',
                   accessor: (enrollment) => <StatusBadge status={enrollment.status} />
                 },
-                { 
-                  header: 'Enrolled', 
-                  accessor: (enrollment) => enrollment.enrollment_date?.toDate ? new Date(enrollment.enrollment_date.toDate()).toLocaleDateString() : 'N/A'
+                {
+                  header: 'Enrolled',
+                  accessor: (enrollment) => {
+                    if (!enrollment.enrollment_date) return 'N/A';
+                    
+                    try {
+                      // Handle Firestore Timestamp
+                      if (enrollment.enrollment_date.toDate && typeof enrollment.enrollment_date.toDate === 'function') {
+                        return new Date(enrollment.enrollment_date.toDate()).toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric'
+                        });
+                      }
+                      
+                      // Handle ISO string or regular Date
+                      const date = new Date(enrollment.enrollment_date);
+                      if (isNaN(date.getTime())) return 'N/A';
+                      
+                      return date.toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                      });
+                    } catch {
+                      return 'N/A';
+                    }
+                  }
                 }
               ]}
               actions={(enrollment) => (
