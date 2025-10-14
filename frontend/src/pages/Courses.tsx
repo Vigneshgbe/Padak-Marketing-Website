@@ -358,68 +358,82 @@ function CheckoutPage({ course, onBack }) {
   };
 
   const handleSubmit = async () => {
-    if (!validateStep(2)) return;
+  if (!validateStep(2)) return;
+  
+  setLoading(true);
+  try {
+    const formDataToSend = new FormData();
     
-    setLoading(true);
-    try {
-      const formDataToSend = new FormData();
-      
-      // Append all form data
-      formDataToSend.append('courseId', formData.courseId.toString());
-      formDataToSend.append('fullName', formData.fullName);
-      formDataToSend.append('email', formData.email);
-      formDataToSend.append('phone', formData.phone);
-      formDataToSend.append('address', formData.address);
-      formDataToSend.append('city', formData.city);
-      formDataToSend.append('state', formData.state);
-      formDataToSend.append('pincode', formData.pincode);
-      formDataToSend.append('paymentMethod', formData.paymentMethod);
-      formDataToSend.append('transactionId', formData.transactionId);
-      
-      if (formData.paymentScreenshot) {
-        formDataToSend.append('paymentScreenshot', formData.paymentScreenshot);
-      }
-      
-      // Get JWT token from storage
-      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-      
-      console.log('Sending request to:', `${API_BASE}/enroll-request`);
-      
-      const response = await fetch(`${API_BASE}/enroll-request`, {
-        method: 'POST',
-        headers: {
-          'Authorization': token ? `Bearer ${token}` : ''
-        },
-        body: formDataToSend
-      });
-      
-      console.log('Response status:', response.status);
-      
-      // Get response as text first
-      const text = await response.text();
-      console.log('Response body:', text);
-      
-      let data;
-      if (text) {
-        try {
-          data = JSON.parse(text);
-        } catch (e) {
-          console.error('Error parsing response:', e);
-        }
-      }
-      
-      if (!response.ok) {
-        throw new Error((data && data.error) || text || 'Enrollment request failed');
-      }
-      
-      setShowThankYou(true);
-    } catch (error) {
-      console.error('Submission error:', error);
-      alert(error.message || 'Submission failed. Please try again.');
-    } finally {
-      setLoading(false);
+    // Append all form data
+    formDataToSend.append('courseId', formData.courseId.toString());
+    formDataToSend.append('fullName', formData.fullName);
+    formDataToSend.append('email', formData.email);
+    formDataToSend.append('phone', formData.phone);
+    formDataToSend.append('address', formData.address);
+    formDataToSend.append('city', formData.city);
+    formDataToSend.append('state', formData.state);
+    formDataToSend.append('pincode', formData.pincode);
+    formDataToSend.append('paymentMethod', formData.paymentMethod);
+    formDataToSend.append('transactionId', formData.transactionId);
+    
+    if (formData.paymentScreenshot) {
+      formDataToSend.append('paymentScreenshot', formData.paymentScreenshot);
     }
-  };
+    
+    // Get JWT token from storage (optional - works without it now!)
+    const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+    
+    console.log('📤 Sending enrollment request to:', `${API_BASE}/enroll-request`);
+    console.log('🔐 Token present:', !!token);
+    
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    const response = await fetch(`${API_BASE}/enroll-request`, {
+      method: 'POST',
+      headers: headers,
+      body: formDataToSend
+    });
+    
+    console.log('📥 Response status:', response.status);
+    
+    // Parse response
+    const contentType = response.headers.get('content-type');
+    let data;
+    
+    if (contentType && contentType.includes('application/json')) {
+      data = await response.json();
+    } else {
+      const text = await response.text();
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(text || 'Invalid response from server');
+      }
+    }
+    
+    console.log('📊 Response data:', data);
+    
+    if (!response.ok) {
+      throw new Error(data.error || `Server error (${response.status})`);
+    }
+    
+    if (data.success === false) {
+      throw new Error(data.error || 'Enrollment failed');
+    }
+    
+    console.log('✅ Enrollment submitted successfully!');
+    setShowThankYou(true);
+    
+  } catch (error) {
+    console.error('❌ Submission error:', error);
+    alert(`Enrollment failed: ${error.message}\n\nPlease contact support if payment was already made.`);
+  } finally {
+    setLoading(false);
+  }
+};
   
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
