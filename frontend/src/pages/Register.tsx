@@ -195,7 +195,7 @@ export default function Register() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    const handleSubmit = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     
     if (!validateForm()) {
@@ -215,6 +215,7 @@ export default function Register() {
           email: formData.email.trim(),
           phone: formData.phone.trim(),
           password: formData.password,
+          confirmPassword: formData.confirmPassword, // ✅ ADD THIS LINE
           accountType: formData.accountType
         })
       });
