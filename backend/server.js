@@ -577,9 +577,7 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
   }
 });
 
-// =================================================================
 // ============== ENHANCED SOCIAL FEED FUNCTIONALITY ===============
-// =================================================================
 
 // --- Multer Configuration for Social Post Images ---
 const socialUploadDir = 'public/uploads/social';
@@ -600,17 +598,17 @@ const socialUpload = multer({
   storage: socialStorage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: (req, file, cb) => {
-    const filetypes = /jpeg|jpg|png|gif/;
+    const filetypes = /jpeg|jpg|png|gif|webp/;
     const mimetype = filetypes.test(file.mimetype);
     const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
     if (mimetype && extname) {
       return cb(null, true);
     }
-    cb(new Error('Error: File upload only supports the following filetypes - ' + filetypes));
+    cb(new Error('Error: File upload only supports the following filetypes - jpeg, jpg, png, gif, webp'));
   },
 }).single('image');
 
-// Helper function to get full URL for images (SIMPLIFIED)
+// Helper function to get full URL for images
 const getFullImageUrl = (req, imagePath) => {
   if (!imagePath) {
     return null;
@@ -623,7 +621,65 @@ const getFullImageUrl = (req, imagePath) => {
     cleanPath = '/' + cleanPath;
   }
   return `${req.protocol}://${req.get('host')}${cleanPath}`;
-}
+};
+
+// Helper function to safely convert Firestore timestamp to ISO string
+const timestampToISO = (timestamp) => {
+  if (!timestamp) return new Date().toISOString();
+  try {
+    if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+      return timestamp.toDate().toISOString();
+    }
+    if (timestamp instanceof Date) {
+      return timestamp.toISOString();
+    }
+    if (typeof timestamp === 'string') {
+      return new Date(timestamp).toISOString();
+    }
+    return new Date().toISOString();
+  } catch (error) {
+    console.error('Error converting timestamp:', error);
+    return new Date().toISOString();
+  }
+};
+
+// Helper function to get user connections
+const getUserConnections = async (userId) => {
+  try {
+    const connections = new Set();
+    
+    // Get connections where user is user_id_1
+    const connections1Snap = await db.collection('user_connections')
+      .where('user_id_1', '==', userId)
+      .where('status', '==', 'accepted')
+      .get();
+    
+    connections1Snap.forEach(doc => {
+      const data = doc.data();
+      if (data.user_id_2) {
+        connections.add(data.user_id_2);
+      }
+    });
+
+    // Get connections where user is user_id_2
+    const connections2Snap = await db.collection('user_connections')
+      .where('user_id_2', '==', userId)
+      .where('status', '==', 'accepted')
+      .get();
+    
+    connections2Snap.forEach(doc => {
+      const data = doc.data();
+      if (data.user_id_1) {
+        connections.add(data.user_id_1);
+      }
+    });
+
+    return Array.from(connections);
+  } catch (error) {
+    console.error('Error getting user connections:', error);
+    return [];
+  }
+};
 
 // --- GET All Posts (with Pagination, Likes, Comments, etc.) ---
 app.get('/api/posts', authenticateToken, async (req, res) => {
@@ -633,92 +689,172 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
   const offset = (page - 1) * limit;
 
   try {
-    // Step 1: Get total count
-    // In Firestore, we can't do complex conditional counts easily, so fetch all and filter
-    const allPostsSnap = await db.collection('social_activities').where('activity_type', '==', 'post').get();
-    let totalPosts = 0;
-    const postIds = [];
+    console.log(`Fetching posts for user ${userId}, page ${page}`);
 
-    const connections1 = await db.collection('user_connections').where('user_id_1', '==', userId).where('status', '==', 'accepted').get();
-    const connections2 = await db.collection('user_connections').where('user_id_2', '==', userId).where('status', '==', 'accepted').get();
-    const connections = [...connections1.docs.map(d => d.data().user_id_2), ...connections2.docs.map(d => d.data().user_id_1)];
+    // Get user's connections
+    const connections = await getUserConnections(userId);
+    console.log(`User has ${connections.length} connections`);
 
-    allPostsSnap.docs.forEach(doc => {
-      const p = doc.data();
-      if (
-        p.visibility === 'public' ||
-        (p.visibility === 'private' && p.user_id === userId) ||
-        (p.visibility === 'connections' && (p.user_id === userId || connections.includes(p.user_id)))
-      ) {
-        totalPosts++;
-        postIds.push(doc.id);
+    // Fetch all posts from social_activities collection
+    const allPostsSnap = await db.collection('social_activities')
+      .where('activity_type', '==', 'post')
+      .orderBy('created_at', 'desc')
+      .get();
+
+    console.log(`Found ${allPostsSnap.size} total posts`);
+
+    // Filter posts based on visibility
+    const visiblePosts = [];
+    
+    allPostsSnap.forEach(doc => {
+      const post = doc.data();
+      const postId = doc.id;
+      
+      // Check visibility rules
+      const isPublic = !post.visibility || post.visibility === 'public';
+      const isOwnPost = post.user_id === userId;
+      const isConnectionPost = post.visibility === 'connections' && 
+                              (isOwnPost || connections.includes(post.user_id));
+      const isPrivate = post.visibility === 'private' && isOwnPost;
+
+      if (isPublic || isConnectionPost || isPrivate) {
+        visiblePosts.push({ id: postId, ...post });
       }
     });
 
+    console.log(`${visiblePosts.length} posts visible to user`);
+
+    // Calculate pagination
+    const totalPosts = visiblePosts.length;
     const totalPages = Math.ceil(totalPosts / limit);
+    
+    // Get paginated posts
+    const paginatedPosts = visiblePosts.slice(offset, offset + limit);
 
-    // Step 2: Fetch paginated posts (manual pagination since conditional)
-    const posts = [];
-    const start = offset;
-    const end = offset + limit;
-    for (let i = start; i < Math.min(end, postIds.length); i++) {
-      const postDoc = await db.collection('social_activities').doc(postIds[i]).get();
-      const post = postDoc.data();
-      post.id = postIds[i];
+    // Enrich posts with user data, likes, comments, etc.
+    const enrichedPosts = await Promise.all(
+      paginatedPosts.map(async (post) => {
+        try {
+          // Get user data
+          let userData = null;
+          if (post.user_id) {
+            const userDoc = await db.collection('users').doc(post.user_id).get();
+            if (userDoc.exists) {
+              const u = userDoc.data();
+              userData = {
+                id: post.user_id,
+                first_name: u.first_name || '',
+                last_name: u.last_name || '',
+                profile_image: getFullImageUrl(req, u.profile_image),
+                account_type: u.account_type || 'student'
+              };
+            }
+          }
 
-      const userDoc = await db.collection('users').doc(post.user_id).get();
-      const u = userDoc.data();
+          // Get likes count
+          const likesSnap = await db.collection('social_activities')
+            .where('activity_type', '==', 'like')
+            .where('target_id', '==', post.id)
+            .get();
+          const likesCount = likesSnap.size;
 
-      post.likes = (await db.collection('social_activities').where('activity_type', '==', 'like').where('target_id', '==', post.id).get()).size;
+          // Check if current user has liked
+          const userLikeSnap = await db.collection('social_activities')
+            .where('activity_type', '==', 'like')
+            .where('target_id', '==', post.id)
+            .where('user_id', '==', userId)
+            .get();
+          const hasLiked = !userLikeSnap.empty;
 
-      post.comment_count = (await db.collection('social_activities').where('activity_type', '==', 'comment').where('target_id', '==', post.id).get()).size;
+          // Get comments
+          const commentsSnap = await db.collection('social_activities')
+            .where('activity_type', '==', 'comment')
+            .where('target_id', '==', post.id)
+            .orderBy('created_at', 'asc')
+            .get();
 
-      post.has_liked = !(await db.collection('social_activities').where('activity_type', '==', 'like').where('target_id', '==', post.id).where('user_id', '==', userId).get()).empty;
+          const comments = await Promise.all(
+            commentsSnap.docs.map(async (commentDoc) => {
+              const comment = commentDoc.data();
+              let commentUser = null;
+              
+              if (comment.user_id) {
+                const commentUserDoc = await db.collection('users').doc(comment.user_id).get();
+                if (commentUserDoc.exists) {
+                  const cu = commentUserDoc.data();
+                  commentUser = {
+                    id: comment.user_id,
+                    first_name: cu.first_name || '',
+                    last_name: cu.last_name || '',
+                    profile_image: getFullImageUrl(req, cu.profile_image),
+                    account_type: cu.account_type || 'student'
+                  };
+                }
+              }
 
-      post.has_bookmarked = !(await db.collection('social_activities').where('activity_type', '==', 'bookmark').where('target_id', '==', post.id).where('user_id', '==', userId).get()).empty;
+              return {
+                id: commentDoc.id,
+                content: comment.content || '',
+                created_at: timestampToISO(comment.created_at),
+                user: commentUser
+              };
+            })
+          );
 
-      post.image_url = getFullImageUrl(req, post.image_url);
+          // Check if current user has bookmarked
+          const userBookmarkSnap = await db.collection('social_activities')
+            .where('activity_type', '==', 'bookmark')
+            .where('target_id', '==', post.id)
+            .where('user_id', '==', userId)
+            .get();
+          const hasBookmarked = !userBookmarkSnap.empty;
 
-      post.user = {
-        id: post.user_id,
-        first_name: u.first_name,
-        last_name: u.last_name,
-        profile_image: getFullImageUrl(req, u.profile_image),
-        account_type: u.account_type
-      };
+          return {
+            id: post.id,
+            user_id: post.user_id,
+            activity_type: post.activity_type,
+            content: post.content || '',
+            image_url: getFullImageUrl(req, post.image_url),
+            target_id: post.target_id || null,
+            created_at: timestampToISO(post.created_at),
+            updated_at: timestampToISO(post.updated_at || post.created_at),
+            visibility: post.visibility || 'public',
+            achievement: post.achievement || false,
+            share_count: post.share_count || 0,
+            likes: likesCount,
+            has_liked: hasLiked,
+            has_bookmarked: hasBookmarked,
+            comment_count: comments.length,
+            user: userData,
+            comments: comments
+          };
+        } catch (error) {
+          console.error(`Error enriching post ${post.id}:`, error);
+          return null;
+        }
+      })
+    );
 
-      const commentsSnap = await db.collection('social_activities').where('activity_type', '==', 'comment').where('target_id', '==', post.id).orderBy('created_at').get();
+    // Filter out null posts
+    const validPosts = enrichedPosts.filter(post => post !== null);
 
-      post.comments = [];
-      for (const commentDoc of commentsSnap.docs) {
-        const c = commentDoc.data();
-        c.id = commentDoc.id;
-
-        const commentUserDoc = await db.collection('users').doc(c.user_id).get();
-        const commentUser = commentUserDoc.data();
-
-        c.user = {
-          id: c.user_id,
-          first_name: commentUser.first_name,
-          last_name: commentUser.last_name,
-          profile_image: getFullImageUrl(req, commentUser.profile_image),
-          account_type: commentUser.account_type
-        };
-
-        post.comments.push(c);
-      }
-
-      posts.push(post);
-    }
+    console.log(`Returning ${validPosts.length} enriched posts`);
 
     res.json({
-      posts: posts,
-      pagination: { page, totalPages, totalPosts }
+      posts: validPosts,
+      pagination: {
+        page,
+        totalPages,
+        totalPosts
+      }
     });
 
   } catch (error) {
     console.error('Error fetching posts:', error);
-    res.status(500).json({ error: 'Failed to fetch posts.' });
+    res.status(500).json({
+      error: 'Failed to fetch posts.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -734,55 +870,75 @@ app.post('/api/posts', authenticateToken, (req, res) => {
       const { content, achievement, visibility } = req.body;
       const userId = req.user.id;
 
+      console.log('Creating post:', { userId, content: content?.substring(0, 50), hasImage: !!req.file });
+
+      // Validation
       if (!content && !req.file) {
         return res.status(400).json({ error: 'Post must have content or an image.' });
       }
 
       const imageUrl = req.file ? `/uploads/social/${req.file.filename}` : null;
+      const isAchievement = achievement === 'true' || achievement === true;
+      const postVisibility = visibility || 'public';
 
-      const isAchievement = achievement === 'true';
-
+      // Create new post document
       const postRef = db.collection('social_activities').doc();
-      await postRef.set({
+      const postData = {
         user_id: userId,
         activity_type: 'post',
         content: content || '',
         image_url: imageUrl,
         achievement: isAchievement,
-        visibility: visibility,
+        visibility: postVisibility,
         created_at: firebase.firestore.Timestamp.now(),
         updated_at: firebase.firestore.Timestamp.now(),
         share_count: 0
-      });
+      };
 
-      const postId = postRef.id;
+      await postRef.set(postData);
 
-      const newPostDoc = await postRef.get();
-      const newPost = newPostDoc.data();
+      console.log('Post created successfully:', postRef.id);
 
+      // Get user data for response
       const userDoc = await db.collection('users').doc(userId).get();
-      const u = userDoc.data();
+      let userData = null;
+      
+      if (userDoc.exists) {
+        const u = userDoc.data();
+        userData = {
+          id: userId,
+          first_name: u.first_name || '',
+          last_name: u.last_name || '',
+          profile_image: getFullImageUrl(req, u.profile_image),
+          account_type: u.account_type || 'student'
+        };
+      }
 
+      // Return the created post
       res.status(201).json({
-        ...newPost,
-        id: postId,
+        id: postRef.id,
+        user_id: userId,
+        activity_type: 'post',
+        content: postData.content,
+        image_url: getFullImageUrl(req, postData.image_url),
+        achievement: postData.achievement,
+        visibility: postData.visibility,
+        created_at: timestampToISO(postData.created_at),
+        updated_at: timestampToISO(postData.updated_at),
+        share_count: 0,
         has_liked: false,
         has_bookmarked: false,
         likes: 0,
         comment_count: 0,
-        image_url: getFullImageUrl(req, newPost.image_url),
-        user: {
-          id: userId,
-          first_name: u.first_name,
-          last_name: u.last_name,
-          profile_image: getFullImageUrl(req, u.profile_image),
-          account_type: u.account_type
-        },
+        user: userData,
         comments: []
       });
     } catch (error) {
       console.error('Error creating post:', error);
-      res.status(500).json({ error: 'Failed to create post.' });
+      res.status(500).json({
+        error: 'Failed to create post.',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
     }
   });
 });
@@ -798,7 +954,10 @@ app.put('/api/posts/:id', authenticateToken, async (req, res) => {
   }
 
   try {
-    const postDoc = await db.collection('social_activities').doc(id).get();
+    console.log(`Editing post ${id} by user ${userId}`);
+
+    const postRef = db.collection('social_activities').doc(id);
+    const postDoc = await postRef.get();
 
     if (!postDoc.exists) {
       return res.status(404).json({ error: 'Post not found.' });
@@ -810,15 +969,20 @@ app.put('/api/posts/:id', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'You are not authorized to edit this post.' });
     }
 
-    await db.collection('social_activities').doc(id).update({
-      content: content,
+    await postRef.update({
+      content: content.trim(),
       updated_at: firebase.firestore.Timestamp.now()
     });
+
+    console.log('Post updated successfully');
 
     res.json({ message: 'Post updated successfully.' });
   } catch (error) {
     console.error('Error updating post:', error);
-    res.status(500).json({ error: 'Failed to update post.' });
+    res.status(500).json({
+      error: 'Failed to update post.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -828,7 +992,10 @@ app.delete('/api/posts/:id', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const postDoc = await db.collection('social_activities').doc(id).get();
+    console.log(`Deleting post ${id} by user ${userId}`);
+
+    const postRef = db.collection('social_activities').doc(id);
+    const postDoc = await postRef.get();
 
     if (!postDoc.exists) {
       return res.status(404).json({ error: 'Post not found.' });
@@ -836,24 +1003,62 @@ app.delete('/api/posts/:id', authenticateToken, async (req, res) => {
 
     const post = postDoc.data();
 
-    if (post.user_id !== userId) {
+    if (post.user_id !== userId && req.user.account_type !== 'admin') {
       return res.status(403).json({ error: 'You are not authorized to delete this post.' });
     }
 
-    // Delete the post record
-    await db.collection('social_activities').doc(id).delete();
+    // Delete the post
+    await postRef.delete();
 
-    // If there was an image, delete it from the filesystem
-    if (post.image_url) {
-      fs.unlink(path.join(__dirname, post.image_url), (err) => {
-        if (err) console.error("Error deleting post image:", err);
-      });
+    // Delete associated image file if exists
+    if (post.image_url && !post.image_url.startsWith('http')) {
+      const imagePath = path.join(__dirname, post.image_url.replace(/^\//, ''));
+      if (fs.existsSync(imagePath)) {
+        try {
+          fs.unlinkSync(imagePath);
+          console.log('Post image deleted:', imagePath);
+        } catch (fileError) {
+          console.error("Error deleting post image:", fileError);
+        }
+      }
     }
+
+    // Delete associated likes
+    const likesSnap = await db.collection('social_activities')
+      .where('activity_type', '==', 'like')
+      .where('target_id', '==', id)
+      .get();
+    
+    const likeDeletions = likesSnap.docs.map(doc => doc.ref.delete());
+    await Promise.all(likeDeletions);
+
+    // Delete associated comments
+    const commentsSnap = await db.collection('social_activities')
+      .where('activity_type', '==', 'comment')
+      .where('target_id', '==', id)
+      .get();
+    
+    const commentDeletions = commentsSnap.docs.map(doc => doc.ref.delete());
+    await Promise.all(commentDeletions);
+
+    // Delete associated bookmarks
+    const bookmarksSnap = await db.collection('social_activities')
+      .where('activity_type', '==', 'bookmark')
+      .where('target_id', '==', id)
+      .get();
+    
+    const bookmarkDeletions = bookmarksSnap.docs.map(doc => doc.ref.delete());
+    await Promise.all(bookmarkDeletions);
+
+    console.log('Post and associated data deleted successfully');
 
     res.json({ message: 'Post deleted successfully.' });
   } catch (error) {
     console.error('Error deleting post:', error);
-    res.status(500).json({ error: 'Failed to delete post.' });
+    res.status(500).json({
+      error: 'Failed to delete post.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -868,36 +1073,56 @@ app.post('/api/posts/:id/comment', authenticateToken, async (req, res) => {
   }
 
   try {
+    console.log(`Adding comment to post ${targetId} by user ${userId}`);
+
+    // Check if post exists
+    const postDoc = await db.collection('social_activities').doc(targetId).get();
+    if (!postDoc.exists) {
+      return res.status(404).json({ error: 'Post not found.' });
+    }
+
+    // Create comment
     const commentRef = db.collection('social_activities').doc();
-    await commentRef.set({
+    const commentData = {
       user_id: userId,
       activity_type: 'comment',
-      content: content,
+      content: content.trim(),
       target_id: targetId,
       created_at: firebase.firestore.Timestamp.now()
-    });
+    };
 
-    const commentId = commentRef.id;
+    await commentRef.set(commentData);
 
-    // Fetch the new comment with user info to return
-    const newCommentDoc = await commentRef.get();
-    const newComment = newCommentDoc.data();
+    console.log('Comment created successfully:', commentRef.id);
 
+    // Get user data for response
     const userDoc = await db.collection('users').doc(userId).get();
-    const u = userDoc.data();
-
-    res.status(201).json({
-      ...newComment,
-      user: {
+    let userData = null;
+    
+    if (userDoc.exists) {
+      const u = userDoc.data();
+      userData = {
         id: userId,
-        first_name: u.first_name,
-        last_name: u.last_name,
-        profile_image: getFullImageUrl(req, u.profile_image)
-      }
+        first_name: u.first_name || '',
+        last_name: u.last_name || '',
+        profile_image: getFullImageUrl(req, u.profile_image),
+        account_type: u.account_type || 'student'
+      };
+    }
+
+    // Return the created comment
+    res.status(201).json({
+      id: commentRef.id,
+      content: commentData.content,
+      created_at: timestampToISO(commentData.created_at),
+      user: userData
     });
   } catch (error) {
     console.error('Error posting comment:', error);
-    res.status(500).json({ error: 'Failed to post comment.' });
+    res.status(500).json({
+      error: 'Failed to post comment.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -907,7 +1132,20 @@ app.post('/api/posts/:id/like', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    // Use INSERT IGNORE to prevent duplicates if user clicks too fast
+    console.log(`User ${userId} liking post ${targetId}`);
+
+    // Check if already liked
+    const existingLikeSnap = await db.collection('social_activities')
+      .where('user_id', '==', userId)
+      .where('activity_type', '==', 'like')
+      .where('target_id', '==', targetId)
+      .get();
+
+    if (!existingLikeSnap.empty) {
+      return res.status(400).json({ error: 'Post already liked.' });
+    }
+
+    // Create like
     const likeRef = db.collection('social_activities').doc();
     await likeRef.set({
       user_id: userId,
@@ -915,10 +1153,16 @@ app.post('/api/posts/:id/like', authenticateToken, async (req, res) => {
       target_id: targetId,
       created_at: firebase.firestore.Timestamp.now()
     });
+
+    console.log('Post liked successfully');
+
     res.status(201).json({ message: 'Post liked.' });
   } catch (error) {
     console.error('Error liking post:', error);
-    res.status(500).json({ error: 'Failed to like post.' });
+    res.status(500).json({
+      error: 'Failed to like post.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -928,18 +1172,31 @@ app.delete('/api/posts/:id/like', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const likeSnap = await db.collection('social_activities').where('user_id', '==', userId).where('activity_type', '==', 'like').where('target_id', '==', targetId).get();
+    console.log(`User ${userId} unliking post ${targetId}`);
+
+    const likeSnap = await db.collection('social_activities')
+      .where('user_id', '==', userId)
+      .where('activity_type', '==', 'like')
+      .where('target_id', '==', targetId)
+      .get();
 
     if (likeSnap.empty) {
       return res.status(404).json({ error: 'Like not found' });
     }
 
-    await likeSnap.docs[0].ref.delete();
+    // Delete all matching likes (should be only one)
+    const deletions = likeSnap.docs.map(doc => doc.ref.delete());
+    await Promise.all(deletions);
+
+    console.log('Post unliked successfully');
 
     res.json({ message: 'Post unliked.' });
   } catch (error) {
     console.error('Error unliking post:', error);
-    res.status(500).json({ error: 'Failed to unlike post.' });
+    res.status(500).json({
+      error: 'Failed to unlike post.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -949,6 +1206,20 @@ app.post('/api/posts/:id/bookmark', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
+    console.log(`User ${userId} bookmarking post ${targetId}`);
+
+    // Check if already bookmarked
+    const existingBookmarkSnap = await db.collection('social_activities')
+      .where('user_id', '==', userId)
+      .where('activity_type', '==', 'bookmark')
+      .where('target_id', '==', targetId)
+      .get();
+
+    if (!existingBookmarkSnap.empty) {
+      return res.status(400).json({ error: 'Post already bookmarked.' });
+    }
+
+    // Create bookmark
     const bookmarkRef = db.collection('social_activities').doc();
     await bookmarkRef.set({
       user_id: userId,
@@ -956,10 +1227,16 @@ app.post('/api/posts/:id/bookmark', authenticateToken, async (req, res) => {
       target_id: targetId,
       created_at: firebase.firestore.Timestamp.now()
     });
+
+    console.log('Post bookmarked successfully');
+
     res.status(201).json({ message: 'Post bookmarked.' });
   } catch (error) {
     console.error('Error bookmarking post:', error);
-    res.status(500).json({ error: 'Failed to bookmark post.' });
+    res.status(500).json({
+      error: 'Failed to bookmark post.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -969,18 +1246,31 @@ app.delete('/api/posts/:id/bookmark', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const bookmarkSnap = await db.collection('social_activities').where('user_id', '==', userId).where('activity_type', '==', 'bookmark').where('target_id', '==', targetId).get();
+    console.log(`User ${userId} unbookmarking post ${targetId}`);
+
+    const bookmarkSnap = await db.collection('social_activities')
+      .where('user_id', '==', userId)
+      .where('activity_type', '==', 'bookmark')
+      .where('target_id', '==', targetId)
+      .get();
 
     if (bookmarkSnap.empty) {
       return res.status(404).json({ error: 'Bookmark not found' });
     }
 
-    await bookmarkSnap.docs[0].ref.delete();
+    // Delete all matching bookmarks (should be only one)
+    const deletions = bookmarkSnap.docs.map(doc => doc.ref.delete());
+    await Promise.all(deletions);
+
+    console.log('Post unbookmarked successfully');
 
     res.json({ message: 'Post unbookmarked.' });
   } catch (error) {
     console.error('Error unbookmarking post:', error);
-    res.status(500).json({ error: 'Failed to unbookmark post.' });
+    res.status(500).json({
+      error: 'Failed to unbookmark post.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -989,15 +1279,31 @@ app.post('/api/posts/:id/share', authenticateToken, async (req, res) => {
   const postId = req.params.id;
 
   try {
-    await db.collection('social_activities').doc(postId).update({
+    console.log(`Tracking share for post ${postId}`);
+
+    const postRef = db.collection('social_activities').doc(postId);
+    const postDoc = await postRef.get();
+
+    if (!postDoc.exists) {
+      return res.status(404).json({ error: 'Post not found.' });
+    }
+
+    await postRef.update({
       share_count: firebase.firestore.FieldValue.increment(1)
     });
+
+    console.log('Share tracked successfully');
+
     res.json({ message: 'Share tracked.' });
   } catch (error) {
     console.error('Error tracking share:', error);
-    res.status(500).json({ error: 'Failed to track share.' });
+    res.status(500).json({
+      error: 'Failed to track share.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
+
 
 // ============ STUDENT DASHBOARD SPECIFIC ENDPOINTS  ====================
 
