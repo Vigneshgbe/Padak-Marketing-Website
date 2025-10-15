@@ -149,6 +149,47 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
+// ==================== STATIC FILE SERVING ====================
+
+// Serve static files from uploads directory with proper headers
+app.use('/uploads', (req, res, next) => {
+  // Set CORS headers for images
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Access-Control-Allow-Methods', 'GET');
+  
+  // Set proper content-type based on file extension
+  const ext = path.extname(req.path).toLowerCase();
+  const contentTypes = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml'
+  };
+  
+  if (contentTypes[ext]) {
+    res.setHeader('Content-Type', contentTypes[ext]);
+  }
+  
+  next();
+});
+
+// Serve the static files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+  setHeaders: (res, filePath) => {
+    // Cache images for better performance
+    res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 day
+  }
+}));
+
+// Log all upload requests for debugging
+app.use('/uploads', (req, res, next) => {
+  console.log(`📸 Image request: ${req.method} ${req.url}`);
+  next();
+});
+
 // ==================== MIDDLEWARE ====================
 app.use(express.json())
 app.use(bodyParser.json({ limit: '10mb' }));
