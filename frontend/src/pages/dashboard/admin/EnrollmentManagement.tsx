@@ -1,6 +1,6 @@
 // src/pages/dashboard/admin/EnrollmentManagement.tsx
 import React, { useState, useEffect } from 'react';
-import { Edit, Search, Filter, Save, X, Check, XCircle, Eye, Trash2, Download } from 'lucide-react';
+import { Edit, Search, Filter, Save, X, Check, XCircle, Eye, Trash2, Download, ZoomIn } from 'lucide-react';
 import DataTable from '../../../components/admin/DataTable';
 import StatusBadge from '../../../components/admin/StatusBadge';
 import Modal from '../../../components/admin/Modal';
@@ -53,6 +53,10 @@ const EnrollmentManagement: React.FC = () => {
   const [selectedEnrollment, setSelectedEnrollment] = useState<Enrollment | null>(null);
   const [isEnrollmentModalOpen, setIsEnrollmentModalOpen] = useState(false);
   
+  // Image zoom state
+  const [imageZoom, setImageZoom] = useState(false);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  
   // Common State
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -75,6 +79,54 @@ const EnrollmentManagement: React.FC = () => {
     return headers;
   };
 
+  const formatDate = (dateValue: any): string => {
+    if (!dateValue) return 'N/A';
+    
+    try {
+      // Handle Firestore Timestamp
+      if (dateValue.toDate && typeof dateValue.toDate === 'function') {
+        return new Date(dateValue.toDate()).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      }
+      
+      // Handle Firestore Timestamp object with _seconds
+      if (dateValue._seconds) {
+        return new Date(dateValue._seconds * 1000).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      }
+      
+      // Handle ISO string or regular Date
+      const date = new Date(dateValue);
+      if (isNaN(date.getTime())) return 'N/A';
+      
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      console.error('Date formatting error:', error);
+      return 'N/A';
+    }
+  };
+
+  const handleImageZoom = (imageSrc: string) => {
+    setZoomedImage(imageSrc);
+    setImageZoom(true);
+  };
+
   const fetchRequests = async () => {
     try {
       setRequestsLoading(true);
@@ -86,6 +138,7 @@ const EnrollmentManagement: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json();
+        console.log('📋 Enrollment requests:', data);
         setRequests(data);
       } else {
         throw new Error('Failed to fetch enrollment requests');
@@ -150,7 +203,7 @@ const EnrollmentManagement: React.FC = () => {
 
   const handleRejectRequest = async (requestId: string) => {
     const reason = prompt('Enter rejection reason (optional):');
-    if (reason === null) return; // User cancelled
+    if (reason === null) return;
 
     try {
       setSaving(true);
@@ -352,6 +405,7 @@ const EnrollmentManagement: React.FC = () => {
           <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
           <button
             onClick={() => {
+              setError(null);
               fetchRequests();
               fetchEnrollments();
             }}
@@ -379,7 +433,7 @@ const EnrollmentManagement: React.FC = () => {
                 { 
                   header: 'Type', 
                   accessor: (req) => (
-                    <span className={`px-2 py-1 rounded-full text-xs ${req.is_guest ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
+                    <span className={`px-2 py-1 rounded-full text-xs ${req.is_guest ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400' : 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'}`}>
                       {req.is_guest ? 'Guest' : 'User'}
                     </span>
                   )
@@ -390,30 +444,7 @@ const EnrollmentManagement: React.FC = () => {
                 },
                 { 
                   header: 'Date', 
-                  accessor: (req) => {
-                    if (!req.created_at) return 'N/A';
-                    
-                    try {
-                      if (req.created_at.toDate && typeof req.created_at.toDate === 'function') {
-                        return new Date(req.created_at.toDate()).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric'
-                        });
-                      }
-                      
-                      const date = new Date(req.created_at);
-                      if (isNaN(date.getTime())) return 'N/A';
-                      
-                      return date.toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric'
-                      });
-                    } catch {
-                      return 'N/A';
-                    }
-                  }
+                  accessor: (req) => formatDate(req.created_at)
                 }
               ]}
               actions={(request) => (
@@ -504,32 +535,7 @@ const EnrollmentManagement: React.FC = () => {
                 },
                 {
                   header: 'Enrolled',
-                  accessor: (enrollment) => {
-                    if (!enrollment.enrollment_date) return 'N/A';
-                    
-                    try {
-                      // Handle Firestore Timestamp
-                      if (enrollment.enrollment_date.toDate && typeof enrollment.enrollment_date.toDate === 'function') {
-                        return new Date(enrollment.enrollment_date.toDate()).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric'
-                        });
-                      }
-                      
-                      // Handle ISO string or regular Date
-                      const date = new Date(enrollment.enrollment_date);
-                      if (isNaN(date.getTime())) return 'N/A';
-                      
-                      return date.toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric'
-                      });
-                    } catch {
-                      return 'N/A';
-                    }
-                  }
+                  accessor: (enrollment) => formatDate(enrollment.enrollment_date)
                 }
               ]}
               actions={(enrollment) => (
@@ -572,49 +578,64 @@ const EnrollmentManagement: React.FC = () => {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Full Name</label>
-                <p className="mt-1">{selectedRequest.full_name}</p>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Full Name</label>
+                <p className="text-gray-900 dark:text-gray-100">{selectedRequest.full_name}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
-                <p className="mt-1">{selectedRequest.email}</p>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
+                <p className="text-gray-900 dark:text-gray-100">{selectedRequest.email}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Phone</label>
-                <p className="mt-1">{selectedRequest.phone}</p>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Phone</label>
+                <p className="text-gray-900 dark:text-gray-100">{selectedRequest.phone}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Course</label>
-                <p className="mt-1">{selectedRequest.course_name}</p>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Course</label>
+                <p className="text-gray-900 dark:text-gray-100">{selectedRequest.course_name}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Payment Method</label>
-                <p className="mt-1">{selectedRequest.payment_method}</p>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Payment Method</label>
+                <p className="text-gray-900 dark:text-gray-100 uppercase">{selected Request.payment_method}</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Transaction ID</label>
-                <p className="mt-1">{selectedRequest.transaction_id}</p>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Transaction ID</label>
+                <p className="text-gray-900 dark:text-gray-100 font-mono text-sm">{selectedRequest.transaction_id}</p>
               </div>
               <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Address</label>
-                <p className="mt-1">{`${selectedRequest.address}, ${selectedRequest.city}, ${selectedRequest.state} - ${selectedRequest.pincode}`}</p>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Address</label>
+                <p className="text-gray-900 dark:text-gray-100">{`${selectedRequest.address}, ${selectedRequest.city}, ${selectedRequest.state} - ${selectedRequest.pincode}`}</p>
               </div>
               <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Payment Screenshot</label>
-                {selectedRequest.payment_screenshot && (
-                  <img 
-                    src={`http://localhost:5000${selectedRequest.payment_screenshot}`} 
-                    alt="Payment Proof"
-                    className="max-w-full h-auto rounded border"
-                  />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Payment Screenshot</label>
+                {selectedRequest.payment_screenshot ? (
+                  <div className="relative group">
+                    <img 
+                      src={`http://localhost:5000${selectedRequest.payment_screenshot}`} 
+                      alt="Payment Proof"
+                      className="w-full max-w-md h-auto rounded-lg border-2 border-gray-200 dark:border-gray-700 shadow-md cursor-pointer hover:shadow-xl transition-shadow"
+                      onClick={() => handleImageZoom(`http://localhost:5000${selectedRequest.payment_screenshot}`)}
+                      onError={(e) => {
+                        console.error('Image load error:', e);
+                        (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect width="200" height="200" fill="%23ddd"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%23999"%3EImage not found%3C/text%3E%3C/svg%3E';
+                      }}
+                    />
+                    <div className="absolute top-2 right-2 bg-black/50 p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                      <ZoomIn size={20} className="text-white" />
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Click to enlarge</p>
+                  </div>
+                ) : (
+                  <div className="w-full max-w-md h-48 bg-gray-100 dark:bg-gray-800 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 flex items-center justify-center">
+                    <p className="text-gray-500 dark:text-gray-400">No payment screenshot uploaded</p>
+                  </div>
                 )}
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 mt-6">
+            <div className="flex justify-end gap-2 mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
               <button
                 onClick={() => setIsRequestModalOpen(false)}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               >
                 Close
               </button>
@@ -625,8 +646,9 @@ const EnrollmentManagement: React.FC = () => {
                       setIsRequestModalOpen(false);
                       handleApproveRequest(selectedRequest.id);
                     }}
-                    className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600"
+                    className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors flex items-center"
                   >
+                    <Check size={16} className="mr-2" />
                     Approve
                   </button>
                   <button
@@ -634,8 +656,9 @@ const EnrollmentManagement: React.FC = () => {
                       setIsRequestModalOpen(false);
                       handleRejectRequest(selectedRequest.id);
                     }}
-                    className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
+                    className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors flex items-center"
                   >
+                    <XCircle size={16} className="mr-2" />
                     Reject
                   </button>
                 </>
@@ -644,6 +667,30 @@ const EnrollmentManagement: React.FC = () => {
           </div>
         )}
       </Modal>
+
+      {/* Image Zoom Modal */}
+      {imageZoom && zoomedImage && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setImageZoom(false)}
+        >
+          <button
+            onClick={() => setImageZoom(false)}
+            className="absolute top-4 right-4 text-white hover:text-gray-300 bg-black/50 p-2 rounded-full"
+          >
+            <X size={24} />
+          </button>
+          <img 
+            src={zoomedImage} 
+            alt="Payment Proof (Zoomed)"
+            className="max-w-full max-h-full object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white text-sm bg-black/50 px-4 py-2 rounded-full">
+            Click outside to close
+          </div>
+        </div>
+      )}
 
       {/* Edit Enrollment Modal */}
       <Modal
