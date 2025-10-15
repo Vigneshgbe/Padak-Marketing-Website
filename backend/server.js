@@ -2991,8 +2991,8 @@ app.get('/auth/me', authenticateToken, (req, res) => {
   res.json(req.user);
 });
 
-// GET /assignments/my-assignments - Get user's assignments
-app.get('/assignments/my-assignments', authenticateToken, async (req, res) => {
+// GET /api/assignments/my-assignments - Get user's assignments
+app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
@@ -3066,8 +3066,8 @@ app.get('/assignments/my-assignments', authenticateToken, async (req, res) => {
   }
 });
 
-// GET /assignments/all - Get all assignments (admin only)
-app.get('/assignments/all', authenticateToken, async (req, res) => {
+// GET /api/assignments/all - Get all assignments (admin only)
+app.get('/api/assignments/all', authenticateToken, async (req, res) => {
   if (req.user.account_type !== 'admin') {
     return res.status(403).json({ error: 'Access denied. Admin only.' });
   }
@@ -3110,8 +3110,8 @@ app.get('/assignments/all', authenticateToken, async (req, res) => {
   }
 });
 
-// POST /assignments/submit - Submit assignment
-app.post('/assignments/submit', authenticateToken, assignmentUpload.single('file'), async (req, res) => {
+// POST /api/assignments/submit - Submit assignment
+app.post('/api/assignments/submit', authenticateToken, assignmentUpload.single('file'), async (req, res) => {
   try {
     console.log('📝 Assignment submission request:', {
       body: req.body,
@@ -3235,8 +3235,8 @@ app.get('/assignments/download-submission/:id', authenticateToken, async (req, r
   }
 });
 
-// GET /assignments/course/:courseId - Get assignments for a specific course
-app.get('/assignments/course/:courseId', authenticateToken, async (req, res) => {
+// GET /api/assignments/course/:courseId - Get assignments for a specific course
+app.get('/api/assignments/course/:courseId', authenticateToken, async (req, res) => {
   const courseId = req.params.courseId;
 
   try {
@@ -3308,8 +3308,8 @@ app.get('/assignments/course/:courseId', authenticateToken, async (req, res) => 
   }
 });
 
-// PUT /assignments/grade/:submissionId - Grade assignment (admin/instructor only)
-app.put('/assignments/grade/:submissionId', authenticateToken, (req, res) => {
+// PUT /api/assignments/grade/:submissionId - Grade assignment (admin/instructor only)
+app.put('/api/assignments/grade/:submissionId', authenticateToken, (req, res) => {
   if (req.user.account_type !== 'admin') {
     return res.status(403).json({ error: 'Access denied. Admin only.' });
   }
