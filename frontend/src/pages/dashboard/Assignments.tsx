@@ -2,10 +2,11 @@
 import React, { useState, useEffect } from 'react';
 import { FileText, Calendar, CheckCircle, Clock, AlertCircle, Upload, Download, Eye } from 'lucide-react';
 import { apiService } from '../../lib/api';
+import { formatDate, formatDateTime } from '../../lib/dateHelpers';
 
 // Types based on your database schema
 interface Assignment {
-  id: string; // MUST be string for Firestore
+  id: string;
   course_id: string;
   title: string;
   description: string;
@@ -28,59 +29,54 @@ interface Assignment {
   };
 }
 
+interface User {
+  id: string;
+  account_type: string;
+  [key: string]: any;
+}
+
 const Assignments: React.FC = () => {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'submitted' | 'graded'>('all');
   const [submissionModal, setSubmissionModal] = useState<{ show: boolean; assignmentId: string | null }>({
-  show: false,
-  assignmentId: null
-});
+    show: false,
+    assignmentId: null
+  });
   const [submissionContent, setSubmissionContent] = useState('');
   const [submissionFile, setSubmissionFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-  const initializeData = async () => {
-    try {
-      setLoading(true);
-      
-      // Get current user info
-      const userData = await apiService.get<User>('/auth/me');
-      setUser(userData);
-      
-      // Fetch assignments based on user type
-      let assignmentsData: Assignment[] = [];
-      
-      if (userData.accountType === 'student' || userData.accountType === 'professional') {
-        // ✅ Remove /api/ prefix - apiService already adds it
-        assignmentsData = await apiService.get<Assignment[]>('/assignments/my-assignments');
-      } else if (userData.accountType === 'admin') {
-        assignmentsData = await apiService.get<Assignment[]>('/assignments/all');
-      } else {
-        assignmentsData = await apiService.get<Assignment[]>('/assignments/my-assignments');
+    const initializeData = async () => {
+      try {
+        setLoading(true);
+        
+        const userData = await apiService.get<User>('/auth/me');
+        setUser(userData);
+        
+        let assignmentsData: Assignment[] = [];
+        
+        if (userData.account_type === 'student' || userData.account_type === 'professional') {
+          assignmentsData = await apiService.get<Assignment[]>('/assignments/my-assignments');
+        } else if (userData.account_type === 'admin') {
+          assignmentsData = await apiService.get<Assignment[]>('/assignments/all');
+        } else {
+          assignmentsData = await apiService.get<Assignment[]>('/assignments/my-assignments');
+        }
+        
+        setAssignments(assignmentsData);
+      } catch (error: any) {
+        console.error('Failed to fetch data:', error);
+        alert('Failed to load assignments. Please try again.');
+      } finally {
+        setLoading(false);
       }
-      
-      setAssignments(assignmentsData);
-    } catch (error: any) {
-      console.error('Failed to fetch data:', error);
-      
-      // More detailed error logging
-      if (error.response) {
-        console.error('Error status:', error.response.status);
-        console.error('Error data:', error.response.data);
-      }
-      
-      // Show user-friendly error
-      alert('Failed to load assignments. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
-  initializeData();
-}, []);
+    initializeData();
+  }, []);
 
   const filteredAssignments = assignments.filter(assignment => {
     if (filter === 'all') return true;
@@ -129,15 +125,7 @@ const Assignments: React.FC = () => {
         formData.append('file', submissionFile);
       }
 
-      console.log('📤 Submitting assignment:', {
-        assignment_id: assignmentId,
-        has_content: !!submissionContent,
-        has_file: !!submissionFile,
-        file_name: submissionFile?.name
-      });
-
-      // Get base URL from apiService or use environment variable
-      const baseURL = 'http://localhost:5000/api'; // ✅ Already includes /api
+      const baseURL = 'http://localhost:5000/api';
       const token = localStorage.getItem('token') || localStorage.getItem('authToken');
       
       const response = await fetch(`${baseURL}/assignments/submit`, {
@@ -149,19 +137,16 @@ const Assignments: React.FC = () => {
       });
 
       const result = await response.json();
-      console.log('📥 Server response:', result);
 
       if (!response.ok) {
         throw new Error(result.error || result.message || `Server error: ${response.status}`);
       }
 
-      // Refresh assignments - ✅ Remove /api/ prefix
       const updatedAssignments = await apiService.get<Assignment[]>('/assignments/my-assignments');
       setAssignments(updatedAssignments);
 
       alert(result.message || 'Assignment submitted successfully!');
 
-      // Close modal and reset form
       setSubmissionModal({ show: false, assignmentId: null });
       setSubmissionContent('');
       setSubmissionFile(null);
@@ -186,7 +171,6 @@ const Assignments: React.FC = () => {
 
   const downloadSubmission = async (submissionId: string, fileName: string) => {
     try {
-      // ✅ Remove /api/ prefix
       const baseURL = 'http://localhost:5000/api';
       const token = localStorage.getItem('token') || localStorage.getItem('authToken');
       const response = await fetch(`${baseURL}/assignments/download-submission/${submissionId}`, {
@@ -194,9 +178,13 @@ const Assignments: React.FC = () => {
           'Authorization': `Bearer ${token}`
         }
       });
+
+      if (!response.ok) {
+        throw new Error('Failed to download file');
+      }
+
       const blob = await response.blob();
-      
-      const url = window.URL.createObjectURL(new Blob([response]));
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.setAttribute('download', fileName);
@@ -268,7 +256,7 @@ const Assignments: React.FC = () => {
                   <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 mb-4">
                     <span className="mr-4">Course: {assignment.course.title}</span>
                     <Calendar size={16} className="mr-1" />
-                    <span>Due: {new Date(assignment.due_date).toLocaleDateString()}</span>
+                    <span>Due: {formatDate(assignment.due_date)}</span>
                     <span className="ml-4">Max Points: {assignment.max_points}</span>
                   </div>
 
@@ -282,7 +270,9 @@ const Assignments: React.FC = () => {
                   {assignment.submission && (
                     <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">Submitted: {new Date(assignment.submission.submitted_at).toLocaleString()}</span>
+                        <span className="text-sm font-medium">
+                          Submitted: {formatDateTime(assignment.submission.submitted_at)}
+                        </span>
                         {assignment.submission.file_path && (
                           <button
                             onClick={() => downloadSubmission(assignment.submission!.id, assignment.submission!.file_path)}
@@ -366,16 +356,16 @@ const Assignments: React.FC = () => {
                 Cancel
               </button>
               <button
-                  onClick={() => {
-                    if (submissionModal.assignmentId) {
-                      handleSubmitAssignment(submissionModal.assignmentId);
-                    }
-                  }}
-                  disabled={submitting}
-                  className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors disabled:opacity-50"
-                >
-                  {submitting ? 'Submitting...' : 'Submit'}
-                </button>
+                onClick={() => {
+                  if (submissionModal.assignmentId) {
+                    handleSubmitAssignment(submissionModal.assignmentId);
+                  }
+                }}
+                disabled={submitting}
+                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors disabled:opacity-50"
+              >
+                {submitting ? 'Submitting...' : 'Submit'}
+              </button>
             </div>
           </div>
         </div>
