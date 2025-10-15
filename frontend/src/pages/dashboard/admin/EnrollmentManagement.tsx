@@ -595,7 +595,7 @@ const EnrollmentManagement: React.FC = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Payment Method</label>
-                <p className="text-gray-900 dark:text-gray-100 uppercase">{selected Request.payment_method}</p>
+                <p className="text-gray-900 dark:text-gray-100 uppercase">{selectedRequest.payment_method}</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Transaction ID</label>
@@ -614,15 +614,23 @@ const EnrollmentManagement: React.FC = () => {
                       alt="Payment Proof"
                       className="w-full max-w-md h-auto rounded-lg border-2 border-gray-200 dark:border-gray-700 shadow-md cursor-pointer hover:shadow-xl transition-shadow"
                       onClick={() => handleImageZoom(`http://localhost:5000${selectedRequest.payment_screenshot}`)}
-                      onError={(e) => {
-                        console.error('Image load error:', e);
-                        (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect width="200" height="200" fill="%23ddd"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%23999"%3EImage not found%3C/text%3E%3C/svg%3E';
+                      onLoad={(e) => {
+                        console.log('✅ Image loaded successfully:', `http://localhost:5000${selectedRequest.payment_screenshot}`);
                       }}
+                      onError={(e) => {
+                        console.error('❌ Image load error:', `http://localhost:5000${selectedRequest.payment_screenshot}`);
+                        const target = e.target as HTMLImageElement;
+                        target.onerror = null; // Prevent infinite loop
+                        target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"%3E%3Crect width="400" height="300" fill="%23f0f0f0"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="18" fill="%23999"%3EImage not found%3C/text%3E%3Ctext x="50%25" y="60%25" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="12" fill="%23666"%3EPath: ' + selectedRequest.payment_screenshot + '%3C/text%3E%3C/svg%3E';
+                      }}
+                      crossOrigin="anonymous"
                     />
                     <div className="absolute top-2 right-2 bg-black/50 p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
                       <ZoomIn size={20} className="text-white" />
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Click to enlarge</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                      Click to enlarge | Path: {selectedRequest.payment_screenshot}
+                    </p>
                   </div>
                 ) : (
                   <div className="w-full max-w-md h-48 bg-gray-100 dark:bg-gray-800 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 flex items-center justify-center">
