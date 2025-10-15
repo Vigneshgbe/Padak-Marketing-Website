@@ -23,11 +23,11 @@ interface Service {
 }
 
 interface ServiceCategory {
-  id: number;
+  id: string; // Changed from number to string
   name: string;
   description: string;
   icon: string;
-  is_active: boolean;
+  is_active: boolean; // Changed to boolean
 }
 
 const ServiceManagement: React.FC = () => {
@@ -364,6 +364,7 @@ const ServiceManagement: React.FC = () => {
       >
         <form onSubmit={handleFormSubmit}>
           <div className="space-y-4">
+            {/* Service Name */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Service Name *
@@ -377,6 +378,7 @@ const ServiceManagement: React.FC = () => {
               />
             </div>
 
+            {/* Category Dropdown - FIXED */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Category *
@@ -394,8 +396,15 @@ const ServiceManagement: React.FC = () => {
                   </option>
                 ))}
               </select>
+              {/* Debug info - remove after fixing */}
+              {categories.length === 0 && (
+                <p className="text-xs text-red-500 mt-1">
+                  No categories loaded. Check console for errors.
+                </p>
+              )}
             </div>
 
+            {/* Description */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Description
@@ -408,6 +417,7 @@ const ServiceManagement: React.FC = () => {
               />
             </div>
 
+            {/* Price and Duration */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -417,7 +427,7 @@ const ServiceManagement: React.FC = () => {
                   type="number"
                   name="price"
                   min="0"
-                  step="0.01"
+                  step="1"
                   defaultValue={selectedService?.price || ''}
                   required
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
@@ -431,12 +441,46 @@ const ServiceManagement: React.FC = () => {
                 <input
                   type="text"
                   name="duration"
+                  placeholder="e.g., 2-4 weeks, Variable"
                   defaultValue={selectedService?.duration || ''}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
                 />
               </div>
             </div>
 
+            {/* 🆕 RATING AND REVIEWS - NEW SECTION */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Rating (0-5)
+                </label>
+                <input
+                  type="number"
+                  name="rating"
+                  min="0"
+                  max="5"
+                  step="0.1"
+                  defaultValue={selectedService?.rating || 0}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                />
+                <p className="text-xs text-gray-500 mt-1">Enter a value between 0 and 5</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Number of Reviews
+                </label>
+                <input
+                  type="number"
+                  name="reviews"
+                  min="0"
+                  defaultValue={selectedService?.reviews || 0}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
+                />
+              </div>
+            </div>
+
+            {/* Features */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Features (one per line)
@@ -446,13 +490,19 @@ const ServiceManagement: React.FC = () => {
                   type="text"
                   value={featureInput}
                   onChange={(e) => setFeatureInput(e.target.value)}
-                  placeholder="Add a feature"
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addFeature();
+                    }
+                  }}
+                  placeholder="Add a feature and press Add"
                   className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
                 />
                 <button
                   type="button"
                   onClick={addFeature}
-                  className="px-3 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600"
+                  className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 whitespace-nowrap"
                 >
                   Add
                 </button>
@@ -462,10 +512,12 @@ const ServiceManagement: React.FC = () => {
                 name="features"
                 defaultValue={selectedService?.features?.join('\n') || ''}
                 rows={4}
+                placeholder="One feature per line"
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700"
               />
             </div>
 
+            {/* Status and Popular */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -483,7 +535,7 @@ const ServiceManagement: React.FC = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Popular
+                  Mark as Popular
                 </label>
                 <select
                   name="popular"
@@ -496,6 +548,7 @@ const ServiceManagement: React.FC = () => {
               </div>
             </div>
 
+            {/* Form Actions */}
             <div className="flex justify-end gap-2 mt-6">
               <button
                 type="button"
@@ -525,6 +578,7 @@ const ServiceManagement: React.FC = () => {
             </div>
           </div>
         </form>
+
       </Modal>
 
       {/* Delete Confirmation Modal */}
