@@ -4663,6 +4663,8 @@ app.post('/api/admin/services', authenticateToken, requireAdmin, async (req, res
       price,
       duration,
       features,
+      rating,      // NEW
+      reviews,     // NEW
       popular,
       is_active
     } = req.body;
@@ -4687,10 +4689,12 @@ app.post('/api/admin/services', authenticateToken, requireAdmin, async (req, res
       category_id,
       description: description || '',
       base_price: parseFloat(price),
-      duration: duration || null,
-      features: features || [],
-      popular: popular || false,
-      is_active: is_active !== undefined ? is_active : true,
+      duration: duration || 'Variable',
+      features: Array.isArray(features) ? features : [],
+      rating: parseFloat(rating) || 0,      // NEW
+      reviews: parseInt(reviews) || 0,       // NEW
+      popular: popular === true || popular === '1',
+      is_active: is_active === true || is_active === '1',
       created_at: firebase.firestore.FieldValue.serverTimestamp(),
       updated_at: firebase.firestore.FieldValue.serverTimestamp()
     });
@@ -4719,6 +4723,8 @@ app.put('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, 
       price,
       duration,
       features,
+      rating,      // NEW
+      reviews,     // NEW
       popular,
       is_active
     } = req.body;
@@ -4735,10 +4741,12 @@ app.put('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, 
       category_id,
       description: description || '',
       base_price: parseFloat(price),
-      duration: duration || null,
-      features: features || [],
-      popular: popular || false,
-      is_active: is_active !== undefined ? is_active : true,
+      duration: duration || 'Variable',
+      features: Array.isArray(features) ? features : [],
+      rating: parseFloat(rating) || 0,      // NEW
+      reviews: parseInt(reviews) || 0,       // NEW
+      popular: popular === true || popular === '1',
+      is_active: is_active === true || is_active === '1',
       updated_at: firebase.firestore.FieldValue.serverTimestamp()
     });
 
