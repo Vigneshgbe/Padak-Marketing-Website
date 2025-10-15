@@ -51,6 +51,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         { id: 'admin-users', label: 'User Management', icon: <Users size={20} /> },
         { id: 'admin-courses', label: 'Course Management', icon: <BookOpen size={20} /> },
         { id: 'admin-assignments', label: 'Assignment Manage', icon: <HardHat size={20} /> },
+        { id: 'admin-submissions', label: 'Submission Manage', icon: <FileText size={20} /> },
         { id: 'admin-enrollments', label: 'Enrollment Manage', icon: <UserCheck size={20} /> },
         { id: 'admin-certificates', label: 'Certificate Manage', icon: <Award size={20} /> },
         { id: 'admin-internships', label: 'Internship Manage', icon: <GraduationCap size={20} /> },

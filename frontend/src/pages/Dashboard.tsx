@@ -26,6 +26,7 @@ import AdminOverview from './dashboard/admin/AdminOverview';
 import UserManagement from './dashboard/admin/UserManagement';
 import CourseManagement from './dashboard/admin/CourseManagement';
 import AssignmentManagement from './dashboard/admin/AssignmentManagement';
+import AssignmentSubmissions from './dashboard/admin/AssignmentSubmissions';
 import EnrollmentManagement from './dashboard/admin/EnrollmentManagement';
 import CertificateManagement from './dashboard/admin/CertificateManagement';
 import ServiceManagement from './dashboard/admin/ServiceManagement';
@@ -220,6 +221,8 @@ const Dashboard: React.FC = () => {
           return <CourseManagement />;
         case 'admin-assignments':
           return <AssignmentManagement />;
+        case 'admin-submissions':
+          return <AssignmentSubmissions />;
         case 'admin-enrollments':
           return <EnrollmentManagement />;
         case 'admin-certificates':
