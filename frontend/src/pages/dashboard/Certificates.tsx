@@ -35,7 +35,13 @@ const Certificates: React.FC = () => {
         setLoading(true);
         setError(null);
         const data = await apiService.get<Certificate[]>('/certificates/my-certificates');
-        setCertificates(data);
+        
+        // Filter out any certificates with missing course or enrollment data
+        const validCertificates = Array.isArray(data) 
+          ? data.filter(cert => cert && cert.course && cert.enrollment)
+          : [];
+        
+        setCertificates(validCertificates);
       } catch (error) {
         console.error('Failed to fetch certificates:', error);
         setError('Failed to load certificates. Please try again.');
@@ -73,8 +79,8 @@ const Certificates: React.FC = () => {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `${certificate.course.title} Certificate`,
-          text: `I've completed ${certificate.course.title} and earned a certificate!`,
+          title: `${certificate.course?.title || 'Certificate'} Certificate`,
+          text: `I've completed ${certificate.course?.title || 'a course'} and earned a certificate!`,
           url: certificate.certificateUrl
         });
       } catch (error) {
@@ -91,15 +97,22 @@ const Certificates: React.FC = () => {
     }
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
+  const formatDate = (dateString: string | undefined) => {
+    if (!dateString) return 'N/A';
+    try {
+      return new Date(dateString).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    } catch {
+      return 'N/A';
+    }
   };
 
-  const getDifficultyColor = (level: string) => {
+  const getDifficultyColor = (level: string | undefined) => {
+    if (!level) return 'text-gray-600 bg-gray-100 dark:bg-gray-900/20 dark:text-gray-400';
+    
     switch (level.toLowerCase()) {
       case 'beginner':
         return 'text-green-600 bg-green-100 dark:bg-green-900/20 dark:text-green-400';
@@ -168,27 +181,29 @@ const Certificates: React.FC = () => {
               <div className="flex items-center mb-4">
                 <Award size={24} className="text-orange-500 mr-3" />
                 <div className="flex-1">
-                  <h3 className="font-bold text-lg">{certificate.course.title}</h3>
-                  <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium mt-1 ${getDifficultyColor(certificate.course.difficultyLevel)}`}>
-                    {certificate.course.difficultyLevel}
+                  <h3 className="font-bold text-lg">
+                    {certificate.course?.title || 'Untitled Course'}
+                  </h3>
+                  <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium mt-1 ${getDifficultyColor(certificate.course?.difficultyLevel)}`}>
+                    {certificate.course?.difficultyLevel || 'Beginner'}
                   </span>
                 </div>
               </div>
               
               <div className="mb-4">
                 <p className="text-gray-600 dark:text-gray-400 text-sm mb-2">
-                  <span className="font-medium">Instructor:</span> {certificate.course.instructorName}
+                  <span className="font-medium">Instructor:</span> {certificate.course?.instructorName || 'N/A'}
                 </p>
                 <p className="text-gray-600 dark:text-gray-400 text-sm mb-2">
-                  <span className="font-medium">Category:</span> {certificate.course.category}
+                  <span className="font-medium">Category:</span> {certificate.course?.category || 'General'}
                 </p>
                 <p className="text-gray-600 dark:text-gray-400 text-sm mb-2">
-                  <span className="font-medium">Completed:</span> {formatDate(certificate.enrollment.completionDate)}
+                  <span className="font-medium">Completed:</span> {formatDate(certificate.enrollment?.completionDate)}
                 </p>
                 <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
                   <span className="font-medium">Issued:</span> {formatDate(certificate.issuedDate)}
                 </p>
-                {certificate.enrollment.finalGrade && (
+                {certificate.enrollment?.finalGrade && (
                   <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
                     <span className="font-medium">Final Grade:</span> {certificate.enrollment.finalGrade}%
                   </p>
@@ -197,7 +212,7 @@ const Certificates: React.FC = () => {
               
               <div className="flex space-x-2">
                 <button 
-                  onClick={() => handleDownload(certificate.id, certificate.course.title)}
+                  onClick={() => handleDownload(certificate.id, certificate.course?.title || 'Certificate')}
                   className="flex-1 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors flex items-center justify-center"
                 >
                   <Download size={16} className="mr-2" />
