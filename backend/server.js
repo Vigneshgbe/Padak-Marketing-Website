@@ -1831,85 +1831,134 @@ app.post('/api/service-requests', authenticateToken, async (req, res) => {
 app.get('/api/calendar/events', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
+    console.log(`📅 Fetching calendar events for user ${userId}`);
 
     // Get course start/end dates for enrolled courses
-    const enrollmentsSnap = await db.collection('enrollments').where('user_id', '==', userId).where('status', '==', 'active').get();
+    const enrollmentsSnap = await db.collection('enrollments')
+      .where('user_id', '==', userId)
+      .where('status', '==', 'active')
+      .get();
 
     const courseEvents = [];
     for (const doc of enrollmentsSnap.docs) {
       const e = doc.data();
-      const courseDoc = await db.collection('courses').doc(e.course_id).get();
-      const c = courseDoc.data();
-      courseEvents.push({
-        id: doc.id,
-        title: c.title,
-        description: c.description || 'Course enrollment',
-        date: c.created_at,
-        type: 'course_start',
-        course: {
-          id: e.course_id,
-          title: c.title,
-          category: c.category
-        },
-        color: 'blue'
-      });
+      try {
+        const courseDoc = await db.collection('courses').doc(e.course_id).get();
+        if (courseDoc.exists) {
+          const c = courseDoc.data();
+          courseEvents.push({
+            id: doc.id,
+            title: c.title || 'Course',
+            description: c.description || 'Course enrollment',
+            date: c.created_at?.toDate ? c.created_at.toDate().toISOString() : new Date().toISOString(),
+            type: 'course_start',
+            course: {
+              id: e.course_id,
+              title: c.title || 'Course',
+              category: c.category || 'General'
+            },
+            color: 'blue'
+          });
+        }
+      } catch (err) {
+        console.error(`Error fetching course ${e.course_id}:`, err);
+      }
     }
 
     const assignmentEvents = [];
     for (const doc of enrollmentsSnap.docs) {
       const e = doc.data();
-      const assignmentsSnap = await db.collection('assignments').where('course_id', '==', e.course_id).get();
-      for (const aDoc of assignmentsSnap.docs) {
-        const a = aDoc.data();
-        const submissionSnap = await db.collection('assignment_submissions').where('assignment_id', '==', aDoc.id).where('user_id', '==', userId).get();
-        let status = 'pending';
-        if (!submissionSnap.empty) {
-          if (submissionSnap.docs[0].data().status === 'graded') status = 'completed';
-        } else if (a.due_date.toDate() < new Date()) {
-          status = 'overdue';
+      try {
+        const assignmentsSnap = await db.collection('assignments')
+          .where('course_id', '==', e.course_id)
+          .get();
+          
+        for (const aDoc of assignmentsSnap.docs) {
+          const a = aDoc.data();
+          
+          try {
+            const submissionSnap = await db.collection('assignment_submissions')
+              .where('assignment_id', '==', aDoc.id)
+              .where('user_id', '==', userId)
+              .get();
+              
+            let status = 'pending';
+            if (!submissionSnap.empty) {
+              const submissionStatus = submissionSnap.docs[0].data().status;
+              status = submissionStatus === 'graded' ? 'completed' : 'submitted';
+            } else if (a.due_date && a.due_date.toDate && a.due_date.toDate() < new Date()) {
+              status = 'overdue';
+            }
+            
+            const courseDoc = await db.collection('courses').doc(e.course_id).get();
+            const c = courseDoc.exists ? courseDoc.data() : { title: 'Course', category: 'General' };
+            
+            assignmentEvents.push({
+              id: aDoc.id,
+              title: a.title || 'Assignment',
+              description: a.description || 'Assignment due',
+              date: a.due_date?.toDate ? a.due_date.toDate().toISOString() : new Date().toISOString(),
+              type: 'assignment',
+              course: {
+                id: e.course_id,
+                title: c.title || 'Course',
+                category: c.category || 'General'
+              },
+              status,
+              color: status === 'completed' ? 'green' : status === 'overdue' ? 'red' : 'orange'
+            });
+          } catch (assignmentErr) {
+            console.error(`Error processing assignment ${aDoc.id}:`, assignmentErr);
+          }
         }
-        const courseDoc = await db.collection('courses').doc(e.course_id).get();
-        const c = courseDoc.data();
-        assignmentEvents.push({
-          id: aDoc.id,
-          title: a.title,
-          description: a.description || 'Assignment due',
-          date: a.due_date,
-          type: 'assignment',
-          course: {
-            id: e.course_id,
-            title: c.title,
-            category: c.category
-          },
-          status,
-          color: status === 'completed' ? 'green' : status === 'overdue' ? 'red' : 'orange'
-        });
+      } catch (err) {
+        console.error(`Error fetching assignments for course ${e.course_id}:`, err);
       }
     }
 
-    // Get custom calendar events
-    const customEventsSnap = await db.collection('custom_calendar_events').where('user_id', '==', userId).where('event_date', '>=', new Date(new Date().getTime() - 30 * 24 * 60 * 60 * 1000)).orderBy('event_date').get();
+    // ✅ FIXED: Get custom calendar events WITHOUT orderBy to avoid composite index
+    const thirtyDaysAgo = new Date(new Date().getTime() - 30 * 24 * 60 * 60 * 1000);
+    
+    const customEventsSnap = await db.collection('custom_calendar_events')
+      .where('user_id', '==', userId)
+      .get(); // ✅ Removed orderBy
 
-    const customEvents = customEventsSnap.docs.map(doc => {
+    const customEvents = [];
+    customEventsSnap.docs.forEach(doc => {
       const event = doc.data();
-      return {
-        id: doc.id,
-        title: event.title,
-        description: event.description || '',
-        date: event.event_date,
-        time: event.event_time,
-        type: event.event_type || 'custom',
-        color: 'purple'
-      };
+      
+      // Filter by date in memory
+      const eventDate = event.event_date?.toDate ? event.event_date.toDate() : new Date(event.event_date);
+      
+      if (eventDate >= thirtyDaysAgo) {
+        customEvents.push({
+          id: doc.id,
+          title: event.title || 'Event',
+          description: event.description || '',
+          date: event.event_date?.toDate ? event.event_date.toDate().toISOString() : new Date().toISOString(),
+          time: event.event_time || null,
+          type: event.event_type || 'custom',
+          color: 'purple'
+        });
+      }
     });
+
+    // Sort custom events by date in memory
+    customEvents.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     // Combine all events
     const allEvents = [...courseEvents, ...assignmentEvents, ...customEvents];
 
+    console.log(`✅ Returning ${allEvents.length} calendar events`);
     res.json(allEvents);
+    
   } catch (error) {
-    console.error('Error fetching calendar events:', error);
-    res.status(500).json({ error: 'Failed to fetch calendar events' });
+    console.error('❌ Error fetching calendar events:', error);
+    console.error('Stack:', error.stack);
+    res.status(500).json({ 
+      error: 'Failed to fetch calendar events',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -4590,35 +4639,73 @@ app.delete('/api/admin/internships/:id', authenticateToken, async (req, res) => 
 // Get service categories
 app.get('/api/services/categories', async (req, res) => {
   try {
-    const categoriesSnap = await db.collection('service_categories').where('is_active', '==', true).orderBy('name').get();
+    console.log('📋 Fetching service categories...');
+    
+    // ✅ FIXED: Remove orderBy to avoid composite index requirement
+    const categoriesSnap = await db.collection('service_categories').get();
+    
+    console.log(`Found ${categoriesSnap.size} total categories`);
 
     const categoriesWithSubs = [];
+    
     for (const doc of categoriesSnap.docs) {
       const category = doc.data();
-      const subcategoriesSnap = await db.collection('service_subcategories').where('category_id', '==', doc.id).where('is_active', '==', true).orderBy('name').get();
-      categoriesWithSubs.push({
-        id: doc.id,
-        name: category.name,
-        description: category.description,
-        icon: category.icon,
-        subcategories: subcategoriesSnap.docs.map(subDoc => {
-          const sub = subDoc.data();
-          return {
+      
+      // ✅ FIXED: Handle both boolean and number for is_active
+      const isCategoryActive = category.is_active === true || category.is_active === 1;
+      
+      if (!isCategoryActive) {
+        console.log(`Skipping inactive category ${doc.id}`);
+        continue;
+      }
+      
+      // ✅ FIXED: Remove orderBy from subcategories query too
+      const subcategoriesSnap = await db.collection('service_subcategories')
+        .where('category_id', '==', doc.id)
+        .get();
+      
+      const activeSubcategories = [];
+      
+      subcategoriesSnap.docs.forEach(subDoc => {
+        const sub = subDoc.data();
+        const isSubActive = sub.is_active === true || sub.is_active === 1;
+        
+        if (isSubActive) {
+          activeSubcategories.push({
             id: subDoc.id,
             categoryId: sub.category_id,
-            name: sub.name,
-            description: sub.description,
-            basePrice: sub.base_price
-          };
-        })
+            name: sub.name || 'Unnamed Service',
+            description: sub.description || '',
+            basePrice: parseFloat(sub.base_price || 0)
+          });
+        }
+      });
+      
+      // Sort subcategories by name in memory
+      activeSubcategories.sort((a, b) => a.name.localeCompare(b.name));
+      
+      categoriesWithSubs.push({
+        id: doc.id,
+        name: category.name || 'Unnamed Category',
+        description: category.description || '',
+        icon: category.icon || 'Package',
+        subcategories: activeSubcategories
       });
     }
-
+    
+    // Sort categories by name in memory
+    categoriesWithSubs.sort((a, b) => a.name.localeCompare(b.name));
+    
+    console.log(`✅ Returning ${categoriesWithSubs.length} active categories`);
     res.json(categoriesWithSubs);
 
   } catch (error) {
-    console.error('Get service categories error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('❌ Get service categories error:', error);
+    console.error('Stack:', error.stack);
+    res.status(500).json({ 
+      error: 'Server error',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
