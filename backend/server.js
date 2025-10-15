@@ -1701,40 +1701,77 @@ app.get('/api/users/:userId/service-requests', authenticateToken, async (req, re
   }
 
   try {
-    const requestsSnap = await db.collection('service_requests').where('user_id', '==', userId).orderBy('created_at', 'desc').get();
+    const requestsSnap = await db.collection('service_requests')
+      .where('user_id', '==', userId)
+      .orderBy('created_at', 'desc')
+      .get();
 
     const requests = [];
+    
     for (const doc of requestsSnap.docs) {
       const sr = doc.data();
-      const subcategoryDoc = await db.collection('service_subcategories').doc(sr.subcategory_id).get();
-      const sc = subcategoryDoc.data();
-      const categoryDoc = await db.collection('service_categories').doc(sc.category_id).get();
-      const category = categoryDoc.data();
+      
+      // ✅ FIXED: Add safety checks for missing documents
+      let categoryName = 'Unknown Category';
+      
+      try {
+        // Check if subcategory exists
+        const subcategoryDoc = await db.collection('service_subcategories').doc(sr.subcategory_id).get();
+        
+        if (!subcategoryDoc.exists) {
+          console.warn(`Subcategory ${sr.subcategory_id} not found for request ${doc.id}`);
+        } else {
+          const sc = subcategoryDoc.data();
+          
+          // Check if category exists
+          if (sc && sc.category_id) {
+            const categoryDoc = await db.collection('service_categories').doc(sc.category_id).get();
+            
+            if (categoryDoc.exists) {
+              const category = categoryDoc.data();
+              categoryName = category.name || 'Unknown Category';
+            } else {
+              console.warn(`Category ${sc.category_id} not found for subcategory ${sr.subcategory_id}`);
+            }
+          } else {
+            console.warn(`Subcategory ${sr.subcategory_id} has no category_id`);
+          }
+        }
+      } catch (fetchError) {
+        console.error(`Error fetching category for request ${doc.id}:`, fetchError);
+        // Continue with default categoryName
+      }
+      
       requests.push({
         id: doc.id,
         userId: sr.user_id,
         categoryId: sr.subcategory_id,
-        categoryName: category.name,
+        categoryName: categoryName,
         fullName: sr.full_name,
         email: sr.email,
         phone: sr.phone,
-        company: sr.company,
-        website: sr.website,
+        company: sr.company || '',
+        website: sr.website || '',
         projectDetails: sr.project_details,
         budgetRange: sr.budget_range,
         timeline: sr.timeline,
         contactMethod: sr.contact_method,
-        additionalRequirements: sr.additional_requirements,
+        additionalRequirements: sr.additional_requirements || '',
         status: sr.status,
-        requestDate: sr.created_at,
-        updatedAt: sr.updated_at
+        requestDate: sr.created_at?.toDate ? sr.created_at.toDate().toISOString() : new Date().toISOString(),
+        updatedAt: sr.updated_at?.toDate ? sr.updated_at.toDate().toISOString() : new Date().toISOString()
       });
     }
 
+    console.log(`✅ Returning ${requests.length} service requests for user ${userId}`);
     res.json(requests);
+    
   } catch (error) {
     console.error('Error fetching user service requests:', error);
-    res.status(500).json({ message: 'Failed to fetch your service requests.', error: error.message });
+    res.status(500).json({ 
+      message: 'Failed to fetch your service requests.', 
+      error: error.message 
+    });
   }
 });
 
