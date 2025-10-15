@@ -2,7 +2,7 @@
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcrypt');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
@@ -145,9 +145,50 @@ const allowedOrigins = [process.env.FRONTEND_URL].filter(Boolean);
 app.use(cors({
   origin: [process.env.FRONTEND_URL], 
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+// ==================== STATIC FILE SERVING ====================
+
+// Serve static files from uploads directory with proper headers
+app.use('/uploads', (req, res, next) => {
+  // Set CORS headers for images
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Access-Control-Allow-Methods', 'GET');
+  
+  // Set proper content-type based on file extension
+  const ext = path.extname(req.path).toLowerCase();
+  const contentTypes = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml'
+  };
+  
+  if (contentTypes[ext]) {
+    res.setHeader('Content-Type', contentTypes[ext]);
+  }
+  
+  next();
+});
+
+// Serve the static files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+  setHeaders: (res, filePath) => {
+    // Cache images for better performance
+    res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 day
+  }
+}));
+
+// Log all upload requests for debugging
+app.use('/uploads', (req, res, next) => {
+  console.log(`📸 Image request: ${req.method} ${req.url}`);
+  next();
+});
 
 // ==================== MIDDLEWARE ====================
 app.use(express.json())
@@ -159,6 +200,9 @@ app.use('/uploads/avatars', express.static(path.join(__dirname, 'uploads', 'avat
 // Request logging middleware
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  if (req.method === 'POST' || req.method === 'PUT') {
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+  }
   next();
 });
 
@@ -167,39 +211,65 @@ const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
+  console.log('Auth check - Token present:', !!token);
+
   if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
+    return res.status(401).json({ 
+      success: false,
+      error: 'Access token required' 
+    });
   }
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
+    console.log('Token decoded - userId:', decoded.userId);
     
     // Get user from Firestore to verify they still exist and are active
     const userDoc = await db.collection('users').doc(decoded.userId).get();
     
     if (!userDoc.exists) {
-      return res.status(401).json({ error: 'User not found' });
+      console.log('User not found in database');
+      return res.status(401).json({ 
+        success: false,
+        error: 'User not found' 
+      });
     }
 
     const user = userDoc.data();
-    if (!user.is_active) {
-      return res.status(401).json({ error: 'Account deactivated' });
+    if (user.is_active === false) {
+      console.log('User account deactivated');
+      return res.status(401).json({ 
+        success: false,
+        error: 'Account deactivated' 
+      });
     }
 
     req.user = {
       id: decoded.userId,
+      userId: decoded.userId, // Add both for compatibility
       ...user
     };
+    
+    console.log('Auth successful for user:', req.user.email);
     next();
   } catch (error) {
-    return res.status(403).json({ error: 'Invalid or expired token' });
+    console.error('Token verification error:', error.message);
+    return res.status(403).json({ 
+      success: false,
+      error: 'Invalid or expired token' 
+    });
   }
 };
 
 // Admin Authorization Middleware
 const requireAdmin = (req, res, next) => {
+  console.log('Admin check - Account type:', req.user?.account_type);
+  
   if (!req.user || req.user.account_type !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
+    return res.status(403).json({ 
+      success: false,
+      error: 'Admin access required' 
+    });
   }
   next();
 };
@@ -319,35 +389,52 @@ app.post('/api/register', async (req, res) => {
 });
 
 // Login endpoint
+// Login endpoint - ENHANCED WITH DEBUGGING
 app.post('/api/login', async (req, res) => {
   const { email, password, rememberMe } = req.body;
 
   try {
     // Validate input
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'Email and password are required' 
+      });
     }
 
     // Check if user exists in Firestore
-    const users = await db.collection('users').where('email', '==', email).get();
+    const users = await db.collection('users').where('email', '==', email.toLowerCase()).get();
 
     if (users.empty) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      return res.status(401).json({ 
+        success: false,
+        error: 'Invalid email or password' 
+      });
     }
 
     const userDoc = users.docs[0];
     const user = userDoc.data();
     const userId = userDoc.id;
 
+    console.log('=== LOGIN DEBUG ===');
+    console.log('User ID:', userId);
+    console.log('User Email:', email.toLowerCase());
+
     // Check if user is active
-    if (!user.is_active) {
-      return res.status(401).json({ error: 'Account deactivated. Please contact administrator.' });
+    if (user.is_active === false) {
+      return res.status(401).json({ 
+        success: false,
+        error: 'Account deactivated. Please contact administrator.' 
+      });
     }
 
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
     if (!isPasswordValid) {
-      return res.status(401).json({ error: 'Invalid email or password' });
+      return res.status(401).json({ 
+        success: false,
+        error: 'Invalid email or password' 
+      });
     }
 
     // Generate JWT token
@@ -362,15 +449,130 @@ app.post('/api/login', async (req, res) => {
       { expiresIn: tokenExpiry }
     );
 
+    // ✅ AUTO-LINK GUEST ENROLLMENTS - ENHANCED WITH DEBUGGING
+    try {
+      console.log('🔍 Checking for approved enrollment requests...');
+      
+      // Find ALL enrollment requests with this email (not just approved ones initially)
+      const allRequestsSnap = await db.collection('course_enroll_requests')
+        .where('email', '==', email.toLowerCase())
+        .get();
+
+      console.log(`📋 Found ${allRequestsSnap.size} total enrollment requests for this email`);
+
+      // Log details of each request
+      allRequestsSnap.forEach(doc => {
+        const req = doc.data();
+        console.log(`  - Request ID: ${doc.id}`);
+        console.log(`    Status: ${req.status}`);
+        console.log(`    User ID: ${req.user_id || 'null'}`);
+        console.log(`    Course ID: ${req.course_id}`);
+        console.log(`    Is Guest: ${req.is_guest}`);
+      });
+
+      // Now process only approved requests
+      const approvedRequestsSnap = await db.collection('course_enroll_requests')
+        .where('email', '==', email.toLowerCase())
+        .where('status', '==', 'approved')
+        .get();
+
+      console.log(`✅ Found ${approvedRequestsSnap.size} APPROVED enrollment requests`);
+
+      let linkedCount = 0;
+      let skippedCount = 0;
+
+      for (const doc of approvedRequestsSnap.docs) {
+        const request = doc.data();
+
+        console.log(`\n🔗 Processing request ${doc.id}...`);
+
+        // Skip if already linked to this user
+        if (request.user_id === userId) {
+          console.log(`  ⏭️  Already linked to user ${userId}`);
+          skippedCount++;
+          continue;
+        }
+
+        // Check if already enrolled
+        const existingEnrollment = await db.collection('enrollments')
+          .where('user_id', '==', userId)
+          .where('course_id', '==', request.course_id)
+          .get();
+
+        if (existingEnrollment.empty) {
+          console.log(`  ➕ Creating new enrollment...`);
+          
+          // Create enrollment
+          const enrollmentRef = db.collection('enrollments').doc();
+          await enrollmentRef.set({
+            user_id: userId,
+            course_id: request.course_id,
+            enrollment_date: request.created_at || firebase.firestore.Timestamp.now(),
+            progress: 0,
+            status: 'active',
+            completion_date: null
+          });
+
+          console.log(`  ✅ Enrollment created: ${enrollmentRef.id}`);
+          linkedCount++;
+        } else {
+          console.log(`  ⚠️  Already enrolled in course ${request.course_id}`);
+          console.log(`     Existing enrollment ID: ${existingEnrollment.docs[0].id}`);
+        }
+
+        // Update request to link user_id
+        await db.collection('course_enroll_requests').doc(doc.id).update({
+          user_id: userId
+        });
+        console.log(`  🔗 Request linked to user ${userId}`);
+      }
+
+      console.log(`\n📊 Summary:`);
+      console.log(`   - Linked: ${linkedCount} new enrollments`);
+      console.log(`   - Skipped: ${skippedCount} already linked`);
+
+      if (linkedCount > 0) {
+        console.log(`\n📈 Updating user stats...`);
+        
+        // Update user stats
+        const userStatsRef = db.collection('user_stats').doc(userId);
+        const userStatsDoc = await userStatsRef.get();
+        
+        if (userStatsDoc.exists) {
+          await userStatsRef.update({
+            courses_enrolled: firebase.firestore.FieldValue.increment(linkedCount)
+          });
+          console.log(`   ✅ User stats updated (+${linkedCount})`);
+        } else {
+          await userStatsRef.set({
+            courses_enrolled: linkedCount,
+            courses_completed: 0,
+            certificates_earned: 0,
+            learning_streak: 0,
+            last_activity: new Date().toISOString()
+          });
+          console.log(`   ✅ User stats created with ${linkedCount} enrollments`);
+        }
+      }
+
+      console.log('=== END LOGIN DEBUG ===\n');
+
+    } catch (linkError) {
+      console.error('❌ Error auto-linking guest enrollments:', linkError);
+      console.error('Stack trace:', linkError.stack);
+      // Don't fail login if linking fails - just log the error
+    }
+
     // Update last login timestamp
     await db.collection('users').doc(userId).update({
       updated_at: firebase.firestore.FieldValue.serverTimestamp()
     });
 
-    console.log('User logged in successfully:', { userId, email: user.email });
+    console.log('✅ User logged in successfully:', { userId, email: user.email });
 
     // Send success response
     res.status(200).json({
+      success: true,
       message: 'Login successful',
       token: token,
       user: {
@@ -385,15 +587,17 @@ app.post('/api/login', async (req, res) => {
         website: user.website || '',
         bio: user.bio || '',
         isActive: user.is_active,
-        emailVerified: user.email_verified,
-        createdAt: user.created_at,
-        updatedAt: user.updated_at
+        emailVerified: user.email_verified
       }
     });
 
   } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ error: 'Server error during login' });
+    console.error('❌ Login error:', error);
+    console.error('Stack trace:', error.stack);
+    res.status(500).json({ 
+      success: false,
+      error: 'Server error during login' 
+    });
   }
 });
 
@@ -548,9 +752,8 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
   }
 });
 
-// =================================================================
 // ============== ENHANCED SOCIAL FEED FUNCTIONALITY ===============
-// =================================================================
+
 
 // --- Multer Configuration for Social Post Images ---
 const socialUploadDir = 'public/uploads/social';
@@ -571,17 +774,17 @@ const socialUpload = multer({
   storage: socialStorage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: (req, file, cb) => {
-    const filetypes = /jpeg|jpg|png|gif/;
+    const filetypes = /jpeg|jpg|png|gif|webp/;
     const mimetype = filetypes.test(file.mimetype);
     const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
     if (mimetype && extname) {
       return cb(null, true);
     }
-    cb(new Error('Error: File upload only supports the following filetypes - ' + filetypes));
+    cb(new Error('Error: File upload only supports the following filetypes - jpeg, jpg, png, gif, webp'));
   },
 }).single('image');
 
-// Helper function to get full URL for images (SIMPLIFIED)
+// Helper function to get full URL for images
 const getFullImageUrl = (req, imagePath) => {
   if (!imagePath) {
     return null;
@@ -594,7 +797,65 @@ const getFullImageUrl = (req, imagePath) => {
     cleanPath = '/' + cleanPath;
   }
   return `${req.protocol}://${req.get('host')}${cleanPath}`;
-}
+};
+
+// Helper function to safely convert Firestore timestamp to ISO string
+const timestampToISO = (timestamp) => {
+  if (!timestamp) return new Date().toISOString();
+  try {
+    if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+      return timestamp.toDate().toISOString();
+    }
+    if (timestamp instanceof Date) {
+      return timestamp.toISOString();
+    }
+    if (typeof timestamp === 'string') {
+      return new Date(timestamp).toISOString();
+    }
+    return new Date().toISOString();
+  } catch (error) {
+    console.error('Error converting timestamp:', error);
+    return new Date().toISOString();
+  }
+};
+
+// Helper function to get user connections
+const getUserConnections = async (userId) => {
+  try {
+    const connections = new Set();
+    
+    // Get connections where user is user_id_1
+    const connections1Snap = await db.collection('user_connections')
+      .where('user_id_1', '==', userId)
+      .where('status', '==', 'accepted')
+      .get();
+    
+    connections1Snap.forEach(doc => {
+      const data = doc.data();
+      if (data.user_id_2) {
+        connections.add(data.user_id_2);
+      }
+    });
+
+    // Get connections where user is user_id_2
+    const connections2Snap = await db.collection('user_connections')
+      .where('user_id_2', '==', userId)
+      .where('status', '==', 'accepted')
+      .get();
+    
+    connections2Snap.forEach(doc => {
+      const data = doc.data();
+      if (data.user_id_1) {
+        connections.add(data.user_id_1);
+      }
+    });
+
+    return Array.from(connections);
+  } catch (error) {
+    console.error('Error getting user connections:', error);
+    return [];
+  }
+};
 
 // --- GET All Posts (with Pagination, Likes, Comments, etc.) ---
 app.get('/api/posts', authenticateToken, async (req, res) => {
@@ -604,92 +865,198 @@ app.get('/api/posts', authenticateToken, async (req, res) => {
   const offset = (page - 1) * limit;
 
   try {
-    // Step 1: Get total count
-    // In Firestore, we can't do complex conditional counts easily, so fetch all and filter
-    const allPostsSnap = await db.collection('social_activities').where('activity_type', '==', 'post').get();
-    let totalPosts = 0;
-    const postIds = [];
+    console.log(`Fetching posts for user ${userId}, page ${page}`);
 
-    const connections1 = await db.collection('user_connections').where('user_id_1', '==', userId).where('status', '==', 'accepted').get();
-    const connections2 = await db.collection('user_connections').where('user_id_2', '==', userId).where('status', '==', 'accepted').get();
-    const connections = [...connections1.docs.map(d => d.data().user_id_2), ...connections2.docs.map(d => d.data().user_id_1)];
+    // Get user's connections
+    const connections = await getUserConnections(userId);
+    console.log(`User has ${connections.length} connections`);
 
-    allPostsSnap.docs.forEach(doc => {
-      const p = doc.data();
-      if (
-        p.visibility === 'public' ||
-        (p.visibility === 'private' && p.user_id === userId) ||
-        (p.visibility === 'connections' && (p.user_id === userId || connections.includes(p.user_id)))
-      ) {
-        totalPosts++;
-        postIds.push(doc.id);
+    // Fetch all posts from social_activities collection
+    // Note: If you get index errors, create the index in Firebase Console
+    let allPostsSnap;
+    try {
+      allPostsSnap = await db.collection('social_activities')
+        .where('activity_type', '==', 'post')
+        .orderBy('created_at', 'desc')
+        .get();
+    } catch (indexError) {
+      console.log('Index not found, fetching without orderBy:', indexError.message);
+      // Fallback: fetch without orderBy if index doesn't exist yet
+      allPostsSnap = await db.collection('social_activities')
+        .where('activity_type', '==', 'post')
+        .get();
+    }
+
+    console.log(`Found ${allPostsSnap.size} total posts`);
+
+    // Filter posts based on visibility
+    const visiblePosts = [];
+    
+    allPostsSnap.forEach(doc => {
+      const post = doc.data();
+      const postId = doc.id;
+      
+      // Check visibility rules
+      const isPublic = !post.visibility || post.visibility === 'public';
+      const isOwnPost = post.user_id === userId;
+      const isConnectionPost = post.visibility === 'connections' && 
+                              (isOwnPost || connections.includes(post.user_id));
+      const isPrivate = post.visibility === 'private' && isOwnPost;
+
+      if (isPublic || isConnectionPost || isPrivate) {
+        visiblePosts.push({ id: postId, ...post });
       }
     });
 
+    // Sort posts manually by created_at if orderBy wasn't used
+    visiblePosts.sort((a, b) => {
+      const dateA = a.created_at?.toDate ? a.created_at.toDate() : new Date(a.created_at || 0);
+      const dateB = b.created_at?.toDate ? b.created_at.toDate() : new Date(b.created_at || 0);
+      return dateB - dateA; // Descending order (newest first)
+    });
+
+    console.log(`${visiblePosts.length} posts visible to user`);
+
+    // Calculate pagination
+    const totalPosts = visiblePosts.length;
     const totalPages = Math.ceil(totalPosts / limit);
+    
+    // Get paginated posts
+    const paginatedPosts = visiblePosts.slice(offset, offset + limit);
 
-    // Step 2: Fetch paginated posts (manual pagination since conditional)
-    const posts = [];
-    const start = offset;
-    const end = offset + limit;
-    for (let i = start; i < Math.min(end, postIds.length); i++) {
-      const postDoc = await db.collection('social_activities').doc(postIds[i]).get();
-      const post = postDoc.data();
-      post.id = postIds[i];
+    // Enrich posts with user data, likes, comments, etc.
+    const enrichedPosts = await Promise.all(
+      paginatedPosts.map(async (post) => {
+        try {
+          // Get user data
+          let userData = null;
+          if (post.user_id) {
+            try {
+              const userDoc = await db.collection('users').doc(post.user_id).get();
+              if (userDoc.exists) {
+                const u = userDoc.data();
+                userData = {
+                  id: post.user_id,
+                  first_name: u.first_name || '',
+                  last_name: u.last_name || '',
+                  profile_image: getFullImageUrl(req, u.profile_image),
+                  account_type: u.account_type || 'student'
+                };
+              }
+            } catch (userError) {
+              console.error(`Error fetching user ${post.user_id}:`, userError.message);
+            }
+          }
 
-      const userDoc = await db.collection('users').doc(post.user_id).get();
-      const u = userDoc.data();
+          // Fetch ALL activities related to this post in ONE query
+          // This avoids complex composite indexes
+          let allActivities = [];
+          try {
+            const activitiesSnap = await db.collection('social_activities')
+              .where('target_id', '==', post.id)
+              .get();
+            
+            allActivities = activitiesSnap.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            }));
+          } catch (activitiesError) {
+            console.log(`Could not fetch activities for post ${post.id}:`, activitiesError.message);
+          }
 
-      post.likes = (await db.collection('social_activities').where('activity_type', '==', 'like').where('target_id', '==', post.id).get()).size;
+          // Filter activities by type in memory
+          const likes = allActivities.filter(a => a.activity_type === 'like');
+          const userLikes = likes.filter(a => a.user_id === userId);
+          const bookmarks = allActivities.filter(a => a.activity_type === 'bookmark' && a.user_id === userId);
+          const commentActivities = allActivities.filter(a => a.activity_type === 'comment');
 
-      post.comment_count = (await db.collection('social_activities').where('activity_type', '==', 'comment').where('target_id', '==', post.id).get()).size;
+          // Get comment user data
+          const comments = await Promise.all(
+            commentActivities.map(async (comment) => {
+              let commentUser = null;
+              
+              if (comment.user_id) {
+                try {
+                  const commentUserDoc = await db.collection('users').doc(comment.user_id).get();
+                  if (commentUserDoc.exists) {
+                    const cu = commentUserDoc.data();
+                    commentUser = {
+                      id: comment.user_id,
+                      first_name: cu.first_name || '',
+                      last_name: cu.last_name || '',
+                      profile_image: getFullImageUrl(req, cu.profile_image),
+                      account_type: cu.account_type || 'student'
+                    };
+                  }
+                } catch (userError) {
+                  console.error(`Error fetching comment user:`, userError.message);
+                }
+              }
 
-      post.has_liked = !(await db.collection('social_activities').where('activity_type', '==', 'like').where('target_id', '==', post.id).where('user_id', '==', userId).get()).empty;
+              return {
+                id: comment.id,
+                content: comment.content || '',
+                created_at: timestampToISO(comment.created_at),
+                user: commentUser
+              };
+            })
+          );
 
-      post.has_bookmarked = !(await db.collection('social_activities').where('activity_type', '==', 'bookmark').where('target_id', '==', post.id).where('user_id', '==', userId).get()).empty;
+          // Sort comments by date manually (oldest first)
+          comments.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
-      post.image_url = getFullImageUrl(req, post.image_url);
+          return {
+            id: post.id,
+            user_id: post.user_id,
+            activity_type: post.activity_type,
+            content: post.content || '',
+            image_url: getFullImageUrl(req, post.image_url),
+            target_id: post.target_id || null,
+            created_at: timestampToISO(post.created_at),
+            updated_at: timestampToISO(post.updated_at || post.created_at),
+            visibility: post.visibility || 'public',
+            achievement: post.achievement || false,
+            share_count: post.share_count || 0,
+            likes: likes.length,
+            has_liked: userLikes.length > 0,
+            has_bookmarked: bookmarks.length > 0,
+            comment_count: comments.length,
+            user: userData,
+            comments: comments
+          };
+        } catch (error) {
+          console.error(`Error enriching post ${post.id}:`, error);
+          return null;
+        }
+      })
+    );
 
-      post.user = {
-        id: post.user_id,
-        first_name: u.first_name,
-        last_name: u.last_name,
-        profile_image: getFullImageUrl(req, u.profile_image),
-        account_type: u.account_type
-      };
+    // Filter out null posts
+    const validPosts = enrichedPosts.filter(post => post !== null);
 
-      const commentsSnap = await db.collection('social_activities').where('activity_type', '==', 'comment').where('target_id', '==', post.id).orderBy('created_at').get();
-
-      post.comments = [];
-      for (const commentDoc of commentsSnap.docs) {
-        const c = commentDoc.data();
-        c.id = commentDoc.id;
-
-        const commentUserDoc = await db.collection('users').doc(c.user_id).get();
-        const commentUser = commentUserDoc.data();
-
-        c.user = {
-          id: c.user_id,
-          first_name: commentUser.first_name,
-          last_name: commentUser.last_name,
-          profile_image: getFullImageUrl(req, commentUser.profile_image),
-          account_type: commentUser.account_type
-        };
-
-        post.comments.push(c);
-      }
-
-      posts.push(post);
-    }
+    console.log(`Returning ${validPosts.length} enriched posts`);
 
     res.json({
-      posts: posts,
-      pagination: { page, totalPages, totalPosts }
+      posts: validPosts,
+      pagination: {
+        page,
+        totalPages,
+        totalPosts
+      }
     });
 
   } catch (error) {
     console.error('Error fetching posts:', error);
-    res.status(500).json({ error: 'Failed to fetch posts.' });
+    console.error('Error stack:', error.stack);
+    console.error('Error code:', error.code);
+    console.error('Error message:', error.message);
+    
+    res.status(500).json({
+      error: 'Failed to fetch posts.',
+      message: error.message,
+      code: error.code,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
@@ -705,55 +1072,75 @@ app.post('/api/posts', authenticateToken, (req, res) => {
       const { content, achievement, visibility } = req.body;
       const userId = req.user.id;
 
+      console.log('Creating post:', { userId, content: content?.substring(0, 50), hasImage: !!req.file });
+
+      // Validation
       if (!content && !req.file) {
         return res.status(400).json({ error: 'Post must have content or an image.' });
       }
 
       const imageUrl = req.file ? `/uploads/social/${req.file.filename}` : null;
+      const isAchievement = achievement === 'true' || achievement === true;
+      const postVisibility = visibility || 'public';
 
-      const isAchievement = achievement === 'true';
-
+      // Create new post document
       const postRef = db.collection('social_activities').doc();
-      await postRef.set({
+      const postData = {
         user_id: userId,
         activity_type: 'post',
         content: content || '',
         image_url: imageUrl,
         achievement: isAchievement,
-        visibility: visibility,
+        visibility: postVisibility,
         created_at: firebase.firestore.Timestamp.now(),
         updated_at: firebase.firestore.Timestamp.now(),
         share_count: 0
-      });
+      };
 
-      const postId = postRef.id;
+      await postRef.set(postData);
 
-      const newPostDoc = await postRef.get();
-      const newPost = newPostDoc.data();
+      console.log('Post created successfully:', postRef.id);
 
+      // Get user data for response
       const userDoc = await db.collection('users').doc(userId).get();
-      const u = userDoc.data();
+      let userData = null;
+      
+      if (userDoc.exists) {
+        const u = userDoc.data();
+        userData = {
+          id: userId,
+          first_name: u.first_name || '',
+          last_name: u.last_name || '',
+          profile_image: getFullImageUrl(req, u.profile_image),
+          account_type: u.account_type || 'student'
+        };
+      }
 
+      // Return the created post
       res.status(201).json({
-        ...newPost,
-        id: postId,
+        id: postRef.id,
+        user_id: userId,
+        activity_type: 'post',
+        content: postData.content,
+        image_url: getFullImageUrl(req, postData.image_url),
+        achievement: postData.achievement,
+        visibility: postData.visibility,
+        created_at: timestampToISO(postData.created_at),
+        updated_at: timestampToISO(postData.updated_at),
+        share_count: 0,
         has_liked: false,
         has_bookmarked: false,
         likes: 0,
         comment_count: 0,
-        image_url: getFullImageUrl(req, newPost.image_url),
-        user: {
-          id: userId,
-          first_name: u.first_name,
-          last_name: u.last_name,
-          profile_image: getFullImageUrl(req, u.profile_image),
-          account_type: u.account_type
-        },
+        user: userData,
         comments: []
       });
     } catch (error) {
       console.error('Error creating post:', error);
-      res.status(500).json({ error: 'Failed to create post.' });
+      res.status(500).json({
+        error: 'Failed to create post.',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
     }
   });
 });
@@ -769,7 +1156,10 @@ app.put('/api/posts/:id', authenticateToken, async (req, res) => {
   }
 
   try {
-    const postDoc = await db.collection('social_activities').doc(id).get();
+    console.log(`Editing post ${id} by user ${userId}`);
+
+    const postRef = db.collection('social_activities').doc(id);
+    const postDoc = await postRef.get();
 
     if (!postDoc.exists) {
       return res.status(404).json({ error: 'Post not found.' });
@@ -781,15 +1171,20 @@ app.put('/api/posts/:id', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'You are not authorized to edit this post.' });
     }
 
-    await db.collection('social_activities').doc(id).update({
-      content: content,
+    await postRef.update({
+      content: content.trim(),
       updated_at: firebase.firestore.Timestamp.now()
     });
+
+    console.log('Post updated successfully');
 
     res.json({ message: 'Post updated successfully.' });
   } catch (error) {
     console.error('Error updating post:', error);
-    res.status(500).json({ error: 'Failed to update post.' });
+    res.status(500).json({
+      error: 'Failed to update post.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -799,7 +1194,10 @@ app.delete('/api/posts/:id', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const postDoc = await db.collection('social_activities').doc(id).get();
+    console.log(`Deleting post ${id} by user ${userId}`);
+
+    const postRef = db.collection('social_activities').doc(id);
+    const postDoc = await postRef.get();
 
     if (!postDoc.exists) {
       return res.status(404).json({ error: 'Post not found.' });
@@ -807,24 +1205,62 @@ app.delete('/api/posts/:id', authenticateToken, async (req, res) => {
 
     const post = postDoc.data();
 
-    if (post.user_id !== userId) {
+    if (post.user_id !== userId && req.user.account_type !== 'admin') {
       return res.status(403).json({ error: 'You are not authorized to delete this post.' });
     }
 
-    // Delete the post record
-    await db.collection('social_activities').doc(id).delete();
+    // Delete the post
+    await postRef.delete();
 
-    // If there was an image, delete it from the filesystem
-    if (post.image_url) {
-      fs.unlink(path.join(__dirname, post.image_url), (err) => {
-        if (err) console.error("Error deleting post image:", err);
-      });
+    // Delete associated image file if exists
+    if (post.image_url && !post.image_url.startsWith('http')) {
+      const imagePath = path.join(__dirname, post.image_url.replace(/^\//, ''));
+      if (fs.existsSync(imagePath)) {
+        try {
+          fs.unlinkSync(imagePath);
+          console.log('Post image deleted:', imagePath);
+        } catch (fileError) {
+          console.error("Error deleting post image:", fileError);
+        }
+      }
     }
+
+    // Delete associated likes
+    const likesSnap = await db.collection('social_activities')
+      .where('activity_type', '==', 'like')
+      .where('target_id', '==', id)
+      .get();
+    
+    const likeDeletions = likesSnap.docs.map(doc => doc.ref.delete());
+    await Promise.all(likeDeletions);
+
+    // Delete associated comments
+    const commentsSnap = await db.collection('social_activities')
+      .where('activity_type', '==', 'comment')
+      .where('target_id', '==', id)
+      .get();
+    
+    const commentDeletions = commentsSnap.docs.map(doc => doc.ref.delete());
+    await Promise.all(commentDeletions);
+
+    // Delete associated bookmarks
+    const bookmarksSnap = await db.collection('social_activities')
+      .where('activity_type', '==', 'bookmark')
+      .where('target_id', '==', id)
+      .get();
+    
+    const bookmarkDeletions = bookmarksSnap.docs.map(doc => doc.ref.delete());
+    await Promise.all(bookmarkDeletions);
+
+    console.log('Post and associated data deleted successfully');
 
     res.json({ message: 'Post deleted successfully.' });
   } catch (error) {
     console.error('Error deleting post:', error);
-    res.status(500).json({ error: 'Failed to delete post.' });
+    res.status(500).json({
+      error: 'Failed to delete post.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -839,36 +1275,56 @@ app.post('/api/posts/:id/comment', authenticateToken, async (req, res) => {
   }
 
   try {
+    console.log(`Adding comment to post ${targetId} by user ${userId}`);
+
+    // Check if post exists
+    const postDoc = await db.collection('social_activities').doc(targetId).get();
+    if (!postDoc.exists) {
+      return res.status(404).json({ error: 'Post not found.' });
+    }
+
+    // Create comment
     const commentRef = db.collection('social_activities').doc();
-    await commentRef.set({
+    const commentData = {
       user_id: userId,
       activity_type: 'comment',
-      content: content,
+      content: content.trim(),
       target_id: targetId,
       created_at: firebase.firestore.Timestamp.now()
-    });
+    };
 
-    const commentId = commentRef.id;
+    await commentRef.set(commentData);
 
-    // Fetch the new comment with user info to return
-    const newCommentDoc = await commentRef.get();
-    const newComment = newCommentDoc.data();
+    console.log('Comment created successfully:', commentRef.id);
 
+    // Get user data for response
     const userDoc = await db.collection('users').doc(userId).get();
-    const u = userDoc.data();
-
-    res.status(201).json({
-      ...newComment,
-      user: {
+    let userData = null;
+    
+    if (userDoc.exists) {
+      const u = userDoc.data();
+      userData = {
         id: userId,
-        first_name: u.first_name,
-        last_name: u.last_name,
-        profile_image: getFullImageUrl(req, u.profile_image)
-      }
+        first_name: u.first_name || '',
+        last_name: u.last_name || '',
+        profile_image: getFullImageUrl(req, u.profile_image),
+        account_type: u.account_type || 'student'
+      };
+    }
+
+    // Return the created comment
+    res.status(201).json({
+      id: commentRef.id,
+      content: commentData.content,
+      created_at: timestampToISO(commentData.created_at),
+      user: userData
     });
   } catch (error) {
     console.error('Error posting comment:', error);
-    res.status(500).json({ error: 'Failed to post comment.' });
+    res.status(500).json({
+      error: 'Failed to post comment.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -878,7 +1334,20 @@ app.post('/api/posts/:id/like', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    // Use INSERT IGNORE to prevent duplicates if user clicks too fast
+    console.log(`User ${userId} liking post ${targetId}`);
+
+    // Check if already liked
+    const existingLikeSnap = await db.collection('social_activities')
+      .where('user_id', '==', userId)
+      .where('activity_type', '==', 'like')
+      .where('target_id', '==', targetId)
+      .get();
+
+    if (!existingLikeSnap.empty) {
+      return res.status(400).json({ error: 'Post already liked.' });
+    }
+
+    // Create like
     const likeRef = db.collection('social_activities').doc();
     await likeRef.set({
       user_id: userId,
@@ -886,10 +1355,16 @@ app.post('/api/posts/:id/like', authenticateToken, async (req, res) => {
       target_id: targetId,
       created_at: firebase.firestore.Timestamp.now()
     });
+
+    console.log('Post liked successfully');
+
     res.status(201).json({ message: 'Post liked.' });
   } catch (error) {
     console.error('Error liking post:', error);
-    res.status(500).json({ error: 'Failed to like post.' });
+    res.status(500).json({
+      error: 'Failed to like post.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -899,18 +1374,31 @@ app.delete('/api/posts/:id/like', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const likeSnap = await db.collection('social_activities').where('user_id', '==', userId).where('activity_type', '==', 'like').where('target_id', '==', targetId).get();
+    console.log(`User ${userId} unliking post ${targetId}`);
+
+    const likeSnap = await db.collection('social_activities')
+      .where('user_id', '==', userId)
+      .where('activity_type', '==', 'like')
+      .where('target_id', '==', targetId)
+      .get();
 
     if (likeSnap.empty) {
       return res.status(404).json({ error: 'Like not found' });
     }
 
-    await likeSnap.docs[0].ref.delete();
+    // Delete all matching likes (should be only one)
+    const deletions = likeSnap.docs.map(doc => doc.ref.delete());
+    await Promise.all(deletions);
+
+    console.log('Post unliked successfully');
 
     res.json({ message: 'Post unliked.' });
   } catch (error) {
     console.error('Error unliking post:', error);
-    res.status(500).json({ error: 'Failed to unlike post.' });
+    res.status(500).json({
+      error: 'Failed to unlike post.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -920,6 +1408,20 @@ app.post('/api/posts/:id/bookmark', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
+    console.log(`User ${userId} bookmarking post ${targetId}`);
+
+    // Check if already bookmarked
+    const existingBookmarkSnap = await db.collection('social_activities')
+      .where('user_id', '==', userId)
+      .where('activity_type', '==', 'bookmark')
+      .where('target_id', '==', targetId)
+      .get();
+
+    if (!existingBookmarkSnap.empty) {
+      return res.status(400).json({ error: 'Post already bookmarked.' });
+    }
+
+    // Create bookmark
     const bookmarkRef = db.collection('social_activities').doc();
     await bookmarkRef.set({
       user_id: userId,
@@ -927,10 +1429,16 @@ app.post('/api/posts/:id/bookmark', authenticateToken, async (req, res) => {
       target_id: targetId,
       created_at: firebase.firestore.Timestamp.now()
     });
+
+    console.log('Post bookmarked successfully');
+
     res.status(201).json({ message: 'Post bookmarked.' });
   } catch (error) {
     console.error('Error bookmarking post:', error);
-    res.status(500).json({ error: 'Failed to bookmark post.' });
+    res.status(500).json({
+      error: 'Failed to bookmark post.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -940,18 +1448,31 @@ app.delete('/api/posts/:id/bookmark', authenticateToken, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    const bookmarkSnap = await db.collection('social_activities').where('user_id', '==', userId).where('activity_type', '==', 'bookmark').where('target_id', '==', targetId).get();
+    console.log(`User ${userId} unbookmarking post ${targetId}`);
+
+    const bookmarkSnap = await db.collection('social_activities')
+      .where('user_id', '==', userId)
+      .where('activity_type', '==', 'bookmark')
+      .where('target_id', '==', targetId)
+      .get();
 
     if (bookmarkSnap.empty) {
       return res.status(404).json({ error: 'Bookmark not found' });
     }
 
-    await bookmarkSnap.docs[0].ref.delete();
+    // Delete all matching bookmarks (should be only one)
+    const deletions = bookmarkSnap.docs.map(doc => doc.ref.delete());
+    await Promise.all(deletions);
+
+    console.log('Post unbookmarked successfully');
 
     res.json({ message: 'Post unbookmarked.' });
   } catch (error) {
     console.error('Error unbookmarking post:', error);
-    res.status(500).json({ error: 'Failed to unbookmark post.' });
+    res.status(500).json({
+      error: 'Failed to unbookmark post.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -960,13 +1481,28 @@ app.post('/api/posts/:id/share', authenticateToken, async (req, res) => {
   const postId = req.params.id;
 
   try {
-    await db.collection('social_activities').doc(postId).update({
+    console.log(`Tracking share for post ${postId}`);
+
+    const postRef = db.collection('social_activities').doc(postId);
+    const postDoc = await postRef.get();
+
+    if (!postDoc.exists) {
+      return res.status(404).json({ error: 'Post not found.' });
+    }
+
+    await postRef.update({
       share_count: firebase.firestore.FieldValue.increment(1)
     });
+
+    console.log('Share tracked successfully');
+
     res.json({ message: 'Share tracked.' });
   } catch (error) {
     console.error('Error tracking share:', error);
-    res.status(500).json({ error: 'Failed to track share.' });
+    res.status(500).json({
+      error: 'Failed to track share.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -1672,13 +2208,38 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   }
 });
 
-// ==================== COURSE ENROLLMENT REQUESTS ====================
+// ==================== COURSE ENROLLMENT REQUESTS (FIXED) ====================
+
+// Optional authentication middleware - doesn't block request if no token
+const optionalAuth = async (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      const userDoc = await db.collection('users').doc(decoded.userId).get();
+      
+      if (userDoc.exists) {
+        req.user = {
+          id: decoded.userId,
+          ...userDoc.data()
+        };
+      }
+    } catch (error) {
+      console.log('Optional auth failed, continuing as guest:', error.message);
+    }
+  }
+  
+  next(); // Always continue, even without valid token
+};
+
 app.post('/api/enroll-request', 
-  authenticateToken, 
+  optionalAuth,  // ✅ OPTIONAL AUTH - allows guest users
   paymentScreenshotUpload.single('paymentScreenshot'), 
   async (req, res) => {
     try {
-      const userId = req.user ? req.user.id : null;
+      const userId = req.user ? req.user.id : null; // Can be null for guests
       const {
         courseId,
         fullName,
@@ -1691,6 +2252,14 @@ app.post('/api/enroll-request',
         paymentMethod,
         transactionId
       } = req.body;
+
+      console.log('📝 Enrollment request received:', {
+        userId: userId || 'GUEST',
+        courseId,
+        fullName,
+        email,
+        hasFile: !!req.file
+      });
 
       // Validate required fields
       const requiredFields = ['courseId', 'fullName', 'email', 'phone', 'address', 
@@ -1709,9 +2278,10 @@ app.post('/api/enroll-request',
         return res.status(400).json({ error: 'Payment screenshot is required' });
       }
 
+      // Create enrollment request
       const requestRef = db.collection('course_enroll_requests').doc();
       await requestRef.set({
-        user_id: userId,
+        user_id: userId, // Can be null for guest enrollments
         course_id: courseId,
         full_name: fullName,
         email,
@@ -1722,20 +2292,308 @@ app.post('/api/enroll-request',
         pincode,
         payment_method: paymentMethod,
         transaction_id: transactionId,
-        payment_screenshot: `/uploads/payments/${req.file.filename}`
+        payment_screenshot: `/uploads/payments/${req.file.filename}`,
+        status: 'pending',
+        created_at: firebase.firestore.FieldValue.serverTimestamp(),
+        is_guest: !userId // Flag to identify guest enrollments
       });
 
+      console.log('✅ Enrollment request created:', requestRef.id);
+
       res.status(201).json({
+        success: true,
         message: 'Enrollment request submitted successfully',
-        requestId: requestRef.id
+        requestId: requestRef.id,
+        isGuest: !userId
       });
 
     } catch (error) {
-      console.error('Enrollment request error:', error);
-      res.status(500).json({ error: 'Server error', details: error.message }); 
+      console.error('❌ Enrollment request error:', error);
+      res.status(500).json({ 
+        success: false,
+        error: 'Server error', 
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      }); 
     }
   }
 );
+
+// ==================== ADMIN ENROLLMENT REQUESTS MANAGEMENT ====================
+
+// GET all enrollment requests (admin only)
+app.get('/api/admin/enrollment-requests', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const requestsSnap = await db.collection('course_enroll_requests')
+      .orderBy('created_at', 'desc')
+      .get();
+
+    const requests = [];
+    for (const doc of requestsSnap.docs) {
+      const req = doc.data();
+      
+      // Get course details
+      let courseName = 'Unknown Course';
+      try {
+        const courseDoc = await db.collection('courses').doc(req.course_id).get();
+        if (courseDoc.exists) {
+          courseName = courseDoc.data().title;
+        }
+      } catch (err) {
+        console.error('Error fetching course:', err);
+      }
+
+      requests.push({
+        id: doc.id,
+        user_id: req.user_id || null,
+        course_id: req.course_id,
+        course_name: courseName,
+        full_name: req.full_name,
+        email: req.email,
+        phone: req.phone,
+        address: req.address,
+        city: req.city,
+        state: req.state,
+        pincode: req.pincode,
+        payment_method: req.payment_method,
+        transaction_id: req.transaction_id,
+        payment_screenshot: req.payment_screenshot,
+        status: req.status,
+        is_guest: req.is_guest || false,
+        created_at: req.created_at
+      });
+    }
+
+    res.json(requests);
+  } catch (error) {
+    console.error('Error fetching enrollment requests:', error);
+    res.status(500).json({ error: 'Failed to fetch enrollment requests' });
+  }
+});
+
+// APPROVE enrollment request (admin only)
+app.put('/api/admin/enrollment-requests/:id/approve', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get the enrollment request
+    const requestDoc = await db.collection('course_enroll_requests').doc(id).get();
+    if (!requestDoc.exists) {
+      return res.status(404).json({ error: 'Enrollment request not found' });
+    }
+
+    const request = requestDoc.data();
+    
+    // Check if course exists
+    const courseDoc = await db.collection('courses').doc(request.course_id).get();
+    if (!courseDoc.exists) {
+      return res.status(404).json({ error: 'Course not found' });
+    }
+
+    // Find user by email (for guest enrollments)
+    let userId = request.user_id;
+    if (!userId) {
+      const usersSnap = await db.collection('users')
+        .where('email', '==', request.email.toLowerCase())
+        .limit(1)
+        .get();
+      
+      if (!usersSnap.empty) {
+        userId = usersSnap.docs[0].id;
+      }
+    }
+
+    if (userId) {
+      // Check if already enrolled
+      const existingEnrollment = await db.collection('enrollments')
+        .where('user_id', '==', userId)
+        .where('course_id', '==', request.course_id)
+        .get();
+
+      if (existingEnrollment.empty) {
+        // Create enrollment
+        const enrollmentRef = db.collection('enrollments').doc();
+        await enrollmentRef.set({
+          user_id: userId,
+          course_id: request.course_id,
+          enrollment_date: firebase.firestore.Timestamp.now(),
+          progress: 0,
+          status: 'active',
+          completion_date: null
+        });
+
+        // Update user stats
+        const userStatsRef = db.collection('user_stats').doc(userId);
+        const userStatsDoc = await userStatsRef.get();
+        
+        if (userStatsDoc.exists) {
+          await userStatsRef.update({
+            courses_enrolled: firebase.firestore.FieldValue.increment(1)
+          });
+        } else {
+          await userStatsRef.set({
+            courses_enrolled: 1,
+            courses_completed: 0,
+            certificates_earned: 0,
+            learning_streak: 0
+          });
+        }
+      }
+    }
+
+    // Update request status
+    await db.collection('course_enroll_requests').doc(id).update({
+      status: 'approved',
+      approved_at: firebase.firestore.Timestamp.now(),
+      approved_by: req.user.id,
+      user_id: userId || null
+    });
+
+    res.json({ 
+      message: 'Enrollment request approved successfully',
+      userId: userId,
+      userFound: !!userId
+    });
+
+  } catch (error) {
+    console.error('Error approving enrollment request:', error);
+    res.status(500).json({ error: 'Failed to approve enrollment request' });
+  }
+});
+
+// REJECT enrollment request (admin only)
+app.put('/api/admin/enrollment-requests/:id/reject', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const requestDoc = await db.collection('course_enroll_requests').doc(id).get();
+    if (!requestDoc.exists) {
+      return res.status(404).json({ error: 'Enrollment request not found' });
+    }
+
+    await db.collection('course_enroll_requests').doc(id).update({
+      status: 'rejected',
+      rejected_at: firebase.firestore.Timestamp.now(),
+      rejected_by: req.user.id,
+      rejection_reason: reason || 'No reason provided'
+    });
+
+    res.json({ message: 'Enrollment request rejected successfully' });
+
+  } catch (error) {
+    console.error('Error rejecting enrollment request:', error);
+    res.status(500).json({ error: 'Failed to reject enrollment request' });
+  }
+});
+
+// DELETE enrollment request (admin only)
+app.delete('/api/admin/enrollment-requests/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const requestDoc = await db.collection('course_enroll_requests').doc(id).get();
+    if (!requestDoc.exists) {
+      return res.status(404).json({ error: 'Enrollment request not found' });
+    }
+
+    // Delete payment screenshot file if exists
+    const request = requestDoc.data();
+    if (request.payment_screenshot) {
+      const filePath = path.join(__dirname, request.payment_screenshot.replace(/^\//, ''));
+      if (fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (fileError) {
+          console.error('Error deleting payment screenshot:', fileError);
+        }
+      }
+    }
+
+    await db.collection('course_enroll_requests').doc(id).delete();
+
+    res.json({ message: 'Enrollment request deleted successfully' });
+
+  } catch (error) {
+    console.error('Error deleting enrollment request:', error);
+    res.status(500).json({ error: 'Failed to delete enrollment request' });
+  }
+});
+
+// AUTO-LINK guest enrollments when user logs in
+app.post('/api/link-guest-enrollments', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+
+    // Find approved enrollment requests with matching email
+    const requestsSnap = await db.collection('course_enroll_requests')
+      .where('email', '==', userEmail.toLowerCase())
+      .where('status', '==', 'approved')
+      .where('user_id', '==', null)
+      .get();
+
+    let linkedCount = 0;
+
+    for (const doc of requestsSnap.docs) {
+      const request = doc.data();
+
+      // Check if already enrolled
+      const existingEnrollment = await db.collection('enrollments')
+        .where('user_id', '==', userId)
+        .where('course_id', '==', request.course_id)
+        .get();
+
+      if (existingEnrollment.empty) {
+        // Create enrollment
+        const enrollmentRef = db.collection('enrollments').doc();
+        await enrollmentRef.set({
+          user_id: userId,
+          course_id: request.course_id,
+          enrollment_date: request.created_at || firebase.firestore.Timestamp.now(),
+          progress: 0,
+          status: 'active',
+          completion_date: null
+        });
+
+        linkedCount++;
+      }
+
+      // Update request to link user_id
+      await db.collection('course_enroll_requests').doc(doc.id).update({
+        user_id: userId
+      });
+    }
+
+    if (linkedCount > 0) {
+      // Update user stats
+      const userStatsRef = db.collection('user_stats').doc(userId);
+      const userStatsDoc = await userStatsRef.get();
+      
+      if (userStatsDoc.exists) {
+        await userStatsRef.update({
+          courses_enrolled: firebase.firestore.FieldValue.increment(linkedCount)
+        });
+      } else {
+        await userStatsRef.set({
+          courses_enrolled: linkedCount,
+          courses_completed: 0,
+          certificates_earned: 0,
+          learning_streak: 0
+        });
+      }
+    }
+
+    res.json({ 
+      message: `Successfully linked ${linkedCount} guest enrollment(s)`,
+      linkedCount 
+    });
+
+  } catch (error) {
+    console.error('Error linking guest enrollments:', error);
+    res.status(500).json({ error: 'Failed to link guest enrollments' });
+  }
+});
+
 
 // ==================== COURSES ROUTES ====================
 
@@ -1771,46 +2629,138 @@ app.get('/api/courses', async (req, res) => {
   }
 });
 
-// Get user's enrolled courses
+// Link guest enrollments to logged-in user - PUT THIS AFTER THE LOGIN ENDPOINT
+app.post('/api/link-guest-enrollments', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+
+    console.log(`\n🔗 Manual linking for user ${userId} (${userEmail})`);
+
+    // Find approved enrollment requests with this email
+    const requestsSnap = await db.collection('course_enroll_requests')
+      .where('email', '==', userEmail.toLowerCase())
+      .where('status', '==', 'approved')
+      .get();
+
+    console.log(`📋 Found ${requestsSnap.size} approved requests`);
+
+    let linked = 0;
+    let existing = 0;
+
+    for (const doc of requestsSnap.docs) {
+      const request = doc.data();
+      console.log(`\n📦 Processing request ${doc.id} for course ${request.course_id}`);
+
+      // Check if already enrolled
+      const enrollmentSnap = await db.collection('enrollments')
+        .where('user_id', '==', userId)
+        .where('course_id', '==', request.course_id)
+        .get();
+
+      if (enrollmentSnap.empty) {
+        // Create enrollment
+        const enrollmentRef = db.collection('enrollments').doc();
+        await enrollmentRef.set({
+          user_id: userId,
+          course_id: request.course_id,
+          enrollment_date: request.created_at || firebase.firestore.Timestamp.now(),
+          progress: 0,
+          status: 'active',
+          completion_date: null
+        });
+        
+        linked++;
+        console.log(`✅ Created enrollment ${enrollmentRef.id}`);
+      } else {
+        existing++;
+        console.log(`⏭️  Already enrolled in ${request.course_id}`);
+      }
+
+      // Update request to link user_id
+      await db.collection('course_enroll_requests').doc(doc.id).update({
+        user_id: userId
+      });
+      console.log(`🔗 Linked request to user`);
+    }
+
+    console.log(`\n📊 Summary: ${linked} new, ${existing} existing`);
+
+    res.json({
+      success: true,
+      message: `Linked ${linked} new enrollments`,
+      linked,
+      existing,
+      total: requestsSnap.size
+    });
+
+  } catch (error) {
+    console.error('❌ Link error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to link enrollments' 
+    });
+  }
+});
+
+// Get user's enrollments with course details
 app.get('/api/enrollments/my-courses', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
+    console.log(`📚 Fetching enrollments for user ${userId}`);
 
-    const enrollmentsSnap = await db.collection('enrollments').where('user_id', '==', userId).where('status', '==', 'active').orderBy('enrollment_date', 'desc').get();
+    // Get user's enrollments
+    const enrollmentsSnap = await db.collection('enrollments')
+      .where('user_id', '==', userId)
+      .get();
+
+    console.log(`✅ Found ${enrollmentsSnap.size} enrollments`);
 
     const enrollments = [];
+
     for (const doc of enrollmentsSnap.docs) {
-      const e = doc.data();
-      const courseDoc = await db.collection('courses').doc(e.course_id).get();
-      const c = courseDoc.data();
-      enrollments.push({
-        id: doc.id,
-        userId: e.user_id,
-        courseId: e.course_id,
-        progress: e.progress,
-        enrollmentDate: e.enrollment_date,
-        completionDate: e.completion_date,
-        status: e.status,
-        course: {
-          id: e.course_id,
-          title: c.title,
-          description: c.description,
-          instructorName: c.instructor_name,
-          durationWeeks: c.duration_weeks,
-          difficultyLevel: c.difficulty_level,
-          category: c.category,
-          price: c.price,
-          thumbnail: c.thumbnail,
-          isActive: c.is_active
+      const enrollment = doc.data();
+      
+      // Get course details
+      const courseDoc = await db.collection('courses').doc(enrollment.course_id).get();
+      
+      if (courseDoc.exists) {
+        const courseData = courseDoc.data();
+        
+        // Get instructor name
+        let instructorName = 'Unknown Instructor';
+        if (courseData.instructor_id) {
+          const instructorDoc = await db.collection('users').doc(courseData.instructor_id).get();
+          if (instructorDoc.exists) {
+            const instructor = instructorDoc.data();
+            instructorName = `${instructor.first_name} ${instructor.last_name}`;
+          }
         }
-      });
+
+        enrollments.push({
+          id: doc.id,
+          progress: enrollment.progress || 0,
+          status: enrollment.status,
+          enrollment_date: enrollment.enrollment_date,
+          completion_date: enrollment.completion_date,
+          course: {
+            id: courseDoc.id,
+            title: courseData.title,
+            description: courseData.description,
+            thumbnail: courseData.thumbnail,
+            durationWeeks: courseData.duration_weeks,
+            instructorName: instructorName
+          }
+        });
+      }
     }
 
+    console.log(`✅ Returning ${enrollments.length} enrollments with course details`);
     res.json(enrollments);
 
   } catch (error) {
-    console.error('Get my courses error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('❌ Error fetching enrollments:', error);
+    res.status(500).json({ error: 'Failed to fetch enrollments' });
   }
 });
 
@@ -2259,55 +3209,107 @@ app.get('/api/resources/:id/download', authenticateToken, async (req, res) => {
 
 // ==================== CERTIFICATES MANAGEMENT ROUTES ====================
 
-// Certificate Routes
+// Certificate Routes - Student view
 app.get('/api/certificates/my-certificates', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const certificatesSnap = await db.collection('certificates').where('user_id', '==', userId).orderBy('issued_date', 'desc').get();
+    console.log(`🏆 Fetching certificates for user: ${userId}`);
+
+    const certificatesSnap = await db.collection('certificates')
+      .where('user_id', '==', userId)
+      .orderBy('issued_date', 'desc')
+      .get();
+
+    console.log(`📜 Found ${certificatesSnap.size} certificates in database`);
 
     const formattedCertificates = [];
+    
     for (const doc of certificatesSnap.docs) {
       const c = doc.data();
+      
+      // Get course details
       const courseDoc = await db.collection('courses').doc(c.course_id).get();
-      if (!courseDoc.exists) continue;
+      if (!courseDoc.exists) {
+        console.log(`⚠️ Course ${c.course_id} not found, skipping certificate ${doc.id}`);
+        continue;
+      }
       
       const co = courseDoc.data();
-      const enrollmentSnap = await db.collection('enrollments').where('user_id', '==', userId).where('course_id', '==', c.course_id).get();
       
-      if (enrollmentSnap.empty) continue;
+      // Get enrollment details
+      const enrollmentSnap = await db.collection('enrollments')
+        .where('user_id', '==', userId)
+        .where('course_id', '==', c.course_id)
+        .get();
+      
+      if (enrollmentSnap.empty) {
+        console.log(`⚠️ No enrollment found for course ${c.course_id}, skipping certificate ${doc.id}`);
+        continue;
+      }
       
       const e = enrollmentSnap.docs[0].data();
-      const assignmentsSnap = await db.collection('assignments').where('course_id', '==', c.course_id).get();
+      
+      // Calculate final grade from assignments
+      const assignmentsSnap = await db.collection('assignments')
+        .where('course_id', '==', c.course_id)
+        .get();
+      
       let finalGrade = 0;
       let count = 0;
+      
       for (const aDoc of assignmentsSnap.docs) {
-        const subSnap = await db.collection('assignment_submissions').where('assignment_id', '==', aDoc.id).where('user_id', '==', userId).get();
+        const subSnap = await db.collection('assignment_submissions')
+          .where('assignment_id', '==', aDoc.id)
+          .where('user_id', '==', userId)
+          .get();
+        
         if (!subSnap.empty) {
           finalGrade += subSnap.docs[0].data().grade || 0;
           count++;
         }
       }
+      
+      // Get instructor name
+      let instructorName = co.instructor_name || 'Unknown Instructor';
+      if (co.instructor_id) {
+        const instructorDoc = await db.collection('users').doc(co.instructor_id).get();
+        if (instructorDoc.exists) {
+          const instructor = instructorDoc.data();
+          instructorName = `${instructor.first_name} ${instructor.last_name}`;
+        }
+      }
+      
+      // Format in the structure expected by frontend
       formattedCertificates.push({
         id: doc.id,
         userId: c.user_id,
         courseId: c.course_id,
-        certificateUrl: c.certificate_url,
+        certificateUrl: c.certificate_url || `#certificate-${doc.id}`,
         issuedDate: c.issued_date.toDate().toISOString(),
-        courseTitle: co.title,
-        courseDescription: co.description,
-        instructorName: co.instructor_name,
-        category: co.category,
-        difficultyLevel: co.difficulty_level,
-        completionDate: e.completion_date ? e.completion_date.toDate().toISOString() : null,
-        enrollmentStatus: e.status,
-        finalGrade: count > 0 ? Math.round(finalGrade / count) : 0
+        // NESTED course object (required by frontend)
+        course: {
+          id: c.course_id,
+          title: co.title,
+          description: co.description || '',
+          instructorName: instructorName,
+          category: co.category || 'General',
+          difficultyLevel: co.difficulty_level || 'Beginner'
+        },
+        // NESTED enrollment object (required by frontend)
+        enrollment: {
+          completionDate: e.completion_date ? e.completion_date.toDate().toISOString() : c.issued_date.toDate().toISOString(),
+          finalGrade: count > 0 ? Math.round(finalGrade / count) : null,
+          status: e.status || 'completed'
+        }
       });
     }
 
+    console.log(`✅ Returning ${formattedCertificates.length} formatted certificates`);
     res.json(formattedCertificates);
+    
   } catch (error) {
-    console.error('Error fetching certificates:', error);
+    console.error('❌ Error fetching certificates:', error);
     res.status(500).json({ error: 'Failed to fetch certificates' });
   }
 });
@@ -2838,6 +3840,634 @@ app.post('/api/internships/:id/apply', authenticateToken, async (req, res) => {
   }
 });
 
+// ==================== ADMIN INTERNSHIP MANAGEMENT ROUTES ====================
+
+// GET /api/admin/internships - Fetch all internships for admin management
+app.get('/api/admin/internships', authenticateToken, async (req, res) => {
+  try {
+    const internshipsSnap = await db.collection('internships').orderBy('posted_at', 'desc').get();
+
+    const internships = internshipsSnap.docs.map(doc => {
+      const i = doc.data();
+      return {
+        id: doc.id,
+        title: i.title,
+        company: i.company,
+        location: i.location,
+        duration: i.duration,
+        type: i.type,
+        level: i.level,
+        description: i.description,
+        requirements: JSON.parse(i.requirements || '[]'),
+        benefits: JSON.parse(i.benefits || '[]'),
+        posted_at: i.posted_at,
+        applications_count: i.applications_count || 0,
+        spots_available: i.spots_available || 0
+      };
+    });
+
+    res.json(internships);
+  } catch (error) {
+    console.error('Error fetching internships for admin:', error);
+    res.status(500).json({ error: 'Internal server error while fetching internships.' });
+  }
+});
+
+// ==================== ADMIN INTERNSHIP APPLICATION ROUTES ====================
+
+app.get('/api/admin/internships/applications', authenticateToken, async (req, res) => {
+  try {
+    console.log('Fetching all internship applications...');
+    
+    const applicationsSnap = await db.collection('internship_submissions')
+      .orderBy('submitted_at', 'desc')
+      .get();
+
+    console.log(`Found ${applicationsSnap.docs.length} applications`);
+
+    const applications = [];
+    
+    for (const doc of applicationsSnap.docs) {
+      const app = doc.data();
+      
+      // Fetch internship details - handle case where internship may have been deleted
+      let internshipTitle = 'Deleted Internship';
+      let internshipCompany = 'N/A';
+      
+      try {
+        const internshipDoc = await db.collection('internships').doc(app.internship_id).get();
+        
+        if (internshipDoc.exists) {
+          const internship = internshipDoc.data();
+          internshipTitle = internship?.title || 'Unknown';
+          internshipCompany = internship?.company || 'Unknown';
+        } else {
+          console.warn(`Internship ${app.internship_id} not found for application ${doc.id}`);
+        }
+      } catch (internshipError) {
+        console.error(`Error fetching internship ${app.internship_id}:`, internshipError);
+        // Continue with default values
+      }
+
+      applications.push({
+        id: doc.id,
+        internship_id: app.internship_id,
+        internship_title: internshipTitle,
+        internship_company: internshipCompany,
+        user_id: app.user_id,
+        full_name: app.full_name,
+        email: app.email,
+        phone: app.phone || null,
+        resume_url: app.resume_url,
+        cover_letter: app.cover_letter || null,
+        status: app.status || 'pending',
+        submitted_at: app.submitted_at
+      });
+    }
+
+    console.log(`Returning ${applications.length} applications`);
+    res.json(applications);
+  } catch (error) {
+    console.error('Error fetching all internship applications:', error);
+    res.status(500).json({ 
+      error: 'Internal server error while fetching applications.',
+      details: error.message 
+    });
+  }
+});
+
+app.patch('/api/admin/internships/applications/:applicationId/status', authenticateToken, async (req, res) => {
+  const { applicationId } = req.params;
+  const { status } = req.body;
+
+  const validStatuses = ['pending', 'reviewed', 'accepted', 'rejected'];
+  
+  if (!status || !validStatuses.includes(status.toLowerCase())) {
+    return res.status(400).json({ error: 'Valid status is required (pending, reviewed, accepted, rejected).' });
+  }
+
+  try {
+    const applicationRef = db.collection('internship_submissions').doc(applicationId);
+    const applicationDoc = await applicationRef.get();
+
+    if (!applicationDoc.exists) {
+      return res.status(404).json({ error: 'Application not found.' });
+    }
+
+    await applicationRef.update({
+      status: status.toLowerCase()
+    });
+
+    res.json({ 
+      message: 'Application status updated successfully',
+      status: status.toLowerCase()
+    });
+  } catch (error) {
+    console.error('Error updating application status:', error);
+    res.status(500).json({ error: 'Internal server error while updating application status.' });
+  }
+});
+
+
+//===================== ADMIN INTERNSHIP MANAGEMENT ROUTES ====================
+
+app.get('/api/admin/internships/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const internshipDoc = await db.collection('internships').doc(id).get();
+
+    if (!internshipDoc.exists) {
+      return res.status(404).json({ error: 'Internship not found.' });
+    }
+
+    const i = internshipDoc.data();
+    const internship = {
+      id: internshipDoc.id,
+      title: i.title,
+      company: i.company,
+      location: i.location,
+      duration: i.duration,
+      type: i.type,
+      level: i.level,
+      description: i.description,
+      requirements: JSON.parse(i.requirements || '[]'),
+      benefits: JSON.parse(i.benefits || '[]'),
+      posted_at: i.posted_at,
+      applications_count: i.applications_count || 0,
+      spots_available: i.spots_available || 0
+    };
+
+    res.json(internship);
+  } catch (error) {
+    console.error('Error fetching internship:', error);
+    res.status(500).json({ error: 'Internal server error while fetching internship.' });
+  }
+});
+
+// POST /api/admin/internships - Create new internship
+app.post('/api/admin/internships', authenticateToken, async (req, res) => {
+  const {
+    title,
+    company,
+    location,
+    duration,
+    type,
+    level,
+    description,
+    requirements,
+    benefits,
+    spots_available
+  } = req.body;
+
+  // Validation
+  if (!title || !company || !location || !duration || !type || !level || !description) {
+    return res.status(400).json({ error: 'All required fields must be provided.' });
+  }
+
+  if (!requirements || !benefits) {
+    return res.status(400).json({ error: 'Requirements and benefits are required.' });
+  }
+
+  if (spots_available === undefined || spots_available < 0) {
+    return res.status(400).json({ error: 'Valid spots_available is required.' });
+  }
+
+  try {
+    const internshipRef = db.collection('internships').doc();
+    
+    await internshipRef.set({
+      title,
+      company,
+      location,
+      duration,
+      type,
+      level,
+      description,
+      requirements: typeof requirements === 'string' ? requirements : JSON.stringify(requirements),
+      benefits: typeof benefits === 'string' ? benefits : JSON.stringify(benefits),
+      spots_available: parseInt(spots_available),
+      applications_count: 0,
+      posted_at: firebase.firestore.Timestamp.now()
+    });
+
+    const newInternship = await internshipRef.get();
+    const i = newInternship.data();
+    
+    res.status(201).json({
+      message: 'Internship created successfully',
+      internship: {
+        id: newInternship.id,
+        title: i.title,
+        company: i.company,
+        location: i.location,
+        duration: i.duration,
+        type: i.type,
+        level: i.level,
+        description: i.description,
+        requirements: JSON.parse(i.requirements),
+        benefits: JSON.parse(i.benefits),
+        posted_at: i.posted_at,
+        applications_count: i.applications_count,
+        spots_available: i.spots_available
+      }
+    });
+  } catch (error) {
+    console.error('Error creating internship:', error);
+    res.status(500).json({ error: 'Internal server error while creating internship.' });
+  }
+});
+
+
+app.put('/api/admin/internships/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const {
+    title,
+    company,
+    location,
+    duration,
+    type,
+    level,
+    description,
+    requirements,
+    benefits,
+    spots_available,
+    applications_count
+  } = req.body;
+
+  try {
+    const internshipRef = db.collection('internships').doc(id);
+    const internshipDoc = await internshipRef.get();
+
+    if (!internshipDoc.exists) {
+      return res.status(404).json({ error: 'Internship not found.' });
+    }
+
+    const updateData = {};
+    
+    if (title !== undefined) updateData.title = title;
+    if (company !== undefined) updateData.company = company;
+    if (location !== undefined) updateData.location = location;
+    if (duration !== undefined) updateData.duration = duration;
+    if (type !== undefined) updateData.type = type;
+    if (level !== undefined) updateData.level = level;
+    if (description !== undefined) updateData.description = description;
+    if (requirements !== undefined) {
+      updateData.requirements = typeof requirements === 'string' ? requirements : JSON.stringify(requirements);
+    }
+    if (benefits !== undefined) {
+      updateData.benefits = typeof benefits === 'string' ? benefits : JSON.stringify(benefits);
+    }
+    if (spots_available !== undefined) updateData.spots_available = parseInt(spots_available);
+    if (applications_count !== undefined) updateData.applications_count = parseInt(applications_count);
+
+    await internshipRef.update(updateData);
+
+    const updatedDoc = await internshipRef.get();
+    const i = updatedDoc.data();
+
+    res.json({
+      message: 'Internship updated successfully',
+      internship: {
+        id: updatedDoc.id,
+        title: i.title,
+        company: i.company,
+        location: i.location,
+        duration: i.duration,
+        type: i.type,
+        level: i.level,
+        description: i.description,
+        requirements: JSON.parse(i.requirements),
+        benefits: JSON.parse(i.benefits),
+        posted_at: i.posted_at,
+        applications_count: i.applications_count,
+        spots_available: i.spots_available
+      }
+    });
+  } catch (error) {
+    console.error('Error updating internship:', error);
+    res.status(500).json({ error: 'Internal server error while updating internship.' });
+  }
+});
+
+
+app.delete('/api/admin/internships/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const internshipRef = db.collection('internships').doc(id);
+    const internshipDoc = await internshipRef.get();
+
+    if (!internshipDoc.exists) {
+      return res.status(404).json({ error: 'Internship not found.' });
+    }
+
+    // Optional: Check if there are any applications before deletion
+    const applicationsSnap = await db.collection('internship_submissions')
+      .where('internship_id', '==', id)
+      .limit(1)
+      .get();
+
+    if (!applicationsSnap.empty) {
+      // You can choose to prevent deletion or cascade delete
+      // For now, we'll allow deletion but you might want to handle this differently
+      console.warn(`Deleting internship ${id} which has ${applicationsSnap.size} applications`);
+    }
+
+    await internshipRef.delete();
+
+    res.json({ message: 'Internship deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting internship:', error);
+    res.status(500).json({ error: 'Internal server error while deleting internship.' });
+  }
+});
+
+// ==================== ADMIN INTERNSHIP CRUD ROUTES ====================
+
+// GET /api/admin/internships - Fetch all internships for admin management
+app.get('/api/admin/internships', authenticateToken, async (req, res) => {
+  try {
+    const internshipsSnap = await db.collection('internships').orderBy('posted_at', 'desc').get();
+
+    const internships = internshipsSnap.docs.map(doc => {
+      const i = doc.data();
+      return {
+        id: doc.id,
+        title: i.title,
+        company: i.company,
+        location: i.location,
+        duration: i.duration,
+        type: i.type,
+        level: i.level,
+        description: i.description,
+        requirements: JSON.parse(i.requirements || '[]'),
+        benefits: JSON.parse(i.benefits || '[]'),
+        posted_at: i.posted_at,
+        applications_count: i.applications_count || 0,
+        spots_available: i.spots_available || 0
+      };
+    });
+
+    res.json(internships);
+  } catch (error) {
+    console.error('Error fetching internships for admin:', error);
+    res.status(500).json({ error: 'Internal server error while fetching internships.' });
+  }
+});
+
+app.get('/api/admin/internships/:id/applications', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    console.log(`Fetching applications for internship: ${id}`);
+    
+    const internshipRef = db.collection('internships').doc(id);
+    const internshipDoc = await internshipRef.get();
+
+    if (!internshipDoc.exists) {
+      console.log(`Internship ${id} not found`);
+      return res.status(404).json({ error: 'Internship not found.' });
+    }
+
+    const applicationsSnap = await db.collection('internship_submissions')
+      .where('internship_id', '==', id)
+      .orderBy('submitted_at', 'desc')
+      .get();
+
+    const applications = applicationsSnap.docs.map(doc => {
+      const app = doc.data();
+      return {
+        id: doc.id,
+        user_id: app.user_id,
+        full_name: app.full_name,
+        email: app.email,
+        phone: app.phone || null,
+        resume_url: app.resume_url,
+        cover_letter: app.cover_letter || null,
+        status: app.status || 'pending',
+        submitted_at: app.submitted_at
+      };
+    });
+
+    res.json(applications);
+  } catch (error) {
+    console.error('Error fetching internship applications:', error);
+    res.status(500).json({ error: 'Internal server error while fetching applications.' });
+  }
+});
+
+app.get('/api/admin/internships/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const internshipDoc = await db.collection('internships').doc(id).get();
+
+    if (!internshipDoc.exists) {
+      return res.status(404).json({ error: 'Internship not found.' });
+    }
+
+    const i = internshipDoc.data();
+    const internship = {
+      id: internshipDoc.id,
+      title: i.title,
+      company: i.company,
+      location: i.location,
+      duration: i.duration,
+      type: i.type,
+      level: i.level,
+      description: i.description,
+      requirements: JSON.parse(i.requirements || '[]'),
+      benefits: JSON.parse(i.benefits || '[]'),
+      posted_at: i.posted_at,
+      applications_count: i.applications_count || 0,
+      spots_available: i.spots_available || 0
+    };
+
+    res.json(internship);
+  } catch (error) {
+    console.error('Error fetching internship:', error);
+    res.status(500).json({ error: 'Internal server error while fetching internship.' });
+  }
+});
+
+// POST /api/admin/internships - Create new internship
+app.post('/api/admin/internships', authenticateToken, async (req, res) => {
+  const {
+    title,
+    company,
+    location,
+    duration,
+    type,
+    level,
+    description,
+    requirements,
+    benefits,
+    spots_available
+  } = req.body;
+
+  // Validation
+  if (!title || !company || !location || !duration || !type || !level || !description) {
+    return res.status(400).json({ error: 'All required fields must be provided.' });
+  }
+
+  if (!requirements || !benefits) {
+    return res.status(400).json({ error: 'Requirements and benefits are required.' });
+  }
+
+  if (spots_available === undefined || spots_available < 0) {
+    return res.status(400).json({ error: 'Valid spots_available is required.' });
+  }
+
+  try {
+    const internshipRef = db.collection('internships').doc();
+    
+    await internshipRef.set({
+      title,
+      company,
+      location,
+      duration,
+      type,
+      level,
+      description,
+      requirements: typeof requirements === 'string' ? requirements : JSON.stringify(requirements),
+      benefits: typeof benefits === 'string' ? benefits : JSON.stringify(benefits),
+      spots_available: parseInt(spots_available),
+      applications_count: 0,
+      posted_at: firebase.firestore.Timestamp.now()
+    });
+
+    const newInternship = await internshipRef.get();
+    const i = newInternship.data();
+    
+    res.status(201).json({
+      message: 'Internship created successfully',
+      internship: {
+        id: newInternship.id,
+        title: i.title,
+        company: i.company,
+        location: i.location,
+        duration: i.duration,
+        type: i.type,
+        level: i.level,
+        description: i.description,
+        requirements: JSON.parse(i.requirements),
+        benefits: JSON.parse(i.benefits),
+        posted_at: i.posted_at,
+        applications_count: i.applications_count,
+        spots_available: i.spots_available
+      }
+    });
+  } catch (error) {
+    console.error('Error creating internship:', error);
+    res.status(500).json({ error: 'Internal server error while creating internship.' });
+  }
+});
+
+app.put('/api/admin/internships/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const {
+    title,
+    company,
+    location,
+    duration,
+    type,
+    level,
+    description,
+    requirements,
+    benefits,
+    spots_available,
+    applications_count
+  } = req.body;
+
+  try {
+    const internshipRef = db.collection('internships').doc(id);
+    const internshipDoc = await internshipRef.get();
+
+    if (!internshipDoc.exists) {
+      return res.status(404).json({ error: 'Internship not found.' });
+    }
+
+    const updateData = {};
+    
+    if (title !== undefined) updateData.title = title;
+    if (company !== undefined) updateData.company = company;
+    if (location !== undefined) updateData.location = location;
+    if (duration !== undefined) updateData.duration = duration;
+    if (type !== undefined) updateData.type = type;
+    if (level !== undefined) updateData.level = level;
+    if (description !== undefined) updateData.description = description;
+    if (requirements !== undefined) {
+      updateData.requirements = typeof requirements === 'string' ? requirements : JSON.stringify(requirements);
+    }
+    if (benefits !== undefined) {
+      updateData.benefits = typeof benefits === 'string' ? benefits : JSON.stringify(benefits);
+    }
+    if (spots_available !== undefined) updateData.spots_available = parseInt(spots_available);
+    if (applications_count !== undefined) updateData.applications_count = parseInt(applications_count);
+
+    await internshipRef.update(updateData);
+
+    const updatedDoc = await internshipRef.get();
+    const i = updatedDoc.data();
+
+    res.json({
+      message: 'Internship updated successfully',
+      internship: {
+        id: updatedDoc.id,
+        title: i.title,
+        company: i.company,
+        location: i.location,
+        duration: i.duration,
+        type: i.type,
+        level: i.level,
+        description: i.description,
+        requirements: JSON.parse(i.requirements),
+        benefits: JSON.parse(i.benefits),
+        posted_at: i.posted_at,
+        applications_count: i.applications_count,
+        spots_available: i.spots_available
+      }
+    });
+  } catch (error) {
+    console.error('Error updating internship:', error);
+    res.status(500).json({ error: 'Internal server error while updating internship.' });
+  }
+});
+
+app.delete('/api/admin/internships/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const internshipRef = db.collection('internships').doc(id);
+    const internshipDoc = await internshipRef.get();
+
+    if (!internshipDoc.exists) {
+      return res.status(404).json({ error: 'Internship not found.' });
+    }
+
+    // Optional: Check if there are any applications before deletion
+    const applicationsSnap = await db.collection('internship_submissions')
+      .where('internship_id', '==', id)
+      .limit(1)
+      .get();
+
+    if (!applicationsSnap.empty) {
+      // You can choose to prevent deletion or cascade delete
+      // For now, we'll allow deletion but you might want to handle this differently
+      console.warn(`Deleting internship ${id} which has applications`);
+    }
+
+    await internshipRef.delete();
+
+    res.json({ message: 'Internship deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting internship:', error);
+    res.status(500).json({ error: 'Internal server error while deleting internship.' });
+  }
+});
+
+
 // ==================== SERVICES ROUTES ====================
 
 // Get service categories
@@ -2973,21 +4603,32 @@ app.get('/api/services/my-requests', authenticateToken, async (req, res) => {
 // Admin Dashboard Stats
 app.get('/api/admin/dashboard-stats', authenticateToken, async (req, res) => {
   try {
-    const usersSnap = await db.collection('users').where('is_active', '==', 1).get();
+    // Fixed query - using true instead of 1 for boolean comparison
+    const usersSnap = await db.collection('users').where('is_active', '==', true).get();
     const totalUsers = usersSnap.size;
 
-    const coursesSnap = await db.collection('courses').where('is_active', '==', 1).get();
+    // Fixed query - using true instead of 1
+    const coursesSnap = await db.collection('courses').where('is_active', '==', true).get();
     const totalCourses = coursesSnap.size;
 
     const enrollmentsSnap = await db.collection('enrollments').get();
     const totalEnrollments = enrollmentsSnap.size;
 
+    // Calculate revenue with proper error handling
     let totalRevenue = 0;
     for (const doc of enrollmentsSnap.docs) {
-      const e = doc.data();
-      if (e.status === 'completed') {
-        const courseDoc = await db.collection('courses').doc(e.course_id).get();
-        totalRevenue += parseFloat(courseDoc.data().price) || 0;
+      try {
+        const e = doc.data();
+        if (e.status === 'completed' && e.course_id) {
+          const courseDoc = await db.collection('courses').doc(e.course_id).get();
+          if (courseDoc.exists) {
+            const courseData = courseDoc.data();
+            totalRevenue += parseFloat(courseData.price || '0');
+          }
+        }
+      } catch (revenueError) {
+        console.error('Error calculating revenue for enrollment:', doc.id, revenueError);
+        // Continue with other enrollments
       }
     }
 
@@ -2998,7 +4639,9 @@ app.get('/api/admin/dashboard-stats', authenticateToken, async (req, res) => {
     const serviceRequestsSnap = await db.collection('service_requests').where('status', '==', 'pending').get();
     const pendingServiceRequests = serviceRequestsSnap.size;
 
+    // Return with success flag and consistent formatting
     res.json({
+      success: true,
       totalUsers,
       totalCourses,
       totalEnrollments,
@@ -3008,59 +4651,267 @@ app.get('/api/admin/dashboard-stats', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching admin stats:', error);
-    res.status(500).json({ error: 'Failed to fetch dashboard stats', details: error.message });
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch dashboard stats', 
+      details: error.message 
+    });
   }
 });
 
 // Recent Users
 app.get('/api/admin/recent-users', authenticateToken, async (req, res) => {
   try {
-    const usersSnap = await db.collection('users').where('is_active', '==', 1).orderBy('created_at', 'desc').limit(5).get();
+    // Fixed query - using true instead of 1
+    const usersSnap = await db.collection('users')
+      .where('is_active', '==', true)
+      .orderBy('created_at', 'desc')
+      .limit(5)
+      .get();
 
-    const users = usersSnap.docs.map(doc => {
-      const u = doc.data();
-      return {
-        id: doc.id,
-        first_name: u.first_name,
-        last_name: u.last_name,
-        email: u.email,
-        account_type: u.account_type,
-        join_date: u.created_at.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-      };
+    const users = [];
+    
+    usersSnap.forEach(doc => {
+      try {
+        const u = doc.data();
+        let joinDate = 'N/A';
+        
+        // Handle different timestamp formats safely
+        if (u.created_at) {
+          if (u.created_at.toDate) {
+            // Firestore timestamp
+            joinDate = u.created_at.toDate().toLocaleDateString('en-GB', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric' 
+            });
+          } else if (u.created_at instanceof Date) {
+            // JavaScript Date
+            joinDate = u.created_at.toLocaleDateString('en-GB', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric' 
+            });
+          } else if (typeof u.created_at === 'string') {
+            // ISO string
+            joinDate = new Date(u.created_at).toLocaleDateString('en-GB', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric' 
+            });
+          }
+        }
+        
+        users.push({
+          id: doc.id,
+          first_name: u.first_name || '',
+          last_name: u.last_name || '',
+          email: u.email || '',
+          account_type: u.account_type || 'student',
+          join_date: joinDate
+        });
+      } catch (userError) {
+        console.error('Error processing user:', doc.id, userError);
+        // Continue with other users
+      }
     });
 
-    res.json(users);
+    // Wrap in object with success flag as frontend expects
+    res.json({
+      success: true,
+      users: users
+    });
   } catch (error) {
     console.error('Error fetching recent users:', error);
-    res.status(500).json({ error: 'Failed to fetch recent users', details: error.message });
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch recent users', 
+      details: error.message 
+    });
   }
 });
 
 // Recent Enrollments
 app.get('/api/admin/recent-enrollments', authenticateToken, async (req, res) => {
   try {
-    const enrollmentsSnap = await db.collection('enrollments').orderBy('enrollment_date', 'desc').limit(5).get();
+    // Use created_at as fallback if enrollment_date doesn't exist
+    const enrollmentsSnap = await db.collection('enrollments')
+      .orderBy('enrollment_date', 'desc')
+      .limit(5)
+      .get();
 
     const enrollments = [];
+    
     for (const doc of enrollmentsSnap.docs) {
-      const e = doc.data();
-      const userDoc = await db.collection('users').doc(e.user_id).get();
-      const u = userDoc.data();
-      const courseDoc = await db.collection('courses').doc(e.course_id).get();
-      const c = courseDoc.data();
-      enrollments.push({
-        id: doc.id,
-        user_name: u.first_name + ' ' + u.last_name,
-        course_name: c.title,
-        date: e.enrollment_date.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-        status: e.status
-      });
+      try {
+        const e = doc.data();
+        
+        // Get user data with error handling
+        let userName = 'Unknown User';
+        if (e.user_id) {
+          try {
+            const userDoc = await db.collection('users').doc(e.user_id).get();
+            if (userDoc.exists) {
+              const u = userDoc.data();
+              userName = `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Unknown User';
+            }
+          } catch (userError) {
+            console.error('Error fetching user for enrollment:', e.user_id, userError);
+          }
+        }
+        
+        // Get course data with error handling
+        let courseName = 'Unknown Course';
+        if (e.course_id) {
+          try {
+            const courseDoc = await db.collection('courses').doc(e.course_id).get();
+            if (courseDoc.exists) {
+              const c = courseDoc.data();
+              courseName = c.title || 'Unknown Course';
+            }
+          } catch (courseError) {
+            console.error('Error fetching course for enrollment:', e.course_id, courseError);
+          }
+        }
+        
+        // Format date safely
+        let enrollmentDate = 'N/A';
+        const dateField = e.enrollment_date || e.created_at;
+        if (dateField) {
+          if (dateField.toDate) {
+            // Firestore timestamp
+            enrollmentDate = dateField.toDate().toLocaleDateString('en-GB', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric' 
+            });
+          } else if (dateField instanceof Date) {
+            // JavaScript Date
+            enrollmentDate = dateField.toLocaleDateString('en-GB', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric' 
+            });
+          } else if (typeof dateField === 'string') {
+            // ISO string
+            enrollmentDate = new Date(dateField).toLocaleDateString('en-GB', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric' 
+            });
+          }
+        }
+        
+        enrollments.push({
+          id: doc.id,
+          user_name: userName,
+          course_name: courseName,
+          date: enrollmentDate,
+          status: e.status || 'active'
+        });
+      } catch (enrollmentError) {
+        console.error('Error processing enrollment:', doc.id, enrollmentError);
+        // Continue with other enrollments
+      }
     }
 
-    res.json(enrollments);
+    // Wrap in object with success flag as frontend expects
+    res.json({
+      success: true,
+      enrollments: enrollments
+    });
   } catch (error) {
     console.error('Error fetching recent enrollments:', error);
-    res.status(500).json({ error: 'Failed to fetch recent enrollments', details: error.message });
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch recent enrollments', 
+      details: error.message 
+    });
+  }
+});
+
+// Service Requests - MISSING ENDPOINT IMPLEMENTATION
+app.get('/api/admin/service-requests', authenticateToken, async (req, res) => {
+  try {
+    const requestsSnap = await db.collection('service_requests')
+      .orderBy('created_at', 'desc')
+      .limit(5)
+      .get();
+
+    const requests = [];
+    
+    requestsSnap.forEach(doc => {
+      try {
+        const reqData = doc.data();
+        
+        // Format date safely
+        let requestDate = 'N/A';
+        const dateField = reqData.created_at || reqData.date;
+        if (dateField) {
+          if (dateField.toDate) {
+            // Firestore timestamp
+            requestDate = dateField.toDate().toLocaleDateString('en-GB', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric' 
+            });
+          } else if (dateField instanceof Date) {
+            // JavaScript Date
+            requestDate = dateField.toLocaleDateString('en-GB', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric' 
+            });
+          } else if (typeof dateField === 'string') {
+            // ISO string
+            requestDate = new Date(dateField).toLocaleDateString('en-GB', { 
+              day: '2-digit', 
+              month: 'short', 
+              year: 'numeric' 
+            });
+          }
+        }
+        
+        // Get name from various possible fields
+        const name = reqData.name || 
+                    `${reqData.user_first_name || ''} ${reqData.user_last_name || ''}`.trim() || 
+                    reqData.user_name ||
+                    'Unknown';
+        
+        requests.push({
+          id: doc.id,
+          name: name,
+          service: reqData.service || reqData.service_type || 'General Inquiry',
+          date: requestDate,
+          status: reqData.status || 'pending',
+          email: reqData.email || '',
+          phone: reqData.phone || '',
+          company: reqData.company || '',
+          website: reqData.website || '',
+          project_details: reqData.project_details || reqData.details || reqData.message || '',
+          budget_range: reqData.budget_range || reqData.budget || '',
+          timeline: reqData.timeline || '',
+          contact_method: reqData.contact_method || 'email',
+          additional_requirements: reqData.additional_requirements || reqData.requirements || ''
+        });
+      } catch (requestError) {
+        console.error('Error processing service request:', doc.id, requestError);
+        // Continue with other requests
+      }
+    });
+
+    // Wrap in object with success flag as frontend expects
+    res.json({
+      success: true,
+      requests: requests
+    });
+  } catch (error) {
+    console.error('Error fetching service requests:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to fetch service requests', 
+      details: error.message 
+    });
   }
 });
 
@@ -3166,20 +5017,18 @@ app.get('/api/admin/analytics', authenticateToken, requireAdmin, async (req, res
   }
 });
 
-// ==================== ADMIN USER MANAGEMENT ENDPOINTS ====================
+// ==================== ADMIN USER MANAGEMENT ROUTES ====================
 
-// ==================== ADMIN USER MANAGEMENT ENDPOINTS ====================
-
-// Make sure these routes are properly registered in your Express app
-// Add this after your authentication middleware and before error handling
-
-// GET /api/admin/users - Get all users with filtering and search
+// GET /api/admin/users - Get all users
 app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
+    console.log('Fetching users for admin');
+    
     const { search, accountType, status } = req.query;
     
     let query = db.collection('users');
 
+    // Apply filters
     if (accountType && accountType !== 'all') {
       query = query.where('account_type', '==', accountType);
     }
@@ -3191,277 +5040,660 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
 
     const snapshot = await query.get();
     
-    let users = snapshot.docs.map(doc => {
-      const user = doc.data();
-      return {
+    let users = [];
+    snapshot.forEach(doc => {
+      const userData = doc.data();
+      users.push({
         id: doc.id,
-        first_name: user.first_name || '',
-        last_name: user.last_name || '',
-        email: user.email || '',
-        phone: user.phone || '',
-        account_type: user.account_type || 'student',
-        profile_image: user.profile_image || '',
-        company: user.company || '',
-        website: user.website || '',
-        bio: user.bio || '',
-        is_active: user.is_active !== undefined ? user.is_active : true,
-        email_verified: user.email_verified || false,
-        created_at: user.created_at ? user.created_at.toDate().toISOString() : new Date().toISOString(),
-        updated_at: user.updated_at ? user.updated_at.toDate().toISOString() : new Date().toISOString()
-      };
+        first_name: userData.first_name || '',
+        last_name: userData.last_name || '',
+        email: userData.email || '',
+        phone: userData.phone || '',
+        account_type: userData.account_type || 'student',
+        is_active: userData.is_active !== undefined ? userData.is_active : true,
+        company: userData.company || '',
+        website: userData.website || '',
+        bio: userData.bio || '',
+        created_at: userData.created_at ? userData.created_at.toDate().toISOString() : new Date().toISOString(),
+        updated_at: userData.updated_at ? userData.updated_at.toDate().toISOString() : new Date().toISOString()
+      });
     });
 
-    if (search) {
-      const searchLower = search.toLowerCase();
+    // Apply search filter
+    if (search && search.trim() !== '') {
+      const searchLower = search.toLowerCase().trim();
       users = users.filter(user => 
-        user.first_name.toLowerCase().includes(searchLower) ||
-        user.last_name.toLowerCase().includes(searchLower) ||
-        user.email.toLowerCase().includes(searchLower)
+        (user.first_name && user.first_name.toLowerCase().includes(searchLower)) ||
+        (user.last_name && user.last_name.toLowerCase().includes(searchLower)) ||
+        (user.email && user.email.toLowerCase().includes(searchLower))
       );
     }
 
+    // Sort by creation date (newest first)
     users.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
     res.json({
+      success: true,
       users,
       total: users.length
     });
 
   } catch (error) {
     console.error('Get users error:', error);
-    res.status(500).json({ error: 'Server error while fetching users' });
+    res.status(500).json({ 
+      success: false,
+      error: 'Server error while fetching users' 
+    });
   }
 });
 
-// POST /api/admin/users - Create a new user (Admin only)
+// POST /api/admin/users - Create new user
 app.post('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { firstName, lastName, email, phone, password, accountType, isActive, company, website, bio } = req.body;
+    console.log('Creating new user:', req.body);
+    
+    let { firstName, lastName, email, phone, password, accountType, isActive, company, website, bio } = req.body;
 
+    // Trim inputs
+    firstName = firstName ? firstName.trim() : '';
+    lastName = lastName ? lastName.trim() : '';
+    email = email ? email.trim().toLowerCase() : '';
+    phone = phone ? phone.trim() : '';
+    company = company ? company.trim() : '';
+    website = website ? website.trim() : '';
+    bio = bio ? bio.trim() : '';
+
+    // Validation
     if (!firstName || !lastName || !email || !password) {
       return res.status(400).json({
+        success: false,
         error: 'First name, last name, email, and password are required'
       });
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: 'Please provide a valid email address' });
+    // Check if email exists
+    const emailSnapshot = await db.collection('users')
+      .where('email', '==', email)
+      .get();
+    
+    if (!emailSnapshot.empty) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email already exists'
+      });
     }
 
-    const validatePassword = (password) => {
-      const errors = [];
-      if (password.length < 6) errors.push("Password must be at least 6 characters long");
-      if (!/[A-Z]/.test(password)) errors.push("Password must contain at least one uppercase letter");
-      if (!/[a-z]/.test(password)) errors.push("Password must contain at least one lowercase letter");
-      if (!/[0-9]/.test(password)) errors.push("Password must contain at least one number");
-      if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) errors.push("Password must contain at least one special character");
-      return errors;
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const userData = {
+      first_name: firstName,
+      last_name: lastName,
+      email: email,
+      phone: phone,
+      password_hash: hashedPassword,
+      account_type: accountType || 'student',
+      is_active: isActive !== undefined ? isActive : true,
+      company: company,
+      website: website,
+      bio: bio,
+      email_verified: false,
+      created_at: new Date(),
+      updated_at: new Date()
     };
 
-    const passwordErrors = validatePassword(password);
+    const userRef = await db.collection('users').add(userData);
+
+    res.status(201).json({
+      success: true,
+      message: 'User created successfully',
+      user: {
+        id: userRef.id,
+        ...userData,
+        created_at: userData.created_at.toISOString(),
+        updated_at: userData.updated_at.toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('Create user error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error while creating user'
+    });
+  }
+});
+
+// PUT /api/admin/users/:id - Update user - FIXED AND ENHANCED
+app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    console.log('Updating user with ID:', userId);
+    
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+    }
+    
+    const { firstName, lastName, email, phone, accountType, isActive, company, website, bio } = req.body;
+    console.log('Update payload:', req.body);
+
+    // Check if user exists
+    try {
+      const userDoc = await db.collection('users').doc(userId).get();
+      if (!userDoc.exists) {
+        console.log('User not found with ID:', userId);
+        return res.status(404).json({
+          success: false,
+          error: 'User not found'
+        });
+      }
+
+      const currentUser = userDoc.data();
+      console.log('Found current user:', currentUser);
+
+      // Check email uniqueness if changed
+      if (email && email !== currentUser.email) {
+        const emailSnapshot = await db.collection('users')
+          .where('email', '==', email.trim().toLowerCase())
+          .get();
+        
+        if (!emailSnapshot.empty) {
+          // Make sure we're not matching the same user
+          const matchingUser = emailSnapshot.docs[0];
+          if (matchingUser.id !== userId) {
+            console.log('Email already exists for another user');
+            return res.status(400).json({
+              success: false,
+              error: 'Email already exists'
+            });
+          }
+        }
+      }
+
+      // Prepare update data
+      const updateData = {
+        first_name: firstName !== undefined ? firstName.trim() : currentUser.first_name,
+        last_name: lastName !== undefined ? lastName.trim() : currentUser.last_name,
+        email: email !== undefined ? email.trim().toLowerCase() : currentUser.email,
+        phone: phone !== undefined ? phone : currentUser.phone,
+        account_type: accountType || currentUser.account_type,
+        is_active: isActive !== undefined ? isActive : currentUser.is_active,
+        company: company !== undefined ? company : currentUser.company,
+        website: website !== undefined ? website : currentUser.website,
+        bio: bio !== undefined ? bio : currentUser.bio,
+        updated_at: firebase.firestore.Timestamp.now()
+      };
+      console.log('Prepared update data:', updateData);
+
+      // Update the user
+      await db.collection('users').doc(userId).update(updateData);
+      console.log('User updated successfully');
+
+      // Get updated user data for response
+      const updatedUserDoc = await db.collection('users').doc(userId).get();
+      const updatedUser = updatedUserDoc.data();
+
+      return res.json({
+        success: true,
+        message: 'User updated successfully',
+        user: {
+          id: userId,
+          first_name: updatedUser.first_name,
+          last_name: updatedUser.last_name,
+          email: updatedUser.email,
+          phone: updatedUser.phone,
+          account_type: updatedUser.account_type,
+          is_active: updatedUser.is_active,
+          company: updatedUser.company || '',
+          website: updatedUser.website || '',
+          bio: updatedUser.bio || '',
+          created_at: updatedUser.created_at.toDate().toISOString(),
+          updated_at: updatedUser.updated_at.toDate().toISOString()
+        }
+      });
+    } catch (firebaseError) {
+      console.error('Firebase error:', firebaseError);
+      return res.status(500).json({
+        success: false,
+        error: 'Database error: ' + firebaseError.message
+      });
+    }
+  } catch (error) {
+    console.error('Update user error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Server error while updating user: ' + error.message
+    });
+  }
+});
+
+// DELETE /api/admin/users/:id - Delete user (soft delete)
+app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const adminId = req.user.id || req.user.userId;
+
+    console.log('Deleting user:', userId);
+
+    // Prevent self-deletion
+    if (userId === adminId) {
+      return res.status(400).json({
+        success: false,
+        error: 'You cannot delete your own account'
+      });
+    }
+
+    // Check if user exists
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    // Soft delete
+    await db.collection('users').doc(userId).update({
+      is_active: false,
+      updated_at: new Date()
+    });
+
+    res.json({
+      success: true,
+      message: 'User deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete user error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error while deleting user'
+    });
+  }
+});
+
+// PUT /api/admin/users/:id/password - Reset password
+app.put('/api/admin/users/:id/password', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { password } = req.body;
+
+    console.log('Resetting password for user:', userId);
+
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password is required'
+      });
+    }
+
+    // Check if user exists
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    await db.collection('users').doc(userId).update({
+      password_hash: hashedPassword,
+      updated_at: new Date()
+    });
+
+    res.json({
+      success: true,
+      message: 'Password reset successfully'
+    });
+
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error while resetting password'
+    });
+  }
+});
+
+// Debug route to see all registered routes
+app.get('/api/debug/routes', (req, res) => {
+  const routes = [];
+  app._router.stack.forEach(middleware => {
+    if (middleware.route) {
+      routes.push({
+        path: middleware.route.path,
+        methods: Object.keys(middleware.route.methods)
+      });
+    } else if (middleware.name === 'router') {
+      middleware.handle.stack.forEach(handler => {
+        if (handler.route) {
+          routes.push({
+            path: handler.route.path,
+            methods: Object.keys(handler.route.methods)
+          });
+        }
+      });
+    }
+  });
+  res.json({ routes });
+});
+
+// ==================== ADMIN DASHBOARD STATS ====================
+
+app.get('/api/admin/dashboard', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    console.log('Fetching dashboard data for admin:', req.user.email);
+
+    // Get all users
+    const usersSnapshot = await db.collection('users').get();
+    const totalUsers = usersSnapshot.size;
+    
+    let activeUsers = 0;
+    let studentCount = 0;
+    let professionalCount = 0;
+    let businessCount = 0;
+    
+    usersSnapshot.forEach(doc => {
+      const user = doc.data();
+      if (user.is_active !== false) activeUsers++;
+      
+      switch(user.account_type) {
+        case 'student': studentCount++; break;
+        case 'professional': professionalCount++; break;
+        case 'business': businessCount++; break;
+      }
+    });
+
+    // Get courses (if collection exists)
+    let totalCourses = 0;
+    try {
+      const coursesSnapshot = await db.collection('courses').get();
+      totalCourses = coursesSnapshot.size;
+    } catch (e) {
+      console.log('Courses collection not found');
+    }
+
+    // Get enrollments (if collection exists)
+    let totalEnrollments = 0;
+    try {
+      const enrollmentsSnapshot = await db.collection('enrollments').get();
+      totalEnrollments = enrollmentsSnapshot.size;
+    } catch (e) {
+      console.log('Enrollments collection not found');
+    }
+
+    const stats = {
+      totalUsers,
+      activeUsers,
+      totalCourses,
+      totalEnrollments,
+      usersByType: {
+        student: studentCount,
+        professional: professionalCount,
+        business: businessCount
+      }
+    };
+
+    console.log('Dashboard stats:', stats);
+
+    res.json({
+      success: true,
+      stats
+    });
+
+  } catch (error) {
+    console.error('Dashboard error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error while fetching dashboard data',
+      details: error.message
+    });
+  }
+});
+
+// ==================== AUTH ROUTES ====================
+
+// Register endpoint
+app.post('/api/register', async (req, res) => {
+  const { firstName, lastName, email, phone, password, confirmPassword, accountType } = req.body;
+
+  try {
+    // Validate required fields
+    if (!firstName || !lastName || !email || !password || !confirmPassword || !accountType) {
+      return res.status(400).json({
+        success: false,
+        error: 'All fields are required'
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Please provide a valid email address' 
+      });
+    }
+
+    // Validate password match
+    if (password !== confirmPassword) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Passwords do not match' 
+      });
+    }
+
+    // Validate password strength
+    const passwordErrors = [];
+    if (password.length < 6) passwordErrors.push("Password must be at least 6 characters long");
+    if (!/[A-Z]/.test(password)) passwordErrors.push("Password must contain at least one uppercase letter");
+    if (!/[a-z]/.test(password)) passwordErrors.push("Password must contain at least one lowercase letter");
+    if (!/[0-9]/.test(password)) passwordErrors.push("Password must contain at least one number");
+    if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) passwordErrors.push("Password must contain at least one special character");
+
     if (passwordErrors.length > 0) {
-      return res.status(400).json({ error: passwordErrors[0] });
+      return res.status(400).json({ 
+        success: false,
+        error: passwordErrors[0] 
+      });
     }
 
-    const existingUsers = await db.collection('users').where('email', '==', email.trim()).get();
+    // Check if email exists
+    const existingUsers = await db.collection('users').where('email', '==', email.toLowerCase()).get();
     if (!existingUsers.empty) {
-      return res.status(400).json({ error: 'Email already exists' });
+      return res.status(400).json({ 
+        success: false,
+        error: 'Email already exists' 
+      });
     }
 
+    // Hash password
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
+    // Insert new user in Firestore
     const userRef = db.collection('users').doc();
     const userData = {
       first_name: firstName.trim(),
       last_name: lastName.trim(),
-      email: email.trim(),
+      email: email.trim().toLowerCase(),
       phone: phone || '',
       password_hash: hashedPassword,
-      account_type: accountType || 'student',
-      is_active: isActive !== undefined ? isActive : true,
-      company: company || '',
-      website: website || '',
-      bio: bio || '',
-      profile_image: '',
+      account_type: accountType,
+      is_active: true,
       email_verified: false,
+      company: '',
+      website: '',
+      bio: '',
       created_at: firebase.firestore.FieldValue.serverTimestamp(),
       updated_at: firebase.firestore.FieldValue.serverTimestamp()
     };
 
     await userRef.set(userData);
 
-    await db.collection('user_stats').doc(userRef.id).set({
-      user_id: userRef.id,
-      courses_enrolled: 0,
-      courses_completed: 0,
-      certificates_earned: 0,
-      learning_streak: 0,
-      last_activity: new Date().toISOString()
-    });
-
-    console.log('User created by admin:', { userId: userRef.id, email: email.trim(), admin: req.user.email });
-
-    const createdUser = {
-      id: userRef.id,
-      ...userData,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
+    console.log('User registered successfully:', { userId: userRef.id, email });
+    
+    // Generate JWT token for immediate login
+    const token = jwt.sign(
+      {
+        userId: userRef.id,
+        email: email,
+        accountType: accountType
+      },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
 
     res.status(201).json({
-      message: 'User created successfully',
-      user: createdUser
+      success: true,
+      message: 'User registered successfully',
+      userId: userRef.id,
+      token: token
     });
 
   } catch (error) {
-    console.error('Create user error:', error);
-    res.status(500).json({ error: 'Server error while creating user' });
+    console.error('Registration error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Server error during registration' 
+    });
   }
 });
 
-// PUT /api/admin/users/:userId - Update a user
-app.put('/api/admin/users/:userId', authenticateToken, requireAdmin, async (req, res) => {
+// Login endpoint
+app.post('/api/login', async (req, res) => {
+  const { email, password, rememberMe } = req.body;
+
   try {
-    const userId = req.params.userId;
-    const { firstName, lastName, email, phone, accountType, isActive, company, website, bio } = req.body;
-
-    console.log('Updating user:', userId);
-    console.log('Update data:', req.body);
-
-    const userDoc = await db.collection('users').doc(userId).get();
-    if (!userDoc.exists) {
-      return res.status(404).json({ error: 'User not found' });
+    // Validate input
+    if (!email || !password) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Email and password are required' 
+      });
     }
 
-    const currentUser = userDoc.data();
+    // Check if user exists in Firestore
+    const users = await db.collection('users').where('email', '==', email.toLowerCase()).get();
 
-    if (email && email !== currentUser.email) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        return res.status(400).json({ error: 'Please provide a valid email address' });
-      }
-
-      const existingUsers = await db.collection('users').where('email', '==', email.trim()).get();
-      if (!existingUsers.empty && existingUsers.docs[0].id !== userId) {
-        return res.status(400).json({ error: 'Email already exists' });
-      }
+    if (users.empty) {
+      return res.status(401).json({ 
+        success: false,
+        error: 'Invalid email or password' 
+      });
     }
 
-    const updateData = {
-      first_name: firstName ? firstName.trim() : currentUser.first_name,
-      last_name: lastName ? lastName.trim() : currentUser.last_name,
-      email: email ? email.trim() : currentUser.email,
-      phone: phone !== undefined ? phone : currentUser.phone,
-      account_type: accountType || currentUser.account_type,
-      is_active: isActive !== undefined ? isActive : currentUser.is_active,
-      company: company !== undefined ? company : currentUser.company,
-      website: website !== undefined ? website : currentUser.website,
-      bio: bio !== undefined ? bio : currentUser.bio,
+    const userDoc = users.docs[0];
+    const user = userDoc.data();
+    const userId = userDoc.id;
+
+    // Check if user is active
+    if (user.is_active === false) {
+      return res.status(401).json({ 
+        success: false,
+        error: 'Account deactivated. Please contact administrator.' 
+      });
+    }
+
+    // Verify password
+    const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+    if (!isPasswordValid) {
+      return res.status(401).json({ 
+        success: false,
+        error: 'Invalid email or password' 
+      });
+    }
+
+    // Generate JWT token
+    const tokenExpiry = rememberMe ? '30d' : '7d';
+    const token = jwt.sign(
+      {
+        userId: userId,
+        email: user.email,
+        accountType: user.account_type
+      },
+      JWT_SECRET,
+      { expiresIn: tokenExpiry }
+    );
+
+    // ✅ AUTO-LINK GUEST ENROLLMENTS - ADD THIS
+    try {
+      const requestsSnap = await db.collection('course_enroll_requests')
+        .where('email', '==', email.toLowerCase())
+        .where('status', '==', 'approved')
+        .where('user_id', '==', null)
+        .get();
+
+      for (const doc of requestsSnap.docs) {
+        const request = doc.data();
+
+        // Check if already enrolled
+        const existingEnrollment = await db.collection('enrollments')
+          .where('user_id', '==', userId)
+          .where('course_id', '==', request.course_id)
+          .get();
+
+        if (existingEnrollment.empty) {
+          // Create enrollment
+          await db.collection('enrollments').add({
+            user_id: userId,
+            course_id: request.course_id,
+            enrollment_date: request.created_at || firebase.firestore.Timestamp.now(),
+            progress: 0,
+            status: 'active',
+            completion_date: null
+          });
+        }
+
+        // Update request to link user_id
+        await db.collection('course_enroll_requests').doc(doc.id).update({
+          user_id: userId
+        });
+      }
+    } catch (linkError) {
+      console.error('Error auto-linking guest enrollments:', linkError);
+    }
+
+    // Update last login timestamp
+    await db.collection('users').doc(userId).update({
       updated_at: firebase.firestore.FieldValue.serverTimestamp()
-    };
+    });
 
-    await db.collection('users').doc(userId).update(updateData);
+    console.log('User logged in successfully:', { userId, email: user.email });
 
-    const updatedUserDoc = await db.collection('users').doc(userId).get();
-    const updatedUser = updatedUserDoc.data();
-
-    res.json({
-      message: 'User updated successfully',
+    // Send success response
+    res.status(200).json({
+      success: true,
+      message: 'Login successful',
+      token: token,
       user: {
         id: userId,
-        ...updatedUser,
-        created_at: updatedUser.created_at ? updatedUser.created_at.toDate().toISOString() : new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        firstName: user.first_name,
+        lastName: user.last_name,
+        email: user.email,
+        phone: user.phone,
+        accountType: user.account_type,
+        profileImage: user.profile_image || '',
+        company: user.company || '',
+        website: user.website || '',
+        bio: user.bio || '',
+        isActive: user.is_active,
+        emailVerified: user.email_verified
       }
     });
 
   } catch (error) {
-    console.error('Update user error:', error);
-    res.status(500).json({ error: 'Server error while updating user' });
-  }
-});
-
-// DELETE /api/admin/users/:userId - Delete a user (soft delete)
-app.delete('/api/admin/users/:userId', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const userId = req.params.userId;
-    const adminId = req.user.id || req.user.userId;
-
-    console.log('Deleting user:', userId, 'by admin:', adminId);
-
-    if (userId === adminId) {
-      return res.status(400).json({ error: 'You cannot delete your own account' });
-    }
-
-    const userDoc = await db.collection('users').doc(userId).get();
-    if (!userDoc.exists) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    await db.collection('users').doc(userId).update({
-      is_active: false,
-      updated_at: firebase.firestore.FieldValue.serverTimestamp()
+    console.error('Login error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Server error during login' 
     });
-
-    console.log('User soft deleted by admin:', { userId, admin: req.user.email });
-
-    res.json({ message: 'User deleted successfully' });
-
-  } catch (error) {
-    console.error('Delete user error:', error);
-    res.status(500).json({ error: 'Server error while deleting user' });
-  }
-});
-
-// PUT /api/admin/users/:userId/password - Reset user password
-app.put('/api/admin/users/:userId/password', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const userId = req.params.userId;
-    const { password } = req.body;
-
-    console.log('Resetting password for user:', userId);
-
-    if (!password) {
-      return res.status(400).json({ error: 'Password is required' });
-    }
-
-    const validatePassword = (password) => {
-      const errors = [];
-      if (password.length < 6) errors.push("Password must be at least 6 characters long");
-      if (!/[A-Z]/.test(password)) errors.push("Password must contain at least one uppercase letter");
-      if (!/[a-z]/.test(password)) errors.push("Password must contain at least one lowercase letter");
-      if (!/[0-9]/.test(password)) errors.push("Password must contain at least one number");
-      if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) errors.push("Password must contain at least one special character");
-      return errors;
-    };
-
-    const passwordErrors = validatePassword(password);
-    if (passwordErrors.length > 0) {
-      return res.status(400).json({ error: passwordErrors[0] });
-    }
-
-    const userDoc = await db.collection('users').doc(userId).get();
-    if (!userDoc.exists) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-    await db.collection('users').doc(userId).update({
-      password_hash: hashedPassword,
-      updated_at: firebase.firestore.FieldValue.serverTimestamp()
-    });
-
-    console.log('Password reset by admin for user:', userId);
-
-    res.json({ message: 'Password reset successfully' });
-
-  } catch (error) {
-    console.error('Reset password error:', error);
-    res.status(500).json({ error: 'Server error while resetting password' });
   }
 });
 
@@ -5303,8 +7535,6 @@ process.on('SIGINT', () => {
   console.log('Received SIGINT. Graceful shutdown...');
   process.exit(0);
 });
-
-// ... (The rest of the code is unchanged from the previous version. To fix the 'firebase.firestore is not a function' error, we used the compat mode imports (require('firebase/compat/app'); etc.). This allows using the v8 syntax in v9+ SDK. If you have further errors, check your package.json for firebase version and ensure it's installed: npm install firebase@9.23.0 or later.)
 
 // Start server
 app.listen(port, () => {
