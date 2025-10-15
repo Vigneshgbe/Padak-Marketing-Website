@@ -53,21 +53,27 @@ const Assignments: React.FC = () => {
       // Fetch assignments based on user type
       let assignmentsData: Assignment[] = [];
       
-      if (userData.account_type === 'student' || userData.account_type === 'professional') {
-        assignmentsData = await apiService.get<Assignment[]>('/api/assignments/my-assignments');
-      } else if (userData.account_type === 'admin') {
-        assignmentsData = await apiService.get<Assignment[]>('/api/assignments/all');
+      if (userData.accountType === 'student' || userData.accountType === 'professional') {
+        // ✅ Remove /api/ prefix - apiService already adds it
+        assignmentsData = await apiService.get<Assignment[]>('/assignments/my-assignments');
+      } else if (userData.accountType === 'admin') {
+        assignmentsData = await apiService.get<Assignment[]>('/assignments/all');
       } else {
-        assignmentsData = await apiService.get<Assignment[]>('/api/assignments/my-assignments');
+        assignmentsData = await apiService.get<Assignment[]>('/assignments/my-assignments');
       }
       
       setAssignments(assignmentsData);
     } catch (error: any) {
       console.error('Failed to fetch data:', error);
-      // Don't fail completely if assignments can't load
-      if (error.response?.status !== 404) {
-        alert('Failed to load assignments. Please try again.');
+      
+      // More detailed error logging
+      if (error.response) {
+        console.error('Error status:', error.response.status);
+        console.error('Error data:', error.response.data);
       }
+      
+      // Show user-friendly error
+      alert('Failed to load assignments. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -108,65 +114,65 @@ const Assignments: React.FC = () => {
   };
 
   const handleSubmitAssignment = async (assignmentId: string) => {
-  if (!submissionContent.trim() && !submissionFile) {
-    alert('Please provide either text content or upload a file');
-    return;
-  }
-
-  setSubmitting(true);
-  try {
-    const formData = new FormData();
-    formData.append('assignment_id', assignmentId); // Make sure it's a string
-    formData.append('content', submissionContent);
-    
-    if (submissionFile) {
-      formData.append('file', submissionFile);
+    if (!submissionContent.trim() && !submissionFile) {
+      alert('Please provide either text content or upload a file');
+      return;
     }
 
-    console.log('📤 Submitting assignment:', {
-      assignment_id: assignmentId,
-      has_content: !!submissionContent,
-      has_file: !!submissionFile,
-      file_name: submissionFile?.name
-    });
+    setSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append('assignment_id', assignmentId);
+      formData.append('content', submissionContent);
+      
+      if (submissionFile) {
+        formData.append('file', submissionFile);
+      }
 
-    // Use fetch directly instead of apiService for FormData
-    const token = localStorage.getItem('token') || localStorage.getItem('authToken');
-    const response = await fetch('http://localhost:5000/api/assignments/submit', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`
-        // Don't set Content-Type - let browser set it with boundary
-      },
-      body: formData
-    });
+      console.log('📤 Submitting assignment:', {
+        assignment_id: assignmentId,
+        has_content: !!submissionContent,
+        has_file: !!submissionFile,
+        file_name: submissionFile?.name
+      });
 
-    const result = await response.json();
-    console.log('📥 Server response:', result);
+      // Get base URL from apiService or use environment variable
+      const baseURL = 'http://localhost:5000/api'; // ✅ Already includes /api
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      
+      const response = await fetch(`${baseURL}/assignments/submit`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
 
-    if (!response.ok) {
-      throw new Error(result.error || result.message || `Server error: ${response.status}`);
+      const result = await response.json();
+      console.log('📥 Server response:', result);
+
+      if (!response.ok) {
+        throw new Error(result.error || result.message || `Server error: ${response.status}`);
+      }
+
+      // Refresh assignments - ✅ Remove /api/ prefix
+      const updatedAssignments = await apiService.get<Assignment[]>('/assignments/my-assignments');
+      setAssignments(updatedAssignments);
+
+      alert(result.message || 'Assignment submitted successfully!');
+
+      // Close modal and reset form
+      setSubmissionModal({ show: false, assignmentId: null });
+      setSubmissionContent('');
+      setSubmissionFile(null);
+      
+    } catch (error: any) {
+      console.error('❌ Failed to submit assignment:', error);
+      alert(error.message || 'Failed to submit assignment. Please try again.');
+    } finally {
+      setSubmitting(false);
     }
-
-    // Refresh assignments
-    const updatedAssignments = await apiService.get<Assignment[]>('/assignments/my-assignments');
-    setAssignments(updatedAssignments);
-
-    // Show success message
-    alert(result.message || 'Assignment submitted successfully!');
-
-    // Close modal and reset form
-    setSubmissionModal({ show: false, assignmentId: null });
-    setSubmissionContent('');
-    setSubmissionFile(null);
-    
-  } catch (error: any) {
-    console.error('❌ Failed to submit assignment:', error);
-    alert(error.message || 'Failed to submit assignment. Please try again.');
-  } finally {
-    setSubmitting(false);
-  }
-};
+  };
 
   const openSubmissionModal = (assignmentId: string) => {
     setSubmissionModal({ show: true, assignmentId });
@@ -180,9 +186,15 @@ const Assignments: React.FC = () => {
 
   const downloadSubmission = async (submissionId: string, fileName: string) => {
     try {
-      const response = await apiService.get(`/assignments/download-submission/${submissionId}`, {
-        responseType: 'blob',
+      // ✅ Remove /api/ prefix
+      const baseURL = 'http://localhost:5000/api';
+      const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+      const response = await fetch(`${baseURL}/assignments/download-submission/${submissionId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
+      const blob = await response.blob();
       
       const url = window.URL.createObjectURL(new Blob([response]));
       const link = document.createElement('a');
@@ -194,6 +206,7 @@ const Assignments: React.FC = () => {
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Failed to download submission:', error);
+      alert('Failed to download submission file.');
     }
   };
 
