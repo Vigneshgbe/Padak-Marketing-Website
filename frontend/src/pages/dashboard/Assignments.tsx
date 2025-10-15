@@ -5,20 +5,20 @@ import { apiService } from '../../lib/api';
 
 // Types based on your database schema
 interface Assignment {
-  id: number;
-  course_id: number;
+  id: string; // Changed from number to string
+  course_id: string; // Changed from number to string
   title: string;
   description: string;
   due_date: string;
   max_points: number;
   created_at: string;
   course: {
-    id: number;
+    id: string; // Changed from number to string
     title: string;
     category: string;
   };
   submission?: {
-    id: number;
+    id: string; // Changed from number to string
     content: string;
     file_path: string;
     submitted_at: string;
@@ -29,7 +29,7 @@ interface Assignment {
 }
 
 interface User {
-  id: number;
+  id: string; // Changed from number to string
   first_name: string;
   last_name: string;
   email: string;
