@@ -4633,10 +4633,10 @@ app.get('/api/admin/services', authenticateToken, requireAdmin, async (req, res)
         description: sub.description || '',
         price: sub.base_price || 0,
         duration: sub.duration || 'Variable',
-        rating: 0, // Default values
-        reviews: 0,
-        features: [], // Can be added later
-        popular: false,
+        rating: sub.rating || 0,           // ✅ Read from Firestore
+        reviews: sub.reviews || 0,         // ✅ Read from Firestore
+        features: sub.features || [],      // ✅ Read from Firestore
+        popular: sub.popular || false,     // ✅ Read from Firestore
         is_active: sub.is_active || true,
         created_at: sub.created_at,
         updated_at: sub.updated_at
@@ -7262,7 +7262,6 @@ app.get('/api/admin/service-categories', authenticateToken, requireAdmin, async 
         };
       });
 
-    console.log('📋 Returning categories:', categories);
     res.json(categories);
   } catch (error) {
     console.error('Error fetching service categories:', error);
