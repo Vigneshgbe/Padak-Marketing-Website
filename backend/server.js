@@ -7802,7 +7802,7 @@ app.get('/api/admin/service-requests', authenticateToken, requireAdmin, async (r
       const u = uDoc.data();
       requests.push({
         id: doc.id,
-        name: sr.full_name,
+        name: sr.name,
         service: scDoc.data().name,
         date: sr.created_at.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
         status: sr.status,
