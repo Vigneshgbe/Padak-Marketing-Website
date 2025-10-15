@@ -20,9 +20,19 @@ const ServiceRequestForm: React.FC<ServiceRequestFormProps> = ({
 }) => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  
+  // ✅ Safe price formatting helper
+  const formatPrice = (price: any) => {
+    const numPrice = parseFloat(price);
+    if (isNaN(numPrice) || numPrice === 0) {
+      return 'Contact for pricing';
+    }
+    return `₹${numPrice.toLocaleString('en-IN')}`;
+  };
+
   const [formData, setFormData] = useState({
-    fullName: `${user.first_name} ${user.last_name}`,
-    email: user.email,
+    fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+    email: user.email || '',
     phone: user.phone || '',
     company: user.company || '',
     website: user.website || '',
@@ -43,8 +53,8 @@ const ServiceRequestForm: React.FC<ServiceRequestFormProps> = ({
     setLoading(true);
 
     try {
-      await apiService.post('/services/requests', {
-        subcategoryId: service.id,
+      await apiService.post('/service-requests', {
+        categoryId: service.id, // Changed from subcategoryId to match backend
         ...formData
       });
 
@@ -55,6 +65,7 @@ const ServiceRequestForm: React.FC<ServiceRequestFormProps> = ({
 
       onBack();
     } catch (error: any) {
+      console.error('Service request submission error:', error);
       toast({
         title: "Error",
         description: error.message || "Failed to submit service request",
@@ -74,15 +85,21 @@ const ServiceRequestForm: React.FC<ServiceRequestFormProps> = ({
         >
           <ChevronLeft size={20} className="mr-1" /> Back
         </button>
-        <h2 className="text-xl font-bold">Request Service: {service.name}</h2>
+        <h2 className="text-xl font-bold">{service?.name || 'Request Service'}</h2>
       </div>
       
       <div className="mb-4 p-4 bg-orange-50 dark:bg-gray-700 rounded-lg">
         <p className="text-sm text-gray-600 dark:text-gray-300">
-          Category: {category.name} - {category.description}
+          <span className="font-semibold">Category:</span> {category?.name || 'N/A'}
         </p>
-        <p className="text-sm text-orange-600 dark:text-orange-400 font-semibold mt-1">
-          Starting from ₹{service.base_price.toLocaleString()}
+        {service?.description && (
+          <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+            {service.description}
+          </p>
+        )}
+        <p className="text-sm text-orange-600 dark:text-orange-400 font-semibold mt-2">
+          {/* ✅ FIXED: Safe price access with fallback */}
+          {formatPrice(service?.basePrice)}
         </p>
       </div>
       
@@ -96,7 +113,7 @@ const ServiceRequestForm: React.FC<ServiceRequestFormProps> = ({
               value={formData.fullName}
               onChange={handleChange}
               required
-              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-300"
+              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-300"
             />
           </div>
           <div>
@@ -107,7 +124,7 @@ const ServiceRequestForm: React.FC<ServiceRequestFormProps> = ({
               value={formData.email}
               onChange={handleChange}
               required
-              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-300"
+              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-300"
             />
           </div>
         </div>
@@ -121,7 +138,8 @@ const ServiceRequestForm: React.FC<ServiceRequestFormProps> = ({
               value={formData.phone}
               onChange={handleChange}
               required
-              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-300"
+              placeholder="+91 9876543210"
+              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-300"
             />
           </div>
           <div>
@@ -131,7 +149,8 @@ const ServiceRequestForm: React.FC<ServiceRequestFormProps> = ({
               name="company"
               value={formData.company}
               onChange={handleChange}
-              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-300"
+              placeholder="Your company name"
+              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-300"
             />
           </div>
         </div>
@@ -143,7 +162,8 @@ const ServiceRequestForm: React.FC<ServiceRequestFormProps> = ({
             name="website"
             value={formData.website}
             onChange={handleChange}
-            className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-300"
+            placeholder="https://yourwebsite.com"
+            className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-300"
           />
         </div>
         
@@ -155,7 +175,7 @@ const ServiceRequestForm: React.FC<ServiceRequestFormProps> = ({
             onChange={handleChange}
             required
             rows={4}
-            className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-300"
+            className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-300"
             placeholder="Describe your project, goals, and requirements..."
           />
         </div>
@@ -168,14 +188,15 @@ const ServiceRequestForm: React.FC<ServiceRequestFormProps> = ({
               value={formData.budgetRange}
               onChange={handleChange}
               required
-              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-300"
+              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-300"
             >
               <option value="">Select budget range</option>
-              <option value="<100">Less than ₹100</option>
-              <option value="100-1k">₹100 - ₹1,000</option>
-              <option value="1k-10k">₹1,000 - ₹10,000</option>
-              <option value="10k-50k">₹10,000 - ₹50,000</option>
-              <option value=">50k">More than ₹50,000</option>
+              <option value="<5k">Less than ₹5,000</option>
+              <option value="5k-10k">₹5,000 - ₹10,000</option>
+              <option value="10k-25k">₹10,000 - ₹25,000</option>
+              <option value="25k-50k">₹25,000 - ₹50,000</option>
+              <option value="50k-100k">₹50,000 - ₹1,00,000</option>
+              <option value=">100k">More than ₹1,00,000</option>
             </select>
           </div>
           <div>
@@ -185,7 +206,7 @@ const ServiceRequestForm: React.FC<ServiceRequestFormProps> = ({
               value={formData.timeline}
               onChange={handleChange}
               required
-              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-300"
+              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-300"
             >
               <option value="">Select timeline</option>
               <option value="ASAP">ASAP</option>
@@ -201,14 +222,14 @@ const ServiceRequestForm: React.FC<ServiceRequestFormProps> = ({
           <label className="block text-sm font-medium mb-2">Preferred Contact Method *</label>
           <div className="flex space-x-4">
             {['email', 'phone', 'whatsapp'].map(method => (
-              <label key={method} className="flex items-center">
+              <label key={method} className="flex items-center cursor-pointer">
                 <input
                   type="radio"
                   name="contactMethod"
                   value={method}
                   checked={formData.contactMethod === method}
                   onChange={handleChange}
-                  className="mr-2"
+                  className="mr-2 cursor-pointer"
                 />
                 <span className="capitalize">{method}</span>
               </label>
@@ -223,16 +244,23 @@ const ServiceRequestForm: React.FC<ServiceRequestFormProps> = ({
             value={formData.additionalRequirements}
             onChange={handleChange}
             rows={3}
-            className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-300"
+            className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-300"
             placeholder="Any specific requirements or questions?"
           />
         </div>
         
-        <div className="flex justify-end">
+        <div className="flex justify-end space-x-3">
+          <button
+            type="button"
+            onClick={onBack}
+            className="px-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          >
+            Cancel
+          </button>
           <button
             type="submit"
             disabled={loading}
-            className="px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors flex items-center disabled:opacity-50"
+            className="px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Mail size={18} className="mr-2" />
             {loading ? 'Submitting...' : 'Submit Request'}
