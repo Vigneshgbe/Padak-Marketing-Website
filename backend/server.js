@@ -7227,25 +7227,41 @@ app.delete('/api/admin/services/:id', authenticateToken, requireAdmin, async (re
   }
 });
 
-// Get service categories (admin only)
+// ==================== ADMIN SERVICE CATEGORIES ENDPOINT ====================
+
+// GET service categories (admin only)
 app.get('/api/admin/service-categories', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const categoriesSnap = await db.collection('service_categories').where('is_active', '==', 1).orderBy('name').get();
+    // Remove the where clause to get ALL categories, not just is_active=1
+    const categoriesSnap = await db.collection('service_categories')
+      .orderBy('name')
+      .get();
 
-    const categories = categoriesSnap.docs.map(doc => ({
-      id: doc.id,
-      name: doc.data().name,
-      description: doc.data().description,
-      icon: doc.data().icon,
-      is_active: doc.data().is_active,
-      created_at: doc.data().created_at,
-      updated_at: doc.data().updated_at
-    }));
+    const categories = categoriesSnap.docs
+      .filter(doc => {
+        const data = doc.data();
+        // Handle both boolean true and number 1 for is_active
+        return data.is_active === true || data.is_active === 1;
+      })
+      .map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id, // This is a string in Firestore
+          name: data.name,
+          description: data.description,
+          icon: data.icon,
+          is_active: data.is_active
+        };
+      });
 
+    console.log('📋 Returning categories:', categories);
     res.json(categories);
   } catch (error) {
     console.error('Error fetching service categories:', error);
-    res.status(500).json({ error: 'Failed to fetch service categories' });
+    res.status(500).json({ 
+      error: 'Failed to fetch service categories',
+      details: error.message 
+    });
   }
 });
 
