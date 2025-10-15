@@ -7272,6 +7272,83 @@ app.get('/api/admin/service-categories', authenticateToken, requireAdmin, async 
   }
 });
 
+// ==================== PUBLIC SERVICES ENDPOINT ====================
+
+// GET all active services (subcategories from active categories) - for regular users
+app.get('/api/services', authenticateToken, async (req, res) => {
+  try {
+    console.log('📋 Fetching public services...');
+    
+    // Get all active subcategories
+    const subcategoriesSnap = await db.collection('service_subcategories')
+      .where('is_active', '==', true)
+      .orderBy('created_at', 'desc')
+      .get();
+
+    console.log(`Found ${subcategoriesSnap.size} active subcategories`);
+
+    const services = [];
+    
+    for (const doc of subcategoriesSnap.docs) {
+      const sub = doc.data();
+      
+      // Get category details
+      if (!sub.category_id) {
+        console.warn(`Subcategory ${doc.id} has no category_id`);
+        continue;
+      }
+
+      try {
+        const categoryDoc = await db.collection('service_categories').doc(sub.category_id).get();
+        
+        // Skip if category doesn't exist or is not active
+        if (!categoryDoc.exists) {
+          console.warn(`Category ${sub.category_id} not found for subcategory ${doc.id}`);
+          continue;
+        }
+
+        const categoryData = categoryDoc.data();
+        if (!categoryData.is_active) {
+          console.log(`Skipping subcategory ${sub.name} - category is inactive`);
+          continue;
+        }
+
+        // Format service data
+        const service = {
+          id: doc.id,
+          name: sub.name,
+          category_id: sub.category_id,
+          categoryName: categoryData.name,
+          description: sub.description || '',
+          price: sub.base_price || 0,
+          duration: sub.duration || 'Variable',
+          rating: sub.rating || 0,
+          reviews: sub.reviews || 0,
+          features: sub.features || [],
+          popular: sub.popular || false,
+          is_active: sub.is_active || true
+        };
+        
+        services.push(service);
+        
+      } catch (err) {
+        console.error(`Error fetching category for subcategory ${doc.id}:`, err);
+        continue;
+      }
+    }
+
+    console.log(`✅ Returning ${services.length} active services`);
+    res.json(services);
+    
+  } catch (error) {
+    console.error('❌ Error fetching services:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch services',
+      details: error.message 
+    });
+  }
+});
+
 // ==================== ADMIN CALENDAR MANAGEMENT ENDPOINTS ====================
 
 // Get all calendar events (admin only) - FIXED VERSION

@@ -65,20 +65,19 @@ interface InternshipApplication {
   applicationDate: string;
 }
 
-// ADJUSTED: Service interface to match assumed 'services' table + 'service_categories' join
+// In ProfessionalDashboard.tsx, update the Service interface
 interface Service {
-  id: number; // ID from the 'services' table
-  name: string; // Name of the specific service (e.g., "Local SEO Package")
-  category_id: number; // Foreign key to service_categories.id
-  categoryName: string; // The name of the service category (e.g., "SEO") - fetched via JOIN
+  id: string; // Changed from number to string (Firestore IDs)
+  name: string;
+  category_id: string; // Changed from number to string
+  categoryName: string;
   description: string;
-  price: number; // Assuming numerical price still exists in 'services' table
-  duration: string; // Assuming duration still exists in 'services' table
-  rating: number; // Assuming rating still exists in 'services' table
-  reviews: number; // Assuming reviews still exists in 'services' table
-  features: string[]; // Assuming features still exists in 'services' table and is parsed JSON
-  popular: boolean; // Assuming popular still exists in 'services' table
-  // is_active property from service_categories will be used in backend fetch, not necessarily here
+  price: number;
+  duration: string;
+  rating: number;
+  reviews: number;
+  features: string[];
+  popular: boolean;
 }
 
 // ADJUSTED: ServiceRequest interface to match 'service_requests' table
