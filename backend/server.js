@@ -4598,6 +4598,184 @@ app.get('/api/services/my-requests', authenticateToken, async (req, res) => {
   }
 });
 
+// ==================== ADMIN SERVICE SUBCATEGORIES AS SERVICES ====================
+
+// GET all service subcategories formatted as services (admin only)
+app.get('/api/admin/services', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const subcategoriesSnap = await db.collection('service_subcategories')
+      .orderBy('created_at', 'desc')
+      .get();
+
+    const services = [];
+    
+    for (const doc of subcategoriesSnap.docs) {
+      const sub = doc.data();
+      
+      // Get category name
+      let categoryName = 'Unknown Category';
+      if (sub.category_id) {
+        try {
+          const categoryDoc = await db.collection('service_categories').doc(sub.category_id).get();
+          if (categoryDoc.exists) {
+            categoryName = categoryDoc.data().name;
+          }
+        } catch (err) {
+          console.error('Error fetching category:', err);
+        }
+      }
+      
+      services.push({
+        id: doc.id,
+        name: sub.name,
+        category_id: sub.category_id,
+        category_name: categoryName,
+        description: sub.description || '',
+        price: sub.base_price || 0,
+        duration: sub.duration || 'Variable',
+        rating: 0, // Default values
+        reviews: 0,
+        features: [], // Can be added later
+        popular: false,
+        is_active: sub.is_active || true,
+        created_at: sub.created_at,
+        updated_at: sub.updated_at
+      });
+    }
+
+    res.json(services);
+  } catch (error) {
+    console.error('Error fetching services:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch services',
+      details: error.message 
+    });
+  }
+});
+
+// POST create new service subcategory (admin only)
+app.post('/api/admin/services', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const {
+      name,
+      category_id,
+      description,
+      price,
+      duration,
+      features,
+      popular,
+      is_active
+    } = req.body;
+
+    // Validate required fields
+    if (!name || !category_id || !price) {
+      return res.status(400).json({ 
+        error: 'Name, category, and price are required' 
+      });
+    }
+
+    // Check if category exists
+    const categoryDoc = await db.collection('service_categories').doc(category_id).get();
+    if (!categoryDoc.exists) {
+      return res.status(400).json({ error: 'Category not found' });
+    }
+
+    // Create subcategory
+    const subcategoryRef = db.collection('service_subcategories').doc();
+    await subcategoryRef.set({
+      name: name.trim(),
+      category_id,
+      description: description || '',
+      base_price: parseFloat(price),
+      duration: duration || null,
+      features: features || [],
+      popular: popular || false,
+      is_active: is_active !== undefined ? is_active : true,
+      created_at: firebase.firestore.FieldValue.serverTimestamp(),
+      updated_at: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    res.status(201).json({
+      message: 'Service created successfully',
+      serviceId: subcategoryRef.id
+    });
+  } catch (error) {
+    console.error('Error creating service:', error);
+    res.status(500).json({ 
+      error: 'Failed to create service',
+      details: error.message 
+    });
+  }
+});
+
+// PUT update service subcategory (admin only)
+app.put('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      name,
+      category_id,
+      description,
+      price,
+      duration,
+      features,
+      popular,
+      is_active
+    } = req.body;
+
+    // Check if exists
+    const subcategoryDoc = await db.collection('service_subcategories').doc(id).get();
+    if (!subcategoryDoc.exists) {
+      return res.status(404).json({ error: 'Service not found' });
+    }
+
+    // Update subcategory
+    await db.collection('service_subcategories').doc(id).update({
+      name: name.trim(),
+      category_id,
+      description: description || '',
+      base_price: parseFloat(price),
+      duration: duration || null,
+      features: features || [],
+      popular: popular || false,
+      is_active: is_active !== undefined ? is_active : true,
+      updated_at: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    res.json({ message: 'Service updated successfully' });
+  } catch (error) {
+    console.error('Error updating service:', error);
+    res.status(500).json({ 
+      error: 'Failed to update service',
+      details: error.message 
+    });
+  }
+});
+
+// DELETE service subcategory (admin only)
+app.delete('/api/admin/services/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if exists
+    const subcategoryDoc = await db.collection('service_subcategories').doc(id).get();
+    if (!subcategoryDoc.exists) {
+      return res.status(404).json({ error: 'Service not found' });
+    }
+
+    // Delete subcategory
+    await db.collection('service_subcategories').doc(id).delete();
+
+    res.json({ message: 'Service deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting service:', error);
+    res.status(500).json({ 
+      error: 'Failed to delete service',
+      details: error.message 
+    });
+  }
+});
+
 // ==================== ADMIN DASHBOARD ROUTES ====================
 
 // Admin Dashboard Stats

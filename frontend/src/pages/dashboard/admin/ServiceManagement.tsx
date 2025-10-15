@@ -6,20 +6,20 @@ import StatusBadge from '../../../components/admin/StatusBadge';
 import Modal from '../../../components/admin/Modal';
 
 interface Service {
-  id: number;
+  id: string; // Changed from number to string for Firestore IDs
   name: string;
-  category_id: number;
+  category_id: string; // Changed from number to string
   category_name: string;
   description: string;
-  price: number;
+  price: number; // This maps to base_price in Firestore
   duration: string;
-  rating: number;
-  reviews: number;
+  rating?: number; 
+  reviews?: number; 
   features: string[];
   popular: boolean;
   is_active: boolean;
-  created_at: string;
-  updated_at: string;
+  created_at: any;
+  updated_at: any;
 }
 
 interface ServiceCategory {
