@@ -1578,117 +1578,6 @@ app.get('/api/users/:userId/internship-submissions', authenticateToken, async (r
   }
 });
 
-// ==================== PUBLIC SERVICES ENDPOINT ====================
-
-// GET all active services (subcategories from active categories) - for regular users
-app.get('/api/services', authenticateToken, async (req, res) => {
-  try {
-    console.log('📋 Fetching public services...');
-    
-    // FIXED: Remove orderBy to avoid composite index requirement
-    // We'll sort in memory instead
-    const subcategoriesSnap = await db.collection('service_subcategories').get();
-
-    console.log(`Found ${subcategoriesSnap.size} total subcategories`);
-
-    const services = [];
-    
-    for (const doc of subcategoriesSnap.docs) {
-      const sub = doc.data();
-      
-      // FIXED: Handle both boolean and number for is_active (true/1 = active)
-      const isSubcategoryActive = sub.is_active === true || sub.is_active === 1;
-      
-      if (!isSubcategoryActive) {
-        console.log(`Skipping inactive subcategory ${doc.id}`);
-        continue;
-      }
-
-      // Get category details
-      if (!sub.category_id) {
-        console.warn(`Subcategory ${doc.id} has no category_id`);
-        continue;
-      }
-
-      try {
-        const categoryDoc = await db.collection('service_categories').doc(sub.category_id).get();
-        
-        // Skip if category doesn't exist
-        if (!categoryDoc.exists) {
-          console.warn(`Category ${sub.category_id} not found for subcategory ${doc.id}`);
-          continue;
-        }
-
-        const categoryData = categoryDoc.data();
-        
-        // FIXED: Handle both boolean and number for is_active
-        const isCategoryActive = categoryData.is_active === true || categoryData.is_active === 1;
-        
-        if (!isCategoryActive) {
-          console.log(`Skipping subcategory ${sub.name} - category is inactive`);
-          continue;
-        }
-
-        // FIXED: Ensure features is always an array
-        let features = [];
-        if (sub.features) {
-          if (typeof sub.features === 'string') {
-            try {
-              features = JSON.parse(sub.features);
-            } catch (e) {
-              console.warn(`Failed to parse features for ${doc.id}:`, e);
-              features = [];
-            }
-          } else if (Array.isArray(sub.features)) {
-            features = sub.features;
-          }
-        }
-
-        // Format service data
-        const service = {
-          id: doc.id,
-          name: sub.name || 'Unnamed Service',
-          category_id: sub.category_id,
-          categoryName: categoryData.name || 'Uncategorized',
-          description: sub.description || '',
-          price: parseFloat(sub.base_price || 0),
-          duration: sub.duration || 'Variable',
-          rating: parseFloat(sub.rating || 0),
-          reviews: parseInt(sub.reviews || 0),
-          features: features,
-          popular: sub.popular === true || sub.popular === 1,
-          is_active: true // Already filtered for active only
-        };
-        
-        services.push(service);
-        
-      } catch (err) {
-        console.error(`Error fetching category for subcategory ${doc.id}:`, err);
-        continue;
-      }
-    }
-
-    // FIXED: Sort by created_at in memory (newest first)
-    services.sort((a, b) => {
-      // If we have created_at timestamps, use them
-      const aTime = sub.created_at?.toDate?.() || new Date(0);
-      const bTime = sub.created_at?.toDate?.() || new Date(0);
-      return bTime - aTime;
-    });
-
-    console.log(`✅ Returning ${services.length} active services`);
-    res.json(services);
-    
-  } catch (error) {
-    console.error('❌ Error fetching services:', error);
-    console.error('Stack:', error.stack);
-    res.status(500).json({ 
-      error: 'Failed to fetch services',
-      details: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
 // =============== NEW PROFESSIONAL DASHBOARD ENDPOINTS ====================
 
 // GET all active services (subcategories from active categories) - for regular users
@@ -1755,7 +1644,7 @@ app.get('/api/services', authenticateToken, async (req, res) => {
           }
         }
 
-        // Format service data
+        // Format service data - INCLUDE created_at for sorting
         const service = {
           id: doc.id,
           name: sub.name || 'Unnamed Service',
@@ -1768,8 +1657,8 @@ app.get('/api/services', authenticateToken, async (req, res) => {
           reviews: parseInt(sub.reviews || 0),
           features: features,
           popular: sub.popular === true || sub.popular === 1,
-          is_active: true, // Already filtered for active only
-          created_at: sub.created_at || null // ✅ STORE created_at for sorting
+          is_active: true,
+          created_at: sub.created_at || null // Store for sorting
         };
         
         services.push(service);
@@ -1780,15 +1669,14 @@ app.get('/api/services', authenticateToken, async (req, res) => {
       }
     }
 
-    // ✅ FIXED: Sort by created_at in memory (newest first)
+    // ✅ FIXED: Sort by created_at in memory (newest first) - CORRECT VERSION
     services.sort((a, b) => {
-      // If we have created_at timestamps, use them
       const aTime = a.created_at?.toDate?.() || new Date(0);
       const bTime = b.created_at?.toDate?.() || new Date(0);
       return bTime - aTime;
     });
 
-    // Remove created_at from response as it's not needed by frontend
+    // Remove created_at before sending response
     const cleanServices = services.map(({ created_at, ...rest }) => rest);
 
     console.log(`✅ Returning ${cleanServices.length} active services`);
