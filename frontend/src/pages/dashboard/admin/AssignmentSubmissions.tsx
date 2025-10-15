@@ -15,7 +15,7 @@ import {
   Search,
   X
 } from 'lucide-react';
-import { apiService } from '../../lib/api';
+import { apiService } from '../../../lib/api';
 
 // Types
 interface Submission {
