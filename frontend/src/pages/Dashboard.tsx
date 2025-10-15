@@ -115,7 +115,7 @@ const Dashboard: React.FC = () => {
 
           // Fetch service requests for professional/business/agency users
           if (['professional', 'business', 'agency'].includes(user.accountType)) {
-            const servicesResponse = await fetch(`http://localhost:5000/api/user/service-requests`, {
+            const servicesResponse = await fetch(`http://localhost:5000/api/users/service-requests`, {
               headers: {
                 'Authorization': `Bearer ${token}`
               }

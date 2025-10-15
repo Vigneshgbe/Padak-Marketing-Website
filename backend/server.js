@@ -68,9 +68,22 @@ const avatarUpload = multer({
 });
 
 // ===== ASSIGNMENT MULTER CONFIGURATION =====
-const assignmentStorage = path.join(__dirname, 'uploads', 'assignments');
+const assignmentStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadDir = path.join(__dirname, 'uploads', 'assignments');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'assignment-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
 const assignmentUpload = multer({
-  storage: assignmentStorage,
+  storage: assignmentStorage,  // ✅ Now it's a proper storage object
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: function (req, file, cb) {
     const allowedTypes = ['.pdf', '.doc', '.docx', '.txt', '.zip', '.rar'];
