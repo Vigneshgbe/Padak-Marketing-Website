@@ -6956,7 +6956,99 @@ app.get('/api/assignments/download-submission/:submissionId', authenticateToken,
   }
 });
 
-// ==================== ADMIN ASSIGNMENT ENDPOINTS ====================
+// ==================== ADMIN ASSIGNMENT SUBMISSION MANAGEMENT ====================
+
+// GET /api/admin/assignment-submissions - Get ALL assignment submissions (admin only)
+app.get('/api/admin/assignment-submissions', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    console.log('📋 Fetching all assignment submissions for admin');
+    
+    // Get all submissions ordered by submission date
+    const submissionsSnap = await db.collection('assignment_submissions')
+      .orderBy('submitted_at', 'desc')
+      .get();
+
+    console.log(`Found ${submissionsSnap.size} submissions`);
+
+    const submissions = [];
+    
+    for (const doc of submissionsSnap.docs) {
+      const sub = doc.data();
+      
+      // Initialize default values
+      let assignmentTitle = 'Unknown Assignment';
+      let assignmentMaxPoints = 100;
+      let courseTitle = 'Unknown Course';
+      let courseCategory = 'General';
+      let studentName = 'Unknown Student';
+      let studentEmail = '';
+      
+      try {
+        // Get assignment details
+        const assignmentDoc = await db.collection('assignments').doc(sub.assignment_id).get();
+        if (assignmentDoc.exists) {
+          const assignment = assignmentDoc.data();
+          assignmentTitle = assignment.title || 'Unknown Assignment';
+          assignmentMaxPoints = assignment.max_points || 100;
+          
+          // Get course details
+          if (assignment.course_id) {
+            const courseDoc = await db.collection('courses').doc(assignment.course_id).get();
+            if (courseDoc.exists) {
+              const course = courseDoc.data();
+              courseTitle = course.title || 'Unknown Course';
+              courseCategory = course.category || 'General';
+            }
+          }
+        }
+      } catch (assignmentError) {
+        console.error(`Error fetching assignment ${sub.assignment_id}:`, assignmentError);
+      }
+      
+      try {
+        // Get student details
+        const userDoc = await db.collection('users').doc(sub.user_id).get();
+        if (userDoc.exists) {
+          const user = userDoc.data();
+          studentName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown Student';
+          studentEmail = user.email || '';
+        }
+      } catch (userError) {
+        console.error(`Error fetching user ${sub.user_id}:`, userError);
+      }
+      
+      // Format the submission data
+      submissions.push({
+        id: doc.id,
+        assignment_id: sub.assignment_id,
+        user_id: sub.user_id,
+        content: sub.content || '',
+        file_path: sub.file_path || null,
+        submitted_at: sub.submitted_at?.toDate ? sub.submitted_at.toDate().toISOString() : new Date().toISOString(),
+        status: sub.status || 'submitted',
+        grade: sub.grade ?? null,
+        feedback: sub.feedback || null,
+        assignment_title: assignmentTitle,
+        assignment_max_points: assignmentMaxPoints,
+        course_title: courseTitle,
+        course_category: courseCategory,
+        student_name: studentName,
+        student_email: studentEmail
+      });
+    }
+
+    console.log(`✅ Returning ${submissions.length} enriched submissions`);
+    res.json(submissions);
+    
+  } catch (error) {
+    console.error('❌ Error fetching assignment submissions:', error);
+    console.error('Stack:', error.stack);
+    res.status(500).json({ 
+      error: 'Failed to fetch assignment submissions',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
 
 // GET /api/admin/assignments - Get all assignments (admin only)
 app.get('/api/admin/assignments', authenticateToken, requireAdmin, async (req, res) => {
@@ -7179,30 +7271,101 @@ app.get('/api/admin/assignment-submissions/:assignmentId', authenticateToken, re
 // PUT /api/admin/grade-submission/:submissionId - Grade a submission (admin only)
 app.put('/api/admin/grade-submission/:submissionId', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const submissionId = req.params.submissionId;
+    const { submissionId } = req.params;
     const { grade, feedback } = req.body;
 
-    if (grade === undefined || grade === null) {
-      return res.status(400).json({ error: 'Grade is required' });
-    }
-
-    const submissionDoc = await db.collection('submissions').doc(submissionId).get();
-    if (!submissionDoc.exists) {
-      return res.status(404).json({ error: 'Submission not found' });
-    }
-
-    await db.collection('submissions').doc(submissionId).update({
-      grade: parseInt(grade),
-      feedback: feedback || '',
-      status: 'graded',
-      graded_at: firebase.firestore.FieldValue.serverTimestamp()
+    console.log('📝 Grading submission:', { 
+      submissionId, 
+      grade, 
+      feedbackLength: feedback ? feedback.length : 0 
     });
 
-    res.json({ message: 'Submission graded successfully' });
+    // Validate grade
+    if (grade === undefined || grade === null) {
+      console.error('❌ Grade is missing');
+      return res.status(400).json({ 
+        success: false,
+        error: 'Grade is required' 
+      });
+    }
 
+    const gradeValue = parseInt(grade);
+    
+    if (isNaN(gradeValue)) {
+      console.error('❌ Grade is not a number');
+      return res.status(400).json({ 
+        success: false,
+        error: 'Grade must be a valid number' 
+      });
+    }
+
+    if (gradeValue < 0) {
+      console.error('❌ Grade is negative');
+      return res.status(400).json({ 
+        success: false,
+        error: 'Grade cannot be negative' 
+      });
+    }
+
+    // Check if submission exists
+    console.log('🔍 Looking for submission:', submissionId);
+    const submissionDoc = await db.collection('assignment_submissions').doc(submissionId).get();
+    
+    if (!submissionDoc.exists) {
+      console.error('❌ Submission not found');
+      return res.status(404).json({ 
+        success: false,
+        error: 'Submission not found' 
+      });
+    }
+
+    console.log('✅ Submission found');
+
+    // Get assignment to validate max points
+    const submission = submissionDoc.data();
+    const assignmentDoc = await db.collection('assignments').doc(submission.assignment_id).get();
+    
+    if (assignmentDoc.exists) {
+      const assignment = assignmentDoc.data();
+      console.log('📊 Max points:', assignment.max_points);
+      
+      if (gradeValue > assignment.max_points) {
+        console.error('❌ Grade exceeds max points');
+        return res.status(400).json({ 
+          success: false,
+          error: `Grade cannot exceed maximum points (${assignment.max_points})` 
+        });
+      }
+    }
+
+    // Update submission with grade and feedback
+    console.log('💾 Updating submission...');
+    await db.collection('assignment_submissions').doc(submissionId).update({
+      grade: gradeValue,
+      feedback: feedback ? feedback.trim() : '',
+      status: 'graded',
+      graded_at: firebase.firestore.Timestamp.now(),
+      graded_by: req.user.id
+    });
+
+    console.log('✅ Submission graded successfully');
+
+    res.json({ 
+      success: true,
+      message: 'Submission graded successfully' 
+    });
+    
   } catch (error) {
-    console.error('Grade submission error:', error);
-    res.status(500).json({ error: 'Server error while grading submission' });
+    console.error('❌ Error grading submission:', error);
+    console.error('Error type:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Stack:', error.stack);
+    
+    res.status(500).json({ 
+      success: false,
+      error: 'Failed to grade submission',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
