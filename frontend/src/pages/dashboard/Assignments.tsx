@@ -5,20 +5,20 @@ import { apiService } from '../../lib/api';
 
 // Types based on your database schema
 interface Assignment {
-  id: string; // Changed from number to string
-  course_id: string; // Changed from number to string
+  id: string; // MUST be string for Firestore
+  course_id: string;
   title: string;
   description: string;
   due_date: string;
   max_points: number;
   created_at: string;
   course: {
-    id: string; // Changed from number to string
+    id: string;
     title: string;
     category: string;
   };
   submission?: {
-    id: string; // Changed from number to string
+    id: string;
     content: string;
     file_path: string;
     submitted_at: string;
@@ -26,14 +26,6 @@ interface Assignment {
     feedback: string;
     status: 'submitted' | 'graded' | 'returned';
   };
-}
-
-interface User {
-  id: string; // Changed from number to string
-  first_name: string;
-  last_name: string;
-  email: string;
-  account_type: 'student' | 'professional' | 'business' | 'agency' | 'admin';
 }
 
 const Assignments: React.FC = () => {
@@ -114,43 +106,66 @@ const Assignments: React.FC = () => {
     };
   };
 
-  const handleSubmitAssignment = async (assignmentId: number) => {
-    if (!submissionContent.trim() && !submissionFile) {
-      alert('Please provide either text content or upload a file');
-      return;
+  const handleSubmitAssignment = async (assignmentId: string) => {
+  if (!submissionContent.trim() && !submissionFile) {
+    alert('Please provide either text content or upload a file');
+    return;
+  }
+
+  setSubmitting(true);
+  try {
+    const formData = new FormData();
+    formData.append('assignment_id', assignmentId); // Make sure it's a string
+    formData.append('content', submissionContent);
+    
+    if (submissionFile) {
+      formData.append('file', submissionFile);
     }
 
-    setSubmitting(true);
-    try {
-      const formData = new FormData();
-      formData.append('assignment_id', assignmentId.toString());
-      formData.append('content', submissionContent);
-      
-      if (submissionFile) {
-        formData.append('file', submissionFile);
-      }
+    console.log('📤 Submitting assignment:', {
+      assignment_id: assignmentId,
+      has_content: !!submissionContent,
+      has_file: !!submissionFile,
+      file_name: submissionFile?.name
+    });
 
-      await apiService.post('/assignments/submit', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
+    // Use fetch directly instead of apiService for FormData
+    const token = localStorage.getItem('token') || localStorage.getItem('authToken');
+    const response = await fetch('http://localhost:5000/api/assignments/submit', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+        // Don't set Content-Type - let browser set it with boundary
+      },
+      body: formData
+    });
 
-      // Refresh assignments
-      const updatedAssignments = await apiService.get<Assignment[]>('/assignments/my-assignments');
-      setAssignments(updatedAssignments);
+    const result = await response.json();
+    console.log('📥 Server response:', result);
 
-      // Close modal and reset form
-      setSubmissionModal({ show: false, assignmentId: null });
-      setSubmissionContent('');
-      setSubmissionFile(null);
-    } catch (error) {
-      console.error('Failed to submit assignment:', error);
-      alert('Failed to submit assignment. Please try again.');
-    } finally {
-      setSubmitting(false);
+    if (!response.ok) {
+      throw new Error(result.error || result.message || `Server error: ${response.status}`);
     }
-  };
+
+    // Refresh assignments
+    const updatedAssignments = await apiService.get<Assignment[]>('/assignments/my-assignments');
+    setAssignments(updatedAssignments);
+
+    // Show success message
+    alert(result.message || 'Assignment submitted successfully!');
+
+    // Close modal and reset form
+    setSubmissionModal({ show: false, assignmentId: null });
+    setSubmissionContent('');
+    setSubmissionFile(null);
+    
+  } catch (error: any) {
+    console.error('❌ Failed to submit assignment:', error);
+    alert(error.message || 'Failed to submit assignment. Please try again.');
+  } finally {
+    setSubmitting(false);
+  }
+};
 
   const openSubmissionModal = (assignmentId: number) => {
     setSubmissionModal({ show: true, assignmentId });
@@ -337,12 +352,16 @@ const Assignments: React.FC = () => {
                 Cancel
               </button>
               <button
-                onClick={() => handleSubmitAssignment(submissionModal.assignmentId!)}
-                disabled={submitting}
-                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors disabled:opacity-50"
-              >
-                {submitting ? 'Submitting...' : 'Submit'}
-              </button>
+                  onClick={() => {
+                    if (submissionModal.assignmentId) {
+                      handleSubmitAssignment(submissionModal.assignmentId);
+                    }
+                  }}
+                  disabled={submitting}
+                  className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {submitting ? 'Submitting...' : 'Submit'}
+                </button>
             </div>
           </div>
         </div>

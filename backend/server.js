@@ -6801,68 +6801,111 @@ app.get('/api/assignments/my-assignments', authenticateToken, async (req, res) =
   }
 });
 
-// POST /api/assignments/submit - Submit an assignment
-app.post('/api/assignments/submit', authenticateToken, async (req, res) => {
+// POST /api/assignments/submit - Submit assignment
+app.post('/api/assignments/submit', authenticateToken, assignmentUpload.single('file'), async (req, res) => {
   try {
-    const userId = req.user.id;
-    const { assignment_id, content } = req.body;
+    console.log('📝 Assignment submission received:');
+    console.log('- User:', req.user.email, '(ID:', req.user.id, ')');
+    console.log('- Body:', req.body);
+    console.log('- File:', req.file ? req.file.filename : 'No file uploaded');
 
+    const { assignment_id, content } = req.body;
+    const file_path = req.file ? req.file.filename : null;
+
+    // VALIDATION 1: Check assignment_id
     if (!assignment_id) {
-      return res.status(400).json({ error: 'Assignment ID is required' });
+      console.error('❌ Validation failed: Missing assignment_id');
+      return res.status(400).json({ 
+        error: 'Assignment ID is required',
+        received: req.body 
+      });
     }
 
-    // Check if assignment exists
+    // VALIDATION 2: Check content or file
+    if (!content && !file_path) {
+      console.error('❌ Validation failed: Missing content and file');
+      return res.status(400).json({ 
+        error: 'Either content or file is required',
+        has_content: !!content,
+        has_file: !!file_path
+      });
+    }
+
+    // CHECK 1: Assignment exists
+    console.log('🔍 Checking if assignment exists:', assignment_id);
     const assignmentDoc = await db.collection('assignments').doc(assignment_id).get();
+    
     if (!assignmentDoc.exists) {
+      console.error('❌ Assignment not found:', assignment_id);
       return res.status(404).json({ error: 'Assignment not found' });
     }
 
-    // Check if user is enrolled in the course
     const assignment = assignmentDoc.data();
-    const enrollmentSnapshot = await db.collection('enrollments')
-      .where('user_id', '==', userId)
+    console.log('✅ Assignment found:', {
+      title: assignment.title,
+      course_id: assignment.course_id
+    });
+
+    // CHECK 2: User is enrolled
+    console.log('🔍 Checking enrollment for course:', assignment.course_id);
+    const enrollmentSnap = await db.collection('enrollments')
       .where('course_id', '==', assignment.course_id)
+      .where('user_id', '==', req.user.id)
       .get();
 
-    if (enrollmentSnapshot.empty) {
-      return res.status(403).json({ error: 'You are not enrolled in this course' });
+    if (enrollmentSnap.empty) {
+      console.error('❌ User not enrolled in course');
+      return res.status(403).json({ 
+        error: 'You are not enrolled in this course',
+        course_id: assignment.course_id,
+        user_id: req.user.id
+      });
     }
+    console.log('✅ User is enrolled');
 
-    // Check if already submitted
-    const existingSubmissionSnapshot = await db.collection('submissions')
+    // CHECK 3: No existing submission
+    console.log('🔍 Checking for existing submission');
+    const existingSnap = await db.collection('assignment_submissions')
       .where('assignment_id', '==', assignment_id)
-      .where('user_id', '==', userId)
+      .where('user_id', '==', req.user.id)
       .get();
 
-    if (!existingSubmissionSnapshot.empty) {
+    if (!existingSnap.empty) {
+      console.error('❌ Assignment already submitted');
       return res.status(400).json({ error: 'Assignment already submitted' });
     }
+    console.log('✅ No existing submission found');
 
-    // Create submission
-    const submissionRef = db.collection('submissions').doc();
+    // CREATE SUBMISSION
+    console.log('📝 Creating submission...');
+    const submissionRef = db.collection('assignment_submissions').doc();
     const submissionData = {
-      assignment_id: assignment_id,
-      user_id: userId,
+      assignment_id,
+      user_id: req.user.id,
       content: content || '',
-      file_path: '', // File upload would be handled separately
+      file_path: file_path || null,
       submitted_at: firebase.firestore.FieldValue.serverTimestamp(),
+      status: 'submitted',
       grade: null,
-      feedback: '',
-      status: 'submitted'
+      feedback: null
     };
 
     await submissionRef.set(submissionData);
+    console.log('✅ Submission created:', submissionRef.id);
 
-    console.log('Assignment submitted:', { submissionId: submissionRef.id, userId, assignmentId: assignment_id });
-
-    res.status(201).json({
+    res.json({
+      success: true,
       message: 'Assignment submitted successfully',
-      submissionId: submissionRef.id
+      submission_id: submissionRef.id
     });
 
-  } catch (error) {
-    console.error('Submit assignment error:', error);
-    res.status(500).json({ error: 'Server error while submitting assignment' });
+  } catch (err) {
+    console.error('❌ Assignment submission error:', err);
+    console.error('Error stack:', err.stack);
+    res.status(500).json({ 
+      error: 'Failed to submit assignment',
+      details: err.message 
+    });
   }
 });
 
