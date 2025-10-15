@@ -33,47 +33,48 @@ const Assignments: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'submitted' | 'graded'>('all');
-  const [submissionModal, setSubmissionModal] = useState<{ show: boolean; assignmentId: number | null }>({
-    show: false,
-    assignmentId: null
-  });
+  const [submissionModal, setSubmissionModal] = useState<{ show: boolean; assignmentId: string | null }>({
+  show: false,
+  assignmentId: null
+});
   const [submissionContent, setSubmissionContent] = useState('');
   const [submissionFile, setSubmissionFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    const initializeData = async () => {
-      try {
-        setLoading(true);
-        
-        // Get current user info
-        const userData = await apiService.get<User>('/auth/me');
-        setUser(userData);
-        
-        // Fetch assignments based on user type
-        let assignmentsData: Assignment[] = [];
-        
-        if (userData.account_type === 'student' || userData.account_type === 'professional') {
-          // Get assignments for enrolled courses
-          assignmentsData = await apiService.get<Assignment[]>('/assignments/my-assignments');
-        } else if (userData.account_type === 'admin') {
-          // Admins can see all assignments
-          assignmentsData = await apiService.get<Assignment[]>('/assignments/all');
-        } else {
-          // Business and agency users might have different assignment access
-          assignmentsData = await apiService.get<Assignment[]>('/assignments/my-assignments');
-        }
-        
-        setAssignments(assignmentsData);
-      } catch (error) {
-        console.error('Failed to fetch data:', error);
-      } finally {
-        setLoading(false);
+  const initializeData = async () => {
+    try {
+      setLoading(true);
+      
+      // Get current user info
+      const userData = await apiService.get<User>('/auth/me');
+      setUser(userData);
+      
+      // Fetch assignments based on user type
+      let assignmentsData: Assignment[] = [];
+      
+      if (userData.account_type === 'student' || userData.account_type === 'professional') {
+        assignmentsData = await apiService.get<Assignment[]>('/api/assignments/my-assignments');
+      } else if (userData.account_type === 'admin') {
+        assignmentsData = await apiService.get<Assignment[]>('/api/assignments/all');
+      } else {
+        assignmentsData = await apiService.get<Assignment[]>('/api/assignments/my-assignments');
       }
-    };
+      
+      setAssignments(assignmentsData);
+    } catch (error: any) {
+      console.error('Failed to fetch data:', error);
+      // Don't fail completely if assignments can't load
+      if (error.response?.status !== 404) {
+        alert('Failed to load assignments. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    initializeData();
-  }, []);
+  initializeData();
+}, []);
 
   const filteredAssignments = assignments.filter(assignment => {
     if (filter === 'all') return true;
@@ -167,7 +168,7 @@ const Assignments: React.FC = () => {
   }
 };
 
-  const openSubmissionModal = (assignmentId: number) => {
+  const openSubmissionModal = (assignmentId: string) => {
     setSubmissionModal({ show: true, assignmentId });
   };
 
@@ -177,7 +178,7 @@ const Assignments: React.FC = () => {
     setSubmissionFile(null);
   };
 
-  const downloadSubmission = async (submissionId: number, fileName: string) => {
+  const downloadSubmission = async (submissionId: string, fileName: string) => {
     try {
       const response = await apiService.get(`/assignments/download-submission/${submissionId}`, {
         responseType: 'blob',
