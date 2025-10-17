@@ -36,7 +36,12 @@ interface LanguageSettings {
   timeFormat: '12h' | '24h';
 }
 
-const Settings: React.FC = () => {
+interface SettingsProps {
+  darkMode?: boolean;
+  onToggleDarkMode?: () => void;
+}
+
+const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDarkMode }) => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
   const [saving, setSaving] = useState(false);
@@ -100,10 +105,21 @@ const Settings: React.FC = () => {
           });
         }
         if (savedAppearance) {
-          setAppearanceSettings(JSON.parse(savedAppearance));
+          const appearance = JSON.parse(savedAppearance);
+          setAppearanceSettings(appearance);
+          // Apply font size on load
+          applyFontSize(appearance.fontSize);
         }
         if (savedLanguage) {
           setLanguageSettings(JSON.parse(savedLanguage));
+        }
+
+        // Set theme based on current dark mode prop
+        if (propDarkMode !== undefined) {
+          setAppearanceSettings(prev => ({
+            ...prev,
+            theme: propDarkMode ? 'dark' : 'light'
+          }));
         }
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -111,7 +127,7 @@ const Settings: React.FC = () => {
     };
 
     loadSettings();
-  }, []);
+  }, [propDarkMode]);
 
   // Calculate password strength
   useEffect(() => {
@@ -169,6 +185,65 @@ const Settings: React.FC = () => {
     }
   ];
 
+  // Apply font size to document
+  const applyFontSize = (size: string) => {
+    const root = document.documentElement;
+    root.classList.remove('font-small', 'font-medium', 'font-large');
+    
+    switch(size) {
+      case 'small':
+        root.classList.add('font-small');
+        root.style.fontSize = '14px';
+        break;
+      case 'large':
+        root.classList.add('font-large');
+        root.style.fontSize = '18px';
+        break;
+      default:
+        root.classList.add('font-medium');
+        root.style.fontSize = '16px';
+    }
+  };
+
+  // Format the member since date
+  const formatMemberSince = (dateString: string | undefined) => {
+    if (!dateString) return 'Unknown';
+    
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) {
+        return 'Unknown';
+      }
+      
+      return date.toLocaleDateString('en-US', { 
+        month: 'long', 
+        year: 'numeric' 
+      });
+    } catch (error) {
+      return 'Unknown';
+    }
+  };
+
+  // Format date for display
+  const formatDate = (dateString: string | undefined) => {
+    if (!dateString) return 'Not provided';
+    
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) {
+        return 'Not provided';
+      }
+      
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    } catch (error) {
+      return 'Not provided';
+    }
+  };
+
   const handleSaveSettings = async () => {
     setSaving(true);
     
@@ -208,6 +283,24 @@ const Settings: React.FC = () => {
   };
 
   const handleAppearanceChange = (key: keyof AppearanceSettings, value: string | boolean) => {
+    if (key === 'theme' && onToggleDarkMode) {
+      // Handle theme change through parent component
+      if (value === 'dark') {
+        if (!propDarkMode) onToggleDarkMode();
+      } else if (value === 'light') {
+        if (propDarkMode) onToggleDarkMode();
+      } else if (value === 'system') {
+        // Handle system preference
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (prefersDark !== propDarkMode) {
+          onToggleDarkMode();
+        }
+      }
+    } else if (key === 'fontSize' && typeof value === 'string') {
+      // Apply font size immediately
+      applyFontSize(value);
+    }
+
     setAppearanceSettings(prev => ({
       ...prev,
       [key]: value
@@ -264,9 +357,23 @@ const Settings: React.FC = () => {
     return 'Strong';
   };
 
+  // Determine current theme
+  const getCurrentTheme = () => {
+    if (appearanceSettings.theme === 'system') {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    return propDarkMode ? 'dark' : 'light';
+  };
+
   return (
     <div className="min-h-screen">
       {/* Header Section */}
+      <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-2xl p-8 mb-8 text-white">
+        <h1 className="text-3xl font-bold mb-2">Settings</h1>
+        <p className="text-orange-100">
+          Customize your experience and manage your account preferences
+        </p>
+      </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         {/* Sidebar Navigation */}
@@ -355,10 +462,7 @@ const Settings: React.FC = () => {
                           {user?.accountType?.toUpperCase()}
                         </span>
                         <span className="text-sm text-gray-500 dark:text-gray-400">
-                          Member since {new Date(user?.createdAt || '').toLocaleDateString('en-US', { 
-                            month: 'long', 
-                            year: 'numeric' 
-                          })}
+                          Member since {formatMemberSince(user?.createdAt)}
                         </span>
                       </div>
                     </div>
@@ -384,6 +488,10 @@ const Settings: React.FC = () => {
                         <span className="text-gray-500 dark:text-gray-400">Phone</span>
                         <span className="font-medium">{user?.phone || 'Not provided'}</span>
                       </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500 dark:text-gray-400">Member Since</span>
+                        <span className="font-medium">{formatDate(user?.createdAt)}</span>
+                      </div>
                     </div>
                   </div>
 
@@ -403,6 +511,10 @@ const Settings: React.FC = () => {
                       <div className="flex justify-between">
                         <span className="text-gray-500 dark:text-gray-400">Account Type</span>
                         <span className="font-medium capitalize">{user?.accountType}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500 dark:text-gray-400">Status</span>
+                        <span className="font-medium text-green-600 dark:text-green-400">Active</span>
                       </div>
                     </div>
                   </div>
@@ -669,7 +781,9 @@ const Settings: React.FC = () => {
                         key={theme.value}
                         onClick={() => handleAppearanceChange('theme', theme.value as 'light' | 'dark' | 'system')}
                         className={`relative p-6 rounded-xl border-2 transition-all duration-200 ${
-                          appearanceSettings.theme === theme.value
+                          (theme.value === 'dark' && propDarkMode) || 
+                          (theme.value === 'light' && !propDarkMode && appearanceSettings.theme !== 'system') ||
+                          (theme.value === 'system' && appearanceSettings.theme === 'system')
                             ? 'border-orange-500 shadow-lg transform scale-[1.02]'
                             : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
                         }`}
@@ -677,7 +791,9 @@ const Settings: React.FC = () => {
                         <div className={`absolute inset-0 bg-gradient-to-br ${theme.gradient} rounded-xl opacity-10`}></div>
                         <div className="relative flex flex-col items-center">
                           <div className={`p-3 rounded-full mb-3 ${
-                            appearanceSettings.theme === theme.value
+                            (theme.value === 'dark' && propDarkMode) || 
+                            (theme.value === 'light' && !propDarkMode && appearanceSettings.theme !== 'system') ||
+                            (theme.value === 'system' && appearanceSettings.theme === 'system')
                               ? 'bg-orange-500 text-white'
                               : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
                           }`}>
@@ -685,7 +801,9 @@ const Settings: React.FC = () => {
                           </div>
                           <span className="font-medium">{theme.label}</span>
                         </div>
-                        {appearanceSettings.theme === theme.value && (
+                        {((theme.value === 'dark' && propDarkMode) || 
+                          (theme.value === 'light' && !propDarkMode && appearanceSettings.theme !== 'system') ||
+                          (theme.value === 'system' && appearanceSettings.theme === 'system')) && (
                           <div className="absolute top-3 right-3">
                             <CheckCircle className="text-orange-500" size={20} />
                           </div>
@@ -693,6 +811,9 @@ const Settings: React.FC = () => {
                       </button>
                     ))}
                   </div>
+                  <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">
+                    Current theme: <span className="font-medium">{getCurrentTheme()}</span>
+                  </p>
                 </div>
 
                 {/* Font Size */}
@@ -718,6 +839,9 @@ const Settings: React.FC = () => {
                         </button>
                       ))}
                     </div>
+                    <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">
+                      Changes to font size are applied immediately across the entire application.
+                    </p>
                   </div>
                 </div>
 
