@@ -267,12 +267,6 @@ const Settings: React.FC = () => {
   return (
     <div className="min-h-screen">
       {/* Header Section */}
-      <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-2xl p-8 mb-8 text-white">
-        <h1 className="text-3xl font-bold mb-2">Settings</h1>
-        <p className="text-orange-100">
-          Customize your experience and manage your account preferences
-        </p>
-      </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         {/* Sidebar Navigation */}
