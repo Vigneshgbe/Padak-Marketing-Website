@@ -1,4 +1,4 @@
-# 🎓 Padak
+# 🎓 Padak 
 
 🚀 **Padak** is a digital platform offering **courses, internships, and services** in  
 ✅ Digital Marketing  
