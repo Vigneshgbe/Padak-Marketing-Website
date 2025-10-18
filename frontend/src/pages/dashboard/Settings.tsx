@@ -114,12 +114,18 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
           setLanguageSettings(JSON.parse(savedLanguage));
         }
 
-        // Set theme based on current dark mode prop
+        // Sync appearance settings with current dark mode state
         if (propDarkMode !== undefined) {
-          setAppearanceSettings(prev => ({
-            ...prev,
-            theme: propDarkMode ? 'dark' : 'light'
-          }));
+          setAppearanceSettings(prev => {
+            // Only update if theme is not 'system'
+            if (prev.theme !== 'system') {
+              return {
+                ...prev,
+                theme: propDarkMode ? 'dark' : 'light'
+              };
+            }
+            return prev;
+          });
         }
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -205,7 +211,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
     }
   };
 
-  // Format the member since date
+  // ✅ FIXED: Format the member since date from Firestore timestamp
   const formatMemberSince = (dateString: string | undefined) => {
     if (!dateString) return 'Unknown';
     
@@ -220,11 +226,12 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
         year: 'numeric' 
       });
     } catch (error) {
+      console.error('Error formatting member since date:', error);
       return 'Unknown';
     }
   };
 
-  // Format date for display
+  // ✅ FIXED: Format date for display
   const formatDate = (dateString: string | undefined) => {
     if (!dateString) return 'Not provided';
     
@@ -240,6 +247,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
         day: 'numeric'
       });
     } catch (error) {
+      console.error('Error formatting date:', error);
       return 'Not provided';
     }
   };
@@ -282,29 +290,48 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
     }));
   };
 
+  // ✅ FIXED: Dark mode toggle with proper theme handling
   const handleAppearanceChange = (key: keyof AppearanceSettings, value: string | boolean) => {
     if (key === 'theme' && onToggleDarkMode) {
-      // Handle theme change through parent component
-      if (value === 'dark') {
-        if (!propDarkMode) onToggleDarkMode();
-      } else if (value === 'light') {
-        if (propDarkMode) onToggleDarkMode();
-      } else if (value === 'system') {
-        // Handle system preference
+      const themeValue = value as 'light' | 'dark' | 'system';
+      
+      // Update appearance settings first
+      setAppearanceSettings(prev => ({
+        ...prev,
+        theme: themeValue
+      }));
+
+      // Handle theme change
+      if (themeValue === 'system') {
+        // Use system preference
         const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         if (prefersDark !== propDarkMode) {
+          onToggleDarkMode();
+        }
+      } else if (themeValue === 'dark') {
+        // Enable dark mode
+        if (!propDarkMode) {
+          onToggleDarkMode();
+        }
+      } else if (themeValue === 'light') {
+        // Disable dark mode
+        if (propDarkMode) {
           onToggleDarkMode();
         }
       }
     } else if (key === 'fontSize' && typeof value === 'string') {
       // Apply font size immediately
       applyFontSize(value);
+      setAppearanceSettings(prev => ({
+        ...prev,
+        fontSize: value as 'small' | 'medium' | 'large'
+      }));
+    } else {
+      setAppearanceSettings(prev => ({
+        ...prev,
+        [key]: value
+      }));
     }
-
-    setAppearanceSettings(prev => ({
-      ...prev,
-      [key]: value
-    }));
   };
 
   const handleLanguageChange = (key: keyof LanguageSettings, value: string) => {
@@ -357,12 +384,26 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
     return 'Strong';
   };
 
-  // Determine current theme
+  // ✅ FIXED: Determine current theme correctly
   const getCurrentTheme = () => {
     if (appearanceSettings.theme === 'system') {
       return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     }
-    return propDarkMode ? 'dark' : 'light';
+    return appearanceSettings.theme;
+  };
+
+  // ✅ FIXED: Check if theme button should be active
+  const isThemeActive = (themeValue: string) => {
+    if (appearanceSettings.theme === 'system' && themeValue === 'system') {
+      return true;
+    }
+    if (appearanceSettings.theme === 'dark' && themeValue === 'dark' && propDarkMode) {
+      return true;
+    }
+    if (appearanceSettings.theme === 'light' && themeValue === 'light' && !propDarkMode) {
+      return true;
+    }
+    return false;
   };
 
   return (
@@ -438,7 +479,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
             {/* Profile Tab */}
             {activeTab === 'profile' && (
               <div className="animate-fade-in">
-                <h2 className="text-2xl font-bold mb-6 flex items-center">
+                <h2 className="text-2xl font-bold mb-6 flex items-center text-gray-800 dark:text-white">
                   <User className="mr-3 text-orange-500" />
                   Profile Information
                 </h2>
@@ -448,18 +489,18 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                   <div className="flex items-center space-x-6">
                     <div className="relative">
                       <div className="w-24 h-24 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white text-3xl font-bold shadow-xl">
-                        {user?.firstName?.charAt(0)}{user?.lastName?.charAt(0)}
+                        {user?.firstName?.charAt(0)?.toUpperCase() || 'U'}{user?.lastName?.charAt(0)?.toUpperCase() || 'U'}
                       </div>
                       <div className="absolute bottom-0 right-0 w-8 h-8 bg-green-500 rounded-full border-4 border-white dark:border-gray-800"></div>
                     </div>
                     <div className="flex-1">
                       <h3 className="text-2xl font-bold text-gray-800 dark:text-white">
-                        {user?.firstName} {user?.lastName}
+                        {user?.firstName || 'User'} {user?.lastName || 'Name'}
                       </h3>
-                      <p className="text-gray-600 dark:text-gray-300 mb-2">{user?.email}</p>
-                      <div className="flex items-center space-x-4">
+                      <p className="text-gray-600 dark:text-gray-300 mb-2">{user?.email || 'email@example.com'}</p>
+                      <div className="flex items-center space-x-4 flex-wrap">
                         <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-500 text-white">
-                          {user?.accountType?.toUpperCase()}
+                          {user?.accountType?.toUpperCase() || 'STUDENT'}
                         </span>
                         <span className="text-sm text-gray-500 dark:text-gray-400">
                           Member since {formatMemberSince(user?.createdAt)}
@@ -476,21 +517,29 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                       Personal Information
                     </h3>
                     <div className="space-y-3">
-                      <div className="flex justify-between">
+                      <div className="flex justify-between items-start">
                         <span className="text-gray-500 dark:text-gray-400">Full Name</span>
-                        <span className="font-medium">{user?.firstName} {user?.lastName}</span>
+                        <span className="font-medium text-right text-gray-800 dark:text-white">
+                          {user?.firstName || 'Not'} {user?.lastName || 'Provided'}
+                        </span>
                       </div>
-                      <div className="flex justify-between">
+                      <div className="flex justify-between items-start">
                         <span className="text-gray-500 dark:text-gray-400">Email</span>
-                        <span className="font-medium">{user?.email}</span>
+                        <span className="font-medium text-right text-gray-800 dark:text-white break-all">
+                          {user?.email || 'Not provided'}
+                        </span>
                       </div>
-                      <div className="flex justify-between">
+                      <div className="flex justify-between items-start">
                         <span className="text-gray-500 dark:text-gray-400">Phone</span>
-                        <span className="font-medium">{user?.phone || 'Not provided'}</span>
+                        <span className="font-medium text-right text-gray-800 dark:text-white">
+                          {user?.phone || 'Not provided'}
+                        </span>
                       </div>
-                      <div className="flex justify-between">
+                      <div className="flex justify-between items-start">
                         <span className="text-gray-500 dark:text-gray-400">Member Since</span>
-                        <span className="font-medium">{formatDate(user?.createdAt)}</span>
+                        <span className="font-medium text-right text-gray-800 dark:text-white">
+                          {formatDate(user?.createdAt)}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -500,21 +549,29 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                       Professional Details
                     </h3>
                     <div className="space-y-3">
-                      <div className="flex justify-between">
+                      <div className="flex justify-between items-start">
                         <span className="text-gray-500 dark:text-gray-400">Company</span>
-                        <span className="font-medium">{user?.company || 'Not provided'}</span>
+                        <span className="font-medium text-right text-gray-800 dark:text-white">
+                          {user?.company || 'Not provided'}
+                        </span>
                       </div>
-                      <div className="flex justify-between">
+                      <div className="flex justify-between items-start">
                         <span className="text-gray-500 dark:text-gray-400">Website</span>
-                        <span className="font-medium">{user?.website || 'Not provided'}</span>
+                        <span className="font-medium text-right text-gray-800 dark:text-white break-all">
+                          {user?.website || 'Not provided'}
+                        </span>
                       </div>
-                      <div className="flex justify-between">
+                      <div className="flex justify-between items-start">
                         <span className="text-gray-500 dark:text-gray-400">Account Type</span>
-                        <span className="font-medium capitalize">{user?.accountType}</span>
+                        <span className="font-medium text-right text-gray-800 dark:text-white capitalize">
+                          {user?.accountType || 'student'}
+                        </span>
                       </div>
-                      <div className="flex justify-between">
+                      <div className="flex justify-between items-start">
                         <span className="text-gray-500 dark:text-gray-400">Status</span>
-                        <span className="font-medium text-green-600 dark:text-green-400">Active</span>
+                        <span className="font-medium text-green-600 dark:text-green-400">
+                          {user?.isActive ? 'Active' : 'Inactive'}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -540,7 +597,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
             {/* Notifications Tab */}
             {activeTab === 'notifications' && (
               <div className="animate-fade-in">
-                <h2 className="text-2xl font-bold mb-6 flex items-center">
+                <h2 className="text-2xl font-bold mb-6 flex items-center text-gray-800 dark:text-white">
                   <Bell className="mr-3 text-orange-500" />
                   Notification Preferences
                 </h2>
@@ -556,8 +613,8 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                       className="bg-gray-50 dark:bg-gray-700 rounded-xl p-6 transition-all duration-200 hover:shadow-md"
                     >
                       <div className="flex items-start justify-between">
-                        <div className="flex items-start space-x-4">
-                          <div className="p-2 bg-orange-100 dark:bg-orange-900/20 rounded-lg text-orange-600 dark:text-orange-400">
+                        <div className="flex items-start space-x-4 flex-1">
+                          <div className="p-2 bg-orange-100 dark:bg-orange-900/20 rounded-lg text-orange-600 dark:text-orange-400 flex-shrink-0">
                             {option.icon}
                           </div>
                           <div className="flex-1">
@@ -569,7 +626,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                             </p>
                           </div>
                         </div>
-                        <label className="relative inline-flex items-center cursor-pointer">
+                        <label className="relative inline-flex items-center cursor-pointer ml-4 flex-shrink-0">
                           <input 
                             type="checkbox" 
                             className="sr-only peer" 
@@ -588,14 +645,14 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
             {/* Security Tab */}
             {activeTab === 'security' && (
               <div className="animate-fade-in">
-                <h2 className="text-2xl font-bold mb-6 flex items-center">
+                <h2 className="text-2xl font-bold mb-6 flex items-center text-gray-800 dark:text-white">
                   <Shield className="mr-3 text-orange-500" />
                   Security Settings
                 </h2>
 
                 {/* Change Password Section */}
                 <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-6 mb-6">
-                  <h3 className="font-semibold text-lg mb-4 flex items-center">
+                  <h3 className="font-semibold text-lg mb-4 flex items-center text-gray-800 dark:text-white">
                     <Lock className="mr-2 text-gray-600 dark:text-gray-400" size={20} />
                     Change Password
                   </h3>
@@ -610,7 +667,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                           type={showPassword.current ? "text" : "password"}
                           value={securitySettings.currentPassword}
                           onChange={(e) => handleSecurityChange('currentPassword', e.target.value)}
-                          className="w-full p-3 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
+                          className="w-full p-3 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
                           placeholder="Enter current password"
                           required
                         />
@@ -633,7 +690,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                           type={showPassword.new ? "text" : "password"}
                           value={securitySettings.newPassword}
                           onChange={(e) => handleSecurityChange('newPassword', e.target.value)}
-                          className="w-full p-3 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
+                          className="w-full p-3 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
                           placeholder="Enter new password"
                           required
                           minLength={8}
@@ -678,7 +735,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                           type={showPassword.confirm ? "text" : "password"}
                           value={securitySettings.confirmPassword}
                           onChange={(e) => handleSecurityChange('confirmPassword', e.target.value)}
-                          className="w-full p-3 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
+                          className="w-full p-3 pr-10 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
                           placeholder="Confirm new password"
                           required
                           minLength={8}
@@ -705,11 +762,11 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                 {/* Two-Factor Authentication */}
                 <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-6 mb-6">
                   <div className="flex items-start justify-between">
-                    <div className="flex items-start space-x-4">
-                      <div className="p-2 bg-green-100 dark:bg-green-900/20 rounded-lg text-green-600 dark:text-green-400">
+                    <div className="flex items-start space-x-4 flex-1">
+                      <div className="p-2 bg-green-100 dark:bg-green-900/20 rounded-lg text-green-600 dark:text-green-400 flex-shrink-0">
                         <Smartphone size={24} />
                       </div>
-                      <div>
+                      <div className="flex-1">
                         <h3 className="font-semibold text-lg text-gray-800 dark:text-white mb-2">
                           Two-Factor Authentication
                         </h3>
@@ -725,7 +782,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                         </div>
                       </div>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
+                    <label className="relative inline-flex items-center cursor-pointer ml-4 flex-shrink-0">
                       <input 
                         type="checkbox" 
                         className="sr-only peer" 
@@ -740,7 +797,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                 {/* Active Sessions */}
                 <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-6">
                   <div className="flex items-start space-x-4">
-                    <div className="p-2 bg-blue-100 dark:bg-blue-900/20 rounded-lg text-blue-600 dark:text-blue-400">
+                    <div className="p-2 bg-blue-100 dark:bg-blue-900/20 rounded-lg text-blue-600 dark:text-blue-400 flex-shrink-0">
                       <Laptop size={24} />
                     </div>
                     <div className="flex-1">
@@ -750,7 +807,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                       <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
                         Manage devices where you're currently logged in.
                       </p>
-                      <button className="flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
+                      <button className="flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors text-gray-700 dark:text-gray-300">
                         <LogOut size={16} className="mr-2" />
                         View All Sessions
                       </button>
@@ -763,14 +820,14 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
             {/* Appearance Tab */}
             {activeTab === 'appearance' && (
               <div className="animate-fade-in">
-                <h2 className="text-2xl font-bold mb-6 flex items-center">
+                <h2 className="text-2xl font-bold mb-6 flex items-center text-gray-800 dark:text-white">
                   <Palette className="mr-3 text-orange-500" />
                   Appearance Settings
                 </h2>
 
                 {/* Theme Selection */}
                 <div className="mb-8">
-                  <h3 className="font-semibold text-lg mb-4">Theme</h3>
+                  <h3 className="font-semibold text-lg mb-4 text-gray-800 dark:text-white">Theme</h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {[
                       { value: 'light', label: 'Light', icon: <Sun size={20} />, gradient: 'from-yellow-100 to-orange-100' },
@@ -781,9 +838,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                         key={theme.value}
                         onClick={() => handleAppearanceChange('theme', theme.value as 'light' | 'dark' | 'system')}
                         className={`relative p-6 rounded-xl border-2 transition-all duration-200 ${
-                          (theme.value === 'dark' && propDarkMode) || 
-                          (theme.value === 'light' && !propDarkMode && appearanceSettings.theme !== 'system') ||
-                          (theme.value === 'system' && appearanceSettings.theme === 'system')
+                          isThemeActive(theme.value)
                             ? 'border-orange-500 shadow-lg transform scale-[1.02]'
                             : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
                         }`}
@@ -791,19 +846,15 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                         <div className={`absolute inset-0 bg-gradient-to-br ${theme.gradient} rounded-xl opacity-10`}></div>
                         <div className="relative flex flex-col items-center">
                           <div className={`p-3 rounded-full mb-3 ${
-                            (theme.value === 'dark' && propDarkMode) || 
-                            (theme.value === 'light' && !propDarkMode && appearanceSettings.theme !== 'system') ||
-                            (theme.value === 'system' && appearanceSettings.theme === 'system')
+                            isThemeActive(theme.value)
                               ? 'bg-orange-500 text-white'
                               : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
                           }`}>
                             {theme.icon}
                           </div>
-                          <span className="font-medium">{theme.label}</span>
+                          <span className="font-medium text-gray-800 dark:text-white">{theme.label}</span>
                         </div>
-                        {((theme.value === 'dark' && propDarkMode) || 
-                          (theme.value === 'light' && !propDarkMode && appearanceSettings.theme !== 'system') ||
-                          (theme.value === 'system' && appearanceSettings.theme === 'system')) && (
+                        {isThemeActive(theme.value) && (
                           <div className="absolute top-3 right-3">
                             <CheckCircle className="text-orange-500" size={20} />
                           </div>
@@ -812,13 +863,13 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                     ))}
                   </div>
                   <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">
-                    Current theme: <span className="font-medium">{getCurrentTheme()}</span>
+                    Current theme: <span className="font-medium capitalize">{getCurrentTheme()}</span>
                   </p>
                 </div>
 
                 {/* Font Size */}
                 <div className="mb-8">
-                  <h3 className="font-semibold text-lg mb-4">Font Size</h3>
+                  <h3 className="font-semibold text-lg mb-4 text-gray-800 dark:text-white">Font Size</h3>
                   <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4">
                     <div className="flex space-x-2">
                       {['small', 'medium', 'large'].map((size) => (
@@ -828,7 +879,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                           className={`flex-1 py-3 rounded-lg transition-all duration-200 ${
                             appearanceSettings.fontSize === size
                               ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-md'
-                              : 'bg-white dark:bg-gray-600 hover:bg-gray-100 dark:hover:bg-gray-500'
+                              : 'bg-white dark:bg-gray-600 hover:bg-gray-100 dark:hover:bg-gray-500 text-gray-800 dark:text-white'
                           }`}
                         >
                           <span className={`font-medium capitalize ${
@@ -847,11 +898,11 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
 
                 {/* Accessibility Options */}
                 <div>
-                  <h3 className="font-semibold text-lg mb-4">Accessibility</h3>
+                  <h3 className="font-semibold text-lg mb-4 text-gray-800 dark:text-white">Accessibility</h3>
                   <div className="space-y-4">
                     <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-6">
                       <div className="flex items-center justify-between">
-                        <div>
+                        <div className="flex-1">
                           <h4 className="font-medium text-gray-800 dark:text-white mb-1">
                             Reduce Animations
                           </h4>
@@ -859,7 +910,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                             Minimize motion effects throughout the interface
                           </p>
                         </div>
-                        <label className="relative inline-flex items-center cursor-pointer">
+                        <label className="relative inline-flex items-center cursor-pointer ml-4">
                           <input 
                             type="checkbox" 
                             className="sr-only peer" 
@@ -873,7 +924,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
 
                     <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-6">
                       <div className="flex items-center justify-between">
-                        <div>
+                        <div className="flex-1">
                           <h4 className="font-medium text-gray-800 dark:text-white mb-1">
                             High Contrast Mode
                           </h4>
@@ -881,7 +932,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                             Increase color contrast for better visibility
                           </p>
                         </div>
-                        <label className="relative inline-flex items-center cursor-pointer">
+                        <label className="relative inline-flex items-center cursor-pointer ml-4">
                           <input 
                             type="checkbox" 
                             className="sr-only peer" 
@@ -900,7 +951,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
             {/* Language Tab */}
             {activeTab === 'language' && (
               <div className="animate-fade-in">
-                <h2 className="text-2xl font-bold mb-6 flex items-center">
+                <h2 className="text-2xl font-bold mb-6 flex items-center text-gray-800 dark:text-white">
                   <Globe className="mr-3 text-orange-500" />
                   Language & Region
                 </h2>
@@ -914,7 +965,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                     <select 
                       value={languageSettings.language}
                       onChange={(e) => handleLanguageChange('language', e.target.value)}
-                      className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
+                      className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
                     >
                       <option value="en">English (US)</option>
                       <option value="en-gb">English (UK)</option>
@@ -935,7 +986,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                     <select 
                       value={languageSettings.timeZone}
                       onChange={(e) => handleLanguageChange('timeZone', e.target.value)}
-                      className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
+                      className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
                     >
                       <option value="IST">India Standard Time (IST)</option>
                       <option value="UTC">Coordinated Universal Time (UTC)</option>
@@ -956,7 +1007,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                     <select 
                       value={languageSettings.dateFormat}
                       onChange={(e) => handleLanguageChange('dateFormat', e.target.value)}
-                      className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
+                      className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
                     >
                       <option value="DD/MM/YYYY">DD/MM/YYYY</option>
                       <option value="MM/DD/YYYY">MM/DD/YYYY</option>
@@ -973,8 +1024,8 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                     </label>
                     <select 
                       value={languageSettings.timeFormat}
-                      onChange={(e) => handleLanguageChange('timeFormat', e.target.value)}
-                      className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
+                      onChange={(e) => handleLanguageChange('timeFormat', e.target.value as '12h' | '24h')}
+                      className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
                     >
                       <option value="12h">12-hour (1:30 PM)</option>
                       <option value="24h">24-hour (13:30)</option>
@@ -991,7 +1042,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span className="text-gray-500 dark:text-gray-400">Current Date:</span>
-                        <span className="font-mono font-medium">
+                        <span className="font-mono font-medium text-gray-800 dark:text-white">
                           {new Date().toLocaleDateString('en-US', { 
                             day: '2-digit', 
                             month: 'short', 
@@ -1001,7 +1052,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-500 dark:text-gray-400">Current Time:</span>
-                        <span className="font-mono font-medium">
+                        <span className="font-mono font-medium text-gray-800 dark:text-white">
                           {new Date().toLocaleTimeString('en-US', {
                             hour: '2-digit',
                             minute: '2-digit',
@@ -1011,7 +1062,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-500 dark:text-gray-400">Time Zone:</span>
-                        <span className="font-mono font-medium">{languageSettings.timeZone}</span>
+                        <span className="font-mono font-medium text-gray-800 dark:text-white">{languageSettings.timeZone}</span>
                       </div>
                     </div>
                   </div>
