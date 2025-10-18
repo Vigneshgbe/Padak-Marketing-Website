@@ -70,7 +70,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
   });
 
   const [appearanceSettings, setAppearanceSettings] = useState<AppearanceSettings>({
-    theme: 'light',
+    theme: propDarkMode ? 'dark' : 'light',
     fontSize: 'medium',
     reduceAnimations: false,
     highContrast: false
@@ -108,12 +108,6 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
           const appearance = JSON.parse(savedAppearance);
           setAppearanceSettings(appearance);
           applyFontSize(appearance.fontSize);
-        } else {
-          // Set initial theme based on prop
-          setAppearanceSettings(prev => ({
-            ...prev,
-            theme: propDarkMode ? 'dark' : 'light'
-          }));
         }
         if (savedLanguage) {
           setLanguageSettings(JSON.parse(savedLanguage));
@@ -126,14 +120,12 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
     loadSettings();
   }, []);
 
-  // Sync appearance settings when darkMode prop changes
+  // Sync theme with parent darkMode prop
   useEffect(() => {
-    if (propDarkMode !== undefined) {
-      setAppearanceSettings(prev => ({
-        ...prev,
-        theme: propDarkMode ? 'dark' : 'light'
-      }));
-    }
+    setAppearanceSettings(prev => ({
+      ...prev,
+      theme: propDarkMode ? 'dark' : 'light'
+    }));
   }, [propDarkMode]);
 
   // Calculate password strength
@@ -212,87 +204,95 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
     }
   };
 
-  // ✅ FIX 1: Format the member since date from Firestore timestamp
-  const formatMemberSince = (dateValue: any) => {
-    if (!dateValue) {
-      console.log('No date value provided');
+  // ✅ CRITICAL FIX: Format member since date from Firestore Timestamp
+  const formatMemberSince = (createdAt: any): string => {
+    if (!createdAt) {
       return 'Unknown';
     }
-    
+
     try {
       let date: Date;
-      
-      // Handle Firestore Timestamp object
-      if (dateValue && typeof dateValue === 'object' && 'toDate' in dateValue) {
-        date = dateValue.toDate();
+
+      // Check if it's a Firestore Timestamp with seconds and nanoseconds
+      if (createdAt && typeof createdAt === 'object' && '_seconds' in createdAt) {
+        // Firestore Timestamp format from your screenshot: {_seconds: 1728916048, _nanoseconds: 722000000}
+        date = new Date(createdAt._seconds * 1000);
       }
-      // Handle ISO string
-      else if (typeof dateValue === 'string') {
-        date = new Date(dateValue);
+      // Check if it has toDate method (Firestore SDK Timestamp)
+      else if (createdAt && typeof createdAt.toDate === 'function') {
+        date = createdAt.toDate();
       }
-      // Handle Date object
-      else if (dateValue instanceof Date) {
-        date = dateValue;
+      // Check if it's an ISO string
+      else if (typeof createdAt === 'string') {
+        date = new Date(createdAt);
       }
-      // Handle timestamp number
-      else if (typeof dateValue === 'number') {
-        date = new Date(dateValue);
+      // Check if it's already a Date object
+      else if (createdAt instanceof Date) {
+        date = createdAt;
+      }
+      // Check if it's a timestamp number
+      else if (typeof createdAt === 'number') {
+        date = new Date(createdAt);
       }
       else {
-        console.log('Unknown date format:', dateValue);
+        console.warn('Unknown date format:', createdAt);
         return 'Unknown';
       }
-      
-      // Check if date is valid
+
+      // Validate the date
       if (isNaN(date.getTime())) {
-        console.log('Invalid date:', dateValue);
+        console.warn('Invalid date:', createdAt);
         return 'Unknown';
       }
-      
-      return date.toLocaleDateString('en-US', { 
-        month: 'long', 
-        year: 'numeric' 
+
+      return date.toLocaleDateString('en-US', {
+        month: 'long',
+        year: 'numeric'
       });
     } catch (error) {
-      console.error('Error formatting member since date:', error, dateValue);
+      console.error('Error formatting member since date:', error);
       return 'Unknown';
     }
   };
 
-  // ✅ FIX 2: Format date for display
-  const formatDate = (dateValue: any) => {
+  // ✅ CRITICAL FIX: Format date for display
+  const formatDate = (dateValue: any): string => {
     if (!dateValue) {
       return 'Not provided';
     }
-    
+
     try {
       let date: Date;
-      
-      // Handle Firestore Timestamp object
-      if (dateValue && typeof dateValue === 'object' && 'toDate' in dateValue) {
+
+      // Check if it's a Firestore Timestamp with seconds and nanoseconds
+      if (dateValue && typeof dateValue === 'object' && '_seconds' in dateValue) {
+        date = new Date(dateValue._seconds * 1000);
+      }
+      // Check if it has toDate method
+      else if (dateValue && typeof dateValue.toDate === 'function') {
         date = dateValue.toDate();
       }
-      // Handle ISO string
+      // Check if it's an ISO string
       else if (typeof dateValue === 'string') {
         date = new Date(dateValue);
       }
-      // Handle Date object
+      // Check if it's already a Date object
       else if (dateValue instanceof Date) {
         date = dateValue;
       }
-      // Handle timestamp number
+      // Check if it's a timestamp number
       else if (typeof dateValue === 'number') {
         date = new Date(dateValue);
       }
       else {
         return 'Not provided';
       }
-      
-      // Check if date is valid
+
+      // Validate the date
       if (isNaN(date.getTime())) {
         return 'Not provided';
       }
-      
+
       return date.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
@@ -308,10 +308,8 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
     setSaving(true);
     
     try {
-      // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Save to localStorage
       localStorage.setItem('notificationSettings', JSON.stringify(notificationSettings));
       localStorage.setItem('securitySettings', JSON.stringify({
         twoFactorEnabled: securitySettings.twoFactorEnabled
@@ -342,10 +340,8 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
     }));
   };
 
-  // ✅ FIX 3: Dark mode toggle with proper theme handling
+  // ✅ CRITICAL FIX: Proper dark mode toggle
   const handleAppearanceChange = (key: keyof AppearanceSettings, value: string | boolean) => {
-    console.log('Appearance change:', key, value);
-    
     if (key === 'theme' && typeof value === 'string') {
       const themeValue = value as 'light' | 'dark' | 'system';
       
@@ -355,17 +351,20 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
         theme: themeValue
       }));
 
-      // Call parent toggle function if provided
+      // Toggle dark mode based on selection
       if (onToggleDarkMode) {
-        if (themeValue === 'system') {
+        if (themeValue === 'dark' && !propDarkMode) {
+          // Switch to dark
+          onToggleDarkMode();
+        } else if (themeValue === 'light' && propDarkMode) {
+          // Switch to light
+          onToggleDarkMode();
+        } else if (themeValue === 'system') {
+          // Use system preference
           const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
           if (prefersDark !== propDarkMode) {
             onToggleDarkMode();
           }
-        } else if (themeValue === 'dark' && !propDarkMode) {
-          onToggleDarkMode();
-        } else if (themeValue === 'light' && propDarkMode) {
-          onToggleDarkMode();
         }
       }
     } else if (key === 'fontSize' && typeof value === 'string') {
@@ -431,7 +430,6 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
     return 'Strong';
   };
 
-  // ✅ FIX 4: Determine current theme correctly
   const getCurrentTheme = () => {
     if (appearanceSettings.theme === 'system') {
       return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -439,17 +437,9 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
     return appearanceSettings.theme;
   };
 
-  // ✅ FIX 5: Check if theme button should be active
   const isThemeActive = (themeValue: string) => {
     return appearanceSettings.theme === themeValue;
   };
-
-  // Debug logging
-  useEffect(() => {
-    console.log('User data:', user);
-    console.log('Created at:', user?.createdAt);
-    console.log('Formatted:', formatMemberSince(user?.createdAt));
-  }, [user]);
 
   return (
     <div className="min-h-screen">
@@ -723,7 +713,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                         >
                           {showPassword.current ? <EyeOff size={20} /> : <Eye size={20} />}
                         </button>
-                        </div>
+                      </div>
                     </div>
 
                     <div>
@@ -749,7 +739,6 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                         </button>
                       </div>
                       
-                      {/* Password Strength Indicator */}
                       {securitySettings.newPassword && (
                         <div className="mt-2">
                           <div className="flex items-center justify-between mb-1">
