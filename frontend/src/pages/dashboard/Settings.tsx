@@ -70,7 +70,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
   });
 
   const [appearanceSettings, setAppearanceSettings] = useState<AppearanceSettings>({
-    theme: 'system',
+    theme: 'light',
     fontSize: 'medium',
     reduceAnimations: false,
     highContrast: false
@@ -107,25 +107,16 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
         if (savedAppearance) {
           const appearance = JSON.parse(savedAppearance);
           setAppearanceSettings(appearance);
-          // Apply font size on load
           applyFontSize(appearance.fontSize);
+        } else {
+          // Set initial theme based on prop
+          setAppearanceSettings(prev => ({
+            ...prev,
+            theme: propDarkMode ? 'dark' : 'light'
+          }));
         }
         if (savedLanguage) {
           setLanguageSettings(JSON.parse(savedLanguage));
-        }
-
-        // Sync appearance settings with current dark mode state
-        if (propDarkMode !== undefined) {
-          setAppearanceSettings(prev => {
-            // Only update if theme is not 'system'
-            if (prev.theme !== 'system') {
-              return {
-                ...prev,
-                theme: propDarkMode ? 'dark' : 'light'
-              };
-            }
-            return prev;
-          });
         }
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -133,6 +124,16 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
     };
 
     loadSettings();
+  }, []);
+
+  // Sync appearance settings when darkMode prop changes
+  useEffect(() => {
+    if (propDarkMode !== undefined) {
+      setAppearanceSettings(prev => ({
+        ...prev,
+        theme: propDarkMode ? 'dark' : 'light'
+      }));
+    }
   }, [propDarkMode]);
 
   // Calculate password strength
@@ -211,13 +212,40 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
     }
   };
 
-  // ✅ FIXED: Format the member since date from Firestore timestamp
-  const formatMemberSince = (dateString: string | undefined) => {
-    if (!dateString) return 'Unknown';
+  // ✅ FIX 1: Format the member since date from Firestore timestamp
+  const formatMemberSince = (dateValue: any) => {
+    if (!dateValue) {
+      console.log('No date value provided');
+      return 'Unknown';
+    }
     
     try {
-      const date = new Date(dateString);
+      let date: Date;
+      
+      // Handle Firestore Timestamp object
+      if (dateValue && typeof dateValue === 'object' && 'toDate' in dateValue) {
+        date = dateValue.toDate();
+      }
+      // Handle ISO string
+      else if (typeof dateValue === 'string') {
+        date = new Date(dateValue);
+      }
+      // Handle Date object
+      else if (dateValue instanceof Date) {
+        date = dateValue;
+      }
+      // Handle timestamp number
+      else if (typeof dateValue === 'number') {
+        date = new Date(dateValue);
+      }
+      else {
+        console.log('Unknown date format:', dateValue);
+        return 'Unknown';
+      }
+      
+      // Check if date is valid
       if (isNaN(date.getTime())) {
+        console.log('Invalid date:', dateValue);
         return 'Unknown';
       }
       
@@ -226,17 +254,41 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
         year: 'numeric' 
       });
     } catch (error) {
-      console.error('Error formatting member since date:', error);
+      console.error('Error formatting member since date:', error, dateValue);
       return 'Unknown';
     }
   };
 
-  // ✅ FIXED: Format date for display
-  const formatDate = (dateString: string | undefined) => {
-    if (!dateString) return 'Not provided';
+  // ✅ FIX 2: Format date for display
+  const formatDate = (dateValue: any) => {
+    if (!dateValue) {
+      return 'Not provided';
+    }
     
     try {
-      const date = new Date(dateString);
+      let date: Date;
+      
+      // Handle Firestore Timestamp object
+      if (dateValue && typeof dateValue === 'object' && 'toDate' in dateValue) {
+        date = dateValue.toDate();
+      }
+      // Handle ISO string
+      else if (typeof dateValue === 'string') {
+        date = new Date(dateValue);
+      }
+      // Handle Date object
+      else if (dateValue instanceof Date) {
+        date = dateValue;
+      }
+      // Handle timestamp number
+      else if (typeof dateValue === 'number') {
+        date = new Date(dateValue);
+      }
+      else {
+        return 'Not provided';
+      }
+      
+      // Check if date is valid
       if (isNaN(date.getTime())) {
         return 'Not provided';
       }
@@ -290,37 +342,33 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
     }));
   };
 
-  // ✅ FIXED: Dark mode toggle with proper theme handling
+  // ✅ FIX 3: Dark mode toggle with proper theme handling
   const handleAppearanceChange = (key: keyof AppearanceSettings, value: string | boolean) => {
-    if (key === 'theme' && onToggleDarkMode) {
+    console.log('Appearance change:', key, value);
+    
+    if (key === 'theme' && typeof value === 'string') {
       const themeValue = value as 'light' | 'dark' | 'system';
       
-      // Update appearance settings first
+      // Update local state
       setAppearanceSettings(prev => ({
         ...prev,
         theme: themeValue
       }));
 
-      // Handle theme change
-      if (themeValue === 'system') {
-        // Use system preference
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        if (prefersDark !== propDarkMode) {
+      // Call parent toggle function if provided
+      if (onToggleDarkMode) {
+        if (themeValue === 'system') {
+          const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          if (prefersDark !== propDarkMode) {
+            onToggleDarkMode();
+          }
+        } else if (themeValue === 'dark' && !propDarkMode) {
           onToggleDarkMode();
-        }
-      } else if (themeValue === 'dark') {
-        // Enable dark mode
-        if (!propDarkMode) {
-          onToggleDarkMode();
-        }
-      } else if (themeValue === 'light') {
-        // Disable dark mode
-        if (propDarkMode) {
+        } else if (themeValue === 'light' && propDarkMode) {
           onToggleDarkMode();
         }
       }
     } else if (key === 'fontSize' && typeof value === 'string') {
-      // Apply font size immediately
       applyFontSize(value);
       setAppearanceSettings(prev => ({
         ...prev,
@@ -361,7 +409,6 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
       return;
     }
     
-    // API call would go here
     alert("Password updated successfully!");
     
     setSecuritySettings(prev => ({
@@ -384,7 +431,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
     return 'Strong';
   };
 
-  // ✅ FIXED: Determine current theme correctly
+  // ✅ FIX 4: Determine current theme correctly
   const getCurrentTheme = () => {
     if (appearanceSettings.theme === 'system') {
       return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -392,19 +439,17 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
     return appearanceSettings.theme;
   };
 
-  // ✅ FIXED: Check if theme button should be active
+  // ✅ FIX 5: Check if theme button should be active
   const isThemeActive = (themeValue: string) => {
-    if (appearanceSettings.theme === 'system' && themeValue === 'system') {
-      return true;
-    }
-    if (appearanceSettings.theme === 'dark' && themeValue === 'dark' && propDarkMode) {
-      return true;
-    }
-    if (appearanceSettings.theme === 'light' && themeValue === 'light' && !propDarkMode) {
-      return true;
-    }
-    return false;
+    return appearanceSettings.theme === themeValue;
   };
+
+  // Debug logging
+  useEffect(() => {
+    console.log('User data:', user);
+    console.log('Created at:', user?.createdAt);
+    console.log('Formatted:', formatMemberSince(user?.createdAt));
+  }, [user]);
 
   return (
     <div className="min-h-screen">
@@ -489,7 +534,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                   <div className="flex items-center space-x-6">
                     <div className="relative">
                       <div className="w-24 h-24 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white text-3xl font-bold shadow-xl">
-                        {user?.firstName?.charAt(0)?.toUpperCase() || 'U'}{user?.lastName?.charAt(0)?.toUpperCase() || 'U'}
+                        {(user?.firstName?.charAt(0) || 'U').toUpperCase()}{(user?.lastName?.charAt(0) || 'U').toUpperCase()}
                       </div>
                       <div className="absolute bottom-0 right-0 w-8 h-8 bg-green-500 rounded-full border-4 border-white dark:border-gray-800"></div>
                     </div>
@@ -500,7 +545,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                       <p className="text-gray-600 dark:text-gray-300 mb-2">{user?.email || 'email@example.com'}</p>
                       <div className="flex items-center space-x-4 flex-wrap">
                         <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-500 text-white">
-                          {user?.accountType?.toUpperCase() || 'STUDENT'}
+                          {(user?.accountType || 'STUDENT').toUpperCase()}
                         </span>
                         <span className="text-sm text-gray-500 dark:text-gray-400">
                           Member since {formatMemberSince(user?.createdAt)}
@@ -570,7 +615,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                       <div className="flex justify-between items-start">
                         <span className="text-gray-500 dark:text-gray-400">Status</span>
                         <span className="font-medium text-green-600 dark:text-green-400">
-                          {user?.isActive ? 'Active' : 'Inactive'}
+                          {user?.isActive !== false ? 'Active' : 'Inactive'}
                         </span>
                       </div>
                     </div>
@@ -678,7 +723,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                         >
                           {showPassword.current ? <EyeOff size={20} /> : <Eye size={20} />}
                         </button>
-                      </div>
+                        </div>
                     </div>
 
                     <div>
@@ -836,7 +881,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                     ].map((theme) => (
                       <button
                         key={theme.value}
-                        onClick={() => handleAppearanceChange('theme', theme.value as 'light' | 'dark' | 'system')}
+                        onClick={() => handleAppearanceChange('theme', theme.value)}
                         className={`relative p-6 rounded-xl border-2 transition-all duration-200 ${
                           isThemeActive(theme.value)
                             ? 'border-orange-500 shadow-lg transform scale-[1.02]'
@@ -875,7 +920,7 @@ const Settings: React.FC<SettingsProps> = ({ darkMode: propDarkMode, onToggleDar
                       {['small', 'medium', 'large'].map((size) => (
                         <button
                           key={size}
-                          onClick={() => handleAppearanceChange('fontSize', size as 'small' | 'medium' | 'large')}
+                          onClick={() => handleAppearanceChange('fontSize', size)}
                           className={`flex-1 py-3 rounded-lg transition-all duration-200 ${
                             appearanceSettings.fontSize === size
                               ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-md'
