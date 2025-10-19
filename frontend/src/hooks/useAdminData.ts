@@ -40,7 +40,7 @@ export const useAdminData = (endpoint: string) => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = `${import.meta.env.VITE_API_URL}` || 'http://localhost:8000';
+      const baseURL = `${import.meta.env.VITE_API_URL}`;
       const response = await fetch(`${baseURL}${endpoint}`, {
         method: 'GET',
         headers,

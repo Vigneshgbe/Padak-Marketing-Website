@@ -20,6 +20,8 @@ import {
   LogIn
 } from "lucide-react";
 
+const API_BASE = import.meta.env.VITE_API_URL;
+
 const fetchCourses = async () => {
   try {
     const courses = await apiService.get('/courses');

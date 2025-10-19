@@ -1,9 +1,5 @@
 // src/utils/dateHelpers.ts
 
-/**
- * Safely converts various date formats to a Date object
- * Handles Firestore Timestamps, ISO strings, and Date objects
- */
 export const safeDate = (date: any): Date | null => {
   if (!date) return null;
 
