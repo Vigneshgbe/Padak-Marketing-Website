@@ -1,15 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Users, BookOpen, UserCheck, BarChart, MessageSquare, ChevronRight, RefreshCw, AlertCircle } from 'lucide-react';
 
-/**
- * AdminOverview Component - Production Ready
- * 
- * Backend: http://localhost:5000
- * Frontend: http://localhost:8080 (or 3000)
- */
-
 // ⚙️ CONFIGURATION - Change this for production
-const API_BASE_URL = 'http://localhost:5000';
+const API_BASE_URL = `${import.meta.env.VITE_API_URL}` || 'http://localhost:5000';
 
 // StatCard Component
 const StatCard = ({ title, value, icon, color }) => (

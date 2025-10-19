@@ -90,7 +90,7 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, stats, onView
       setCoursesLoading(true);
       setCoursesError(null);
       try {
-        const response = await fetch(`http://localhost:5000/api/users/${user.id}/enrollments`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/users/${user.id}/enrollments`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -123,7 +123,7 @@ const StudentDashboard: React.FC<StudentDashboardProps> = ({ user, stats, onView
       setInternshipsLoading(true);
       setInternshipsError(null);
       try {
-        const response = await fetch(`http://localhost:5000/api/users/${user.id}/internship-submissions`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/users/${user.id}/internship-submissions`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }

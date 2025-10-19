@@ -172,7 +172,7 @@ const ProfessionalDashboard: React.FC<ProfessionalDashboardProps> = ({ user, sta
       setCoursesLoading(true);
       setCoursesError(null);
       try {
-        const response = await fetch(`http://localhost:5000/api/users/${user.id}/enrollments`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/users/${user.id}/enrollments`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
@@ -198,7 +198,7 @@ const ProfessionalDashboard: React.FC<ProfessionalDashboardProps> = ({ user, sta
       setInternshipsLoading(true);
       setInternshipsError(null);
       try {
-        const response = await fetch(`http://localhost:5000/api/users/${user.id}/internship-submissions`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/users/${user.id}/internship-submissions`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
@@ -225,7 +225,7 @@ const ProfessionalDashboard: React.FC<ProfessionalDashboardProps> = ({ user, sta
       setServicesError(null);
       try {
         // This endpoint will now fetch from 'services' table joined with 'service_categories'
-        const response = await fetch(`http://localhost:5000/api/services`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/services`, {
            headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
@@ -251,7 +251,7 @@ const ProfessionalDashboard: React.FC<ProfessionalDashboardProps> = ({ user, sta
       setRequestsLoading(true);
       setRequestsError(null);
       try {
-        const response = await fetch(`http://localhost:5000/api/users/${user.id}/service-requests`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/users/${user.id}/service-requests`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
@@ -326,7 +326,7 @@ const ProfessionalDashboard: React.FC<ProfessionalDashboardProps> = ({ user, sta
         additionalRequirements: requestData.additionalRequirements,
       };
 
-      const response = await fetch(`http://localhost:5000/api/service-requests`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/service-requests`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

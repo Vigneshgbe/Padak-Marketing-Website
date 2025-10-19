@@ -1,9 +1,5 @@
 // src/pages/dashboard/Internship.tsx
 import React, { useState, useEffect, useCallback } from "react";
-// IMPORTANT: Removed Header and Footer imports. This component is designed to be embedded
-// within a dashboard layout that provides its own Header and Footer.
-// import { Header } from "@/components/Header";
-// import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -182,7 +178,7 @@ export default function InternshipContent() { // This component is named Interns
     setLoadingAllInternships(true);
     setErrorAllInternships(null);
     try {
-      const response = await fetch('http://localhost:5000/api/internships');
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/internships`);
       if (!response.ok) {
         throw new Error(`HTTP error! Status: ${response.status} - ${response.statusText}`);
       }
@@ -209,7 +205,7 @@ export default function InternshipContent() { // This component is named Interns
     }
 
     try {
-      const response = await fetch('http://localhost:5000/api/user/internship-applications', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/user/internship-applications`, {
         headers: { 'Authorization': `Bearer ${authData.token}` }
       });
 
@@ -294,7 +290,7 @@ export default function InternshipContent() { // This component is named Interns
     setApplicationMessage('');
 
     try {
-      const response = await fetch(`http://localhost:5000/api/internships/${selectedInternship.id}/apply`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/internships/${selectedInternship.id}/apply`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -167,7 +167,7 @@ const AssignmentSubmissions: React.FC = () => {
 
   const downloadSubmission = async (submissionId: string, fileName: string) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/assignments/download-submission/${submissionId}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/assignments/download-submission/${submissionId}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token') || localStorage.getItem('authToken')}`
         }

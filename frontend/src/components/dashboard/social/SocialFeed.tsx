@@ -79,7 +79,7 @@ const SocialFeed: React.FC = () => {
       }
       setError(null);
 
-      const response = await fetch(`http://localhost:5000/api/posts?page=${pageNum}&limit=10`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/posts?page=${pageNum}&limit=10`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -181,7 +181,7 @@ const SocialFeed: React.FC = () => {
     if (selectedImage) formData.append('image', selectedImage);
 
     try {
-      const response = await fetch('http://localhost:5000/api/posts', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/posts`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -210,7 +210,7 @@ const SocialFeed: React.FC = () => {
     if (!editContent.trim()) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/posts/${postId}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/posts/${postId}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -235,7 +235,7 @@ const SocialFeed: React.FC = () => {
     if (!window.confirm('Are you sure you want to delete this post?')) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/posts/${postId}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/posts/${postId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -253,7 +253,7 @@ const SocialFeed: React.FC = () => {
 
   const handleEngagement = async (postId: number, type: string, content = '') => {
     try {
-      const response = await fetch(`http://localhost:5000/api/posts/${postId}/${type}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/posts/${postId}/${type}`, {
         method: type === 'like' || type === 'bookmark' ?
           (posts.find(p => p.id === postId)?.[`has_${type}d`] ? 'DELETE' : 'POST') :
           'POST',
@@ -309,7 +309,7 @@ const SocialFeed: React.FC = () => {
       alert('Post link copied to clipboard!');
 
       // Track share
-      await fetch(`http://localhost:5000/api/posts/${postId}/share`, {
+      await fetch(`${import.meta.env.VITE_API_URL}/api/posts/${postId}/share`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -332,7 +332,7 @@ const SocialFeed: React.FC = () => {
   const getImageUrl = (path: string | null) => {
     if (!path) return '';
     if (path.startsWith('http')) return path;
-    return `http://localhost:5000${path}`;
+    return `${import.meta.env.VITE_API_URL}${path}`;
   };
 
   if (loading) {

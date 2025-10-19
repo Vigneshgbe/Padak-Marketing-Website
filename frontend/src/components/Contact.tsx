@@ -160,7 +160,7 @@ export const Contact = () => {
 
       console.log('Request data:', requestData);
 
-      const response = await fetch('http://localhost:5000/api/contact', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/contact`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -239,7 +239,7 @@ export const Contact = () => {
       
       if (error instanceof Error) {
         if (error.message.includes('fetch') || error.name === 'NetworkError') {
-          errorMessage = 'Unable to connect to server. Please check if the server is running on http://localhost:5000';
+          errorMessage = 'Unable to connect to server. Please check if the server is running on VITE_API_URL';
         } else if (error.message.includes('CORS')) {
           errorMessage = 'CORS error. Please check server configuration.';
         } else if (error.message.includes('JSON')) {

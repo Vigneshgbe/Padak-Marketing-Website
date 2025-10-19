@@ -147,7 +147,7 @@ const Internships: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch('http://localhost:5000/api/internships');
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/internships`);
         if (!response.ok) {
           throw new Error(`HTTP error! Status: ${response.status} - ${response.statusText}`);
         }
@@ -203,7 +203,7 @@ const Internships: React.FC = () => {
     setApplicationMessage('');
 
     try {
-      const response = await fetch(`http://localhost:5000/api/internships/${selectedInternship.id}/apply`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/internships/${selectedInternship.id}/apply`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
