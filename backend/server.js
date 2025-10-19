@@ -401,7 +401,6 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
-// Login endpoint
 // Login endpoint - ENHANCED WITH DEBUGGING
 app.post('/api/login', async (req, res) => {
   const { email, password, rememberMe } = req.body;

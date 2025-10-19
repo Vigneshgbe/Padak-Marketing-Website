@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { BookOpen, Clock, User, Play, RefreshCw } from 'lucide-react';
 import { Enrollment } from '../../lib/types';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_BASE = import.meta.env.VITE_API_URL;
 
 const MyCourses: React.FC = () => {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
