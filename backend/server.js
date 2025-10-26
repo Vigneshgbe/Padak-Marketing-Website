@@ -9,7 +9,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const app = express();
-const port = process.env.PORT; // || 5000;
+const port = process.env.PORT || 5000;
 
 // Firebase Client SDK with compat mode
 const firebase = require('firebase/compat/app');
@@ -153,10 +153,10 @@ const paymentProofUpload = multer({
 });
 
 // ===== CORS configuration =====
-const allowedOrigins = [process.env.FRONTEND_URL].filter(Boolean);
+const allowedOrigins = [process.env.FRONTEND_URL, 'https://padak.onrender.com/'].filter(Boolean);
 
 app.use(cors({
-  origin: [process.env.FRONTEND_URL], 
+  origin: allowedOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
