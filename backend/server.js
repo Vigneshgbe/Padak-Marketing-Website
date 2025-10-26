@@ -152,54 +152,38 @@ const paymentProofUpload = multer({
   }
 });
 
-// ===== CORS configuration =====
-const allowedOrigins = ['https://padak.onrender.com'].filter(Boolean);
-
-// More comprehensive CORS configuration
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.log('Blocked by CORS:', origin);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  exposedHeaders: ['Content-Length', 'X-Request-Id'],
-  maxAge: 86400, 
-  preflightContinue: false,
-  optionsSuccessStatus: 204
-}));
-
-// Handle preflight requests explicitly
-app.options('*', cors());
-
-// Additional headers for all responses
+// CRITICAL: Handle CORS BEFORE anything else
 app.use((req, res, next) => {
+  const allowedOrigins = [
+    'https://padak.onrender.com',
+    'http://localhost:3000'
+  ];
+  
   const origin = req.headers.origin;
   
-  // Check if origin is in allowed list
   if (allowedOrigins.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   }
-  
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Max-Age', '86400');
   
-  // Handle preflight
+  // Handle preflight immediately
   if (req.method === 'OPTIONS') {
-    return res.sendStatus(204);
+    res.sendStatus(204);
+    return;
   }
   
   next();
 });
+
+// Then add the cors package as backup
+const cors = require('cors');
+app.use(cors({
+  origin: ['https://padak.onrender.com', 'http://localhost:3000'],
+  credentials: true
+}));
 
 // Serve the static files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
