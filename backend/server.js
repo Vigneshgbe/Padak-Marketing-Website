@@ -179,7 +179,6 @@ app.use((req, res, next) => {
 });
 
 // Then add the cors package as backup
-const cors = require('cors');
 app.use(cors({
   origin: ['https://padak.onrender.com', 'http://localhost:3000'],
   credentials: true
