@@ -168,6 +168,7 @@ app.use(cors({
 app.use('/uploads', (req, res, next) => {
   // Set CORS headers for images
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cross-Origin-Opener-Policy', 'cross-origin');
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
   
