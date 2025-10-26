@@ -42,7 +42,7 @@ const PaymentManagement: React.FC = () => {
 
   const fetchPayments = async () => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/payments`, {
+      const response = await fetch(`https://padak-backend.onrender.com/api/admin/payments`, {
         headers: getAuthHeaders()
       });
       if (!response.ok) throw new Error('Failed to fetch payments');
@@ -57,7 +57,7 @@ const PaymentManagement: React.FC = () => {
 
   const verifyPayment = async (paymentId: number, status: 'approved' | 'rejected') => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/admin/payments/${paymentId}/verify`, {
+      const response = await fetch(`https://padak-backend.onrender.com/api/admin/payments/${paymentId}/verify`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -77,7 +77,7 @@ const PaymentManagement: React.FC = () => {
   };
 
   const viewProof = (proofFile: string) => {
-    window.open(`${import.meta.env.VITE_API_URL}/uploads/payments/${proofFile}`, '_blank');
+    window.open(`https://padak-backend.onrender.com/uploads/payments/${proofFile}`, '_blank');
   };
 
   const filteredPayments = payments.filter(payment => {

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { BookOpen, Clock, User, Play, RefreshCw } from 'lucide-react';
 import { Enrollment } from '../../lib/types';
 
-const API_BASE = import.meta.env.VITE_API_URL;
+const API_BASE = 'https://padak-backend.onrender.com';
 
 const MyCourses: React.FC = () => {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
@@ -61,7 +61,7 @@ const MyCourses: React.FC = () => {
       }
 
       // Fetch user's enrollments
-      console.log('📚 Fetching enrollments from:', `${API_BASE}/enrollments/my-courses`);
+      console.log('📚 Fetching enrollments from:', 'https://padak-backend.onrender.com/enrollments/my-courses');
       const response = await fetch(`${API_BASE}/enrollments/my-courses`, {
         method: 'GET',
         headers: getAuthHeaders(),

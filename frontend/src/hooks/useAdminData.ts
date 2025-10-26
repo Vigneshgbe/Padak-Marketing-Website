@@ -40,7 +40,7 @@ export const useAdminData = (endpoint: string) => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = `${import.meta.env.VITE_API_URL}`;
+      const baseURL = `https://padak-backend.onrender.com`;
       const response = await fetch(`${baseURL}${endpoint}`, {
         method: 'GET',
         headers,
