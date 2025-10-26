@@ -153,7 +153,7 @@ const paymentProofUpload = multer({
 });
 
 // ===== CORS configuration =====
-const allowedOrigins = [process.env.FRONTEND_URL, 'https://padak.onrender.com/'].filter(Boolean);
+const allowedOrigins = ['https://padak.onrender.com/'].filter(Boolean);
 
 app.use(cors({
   origin: allowedOrigins,
