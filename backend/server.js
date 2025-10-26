@@ -155,36 +155,47 @@ const paymentProofUpload = multer({
 // ===== CORS configuration =====
 const allowedOrigins = ['https://padak.onrender.com'].filter(Boolean);
 
+// More comprehensive CORS configuration
 app.use(cors({
-  origin: allowedOrigins,
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.log('Blocked by CORS:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Content-Length', 'X-Request-Id'],
+  maxAge: 86400, 
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
 
-// ==================== STATIC FILE SERVING ====================
+// Handle preflight requests explicitly
+app.options('*', cors());
 
-// Serve static files from uploads directory with proper headers
-app.use('/uploads', (req, res, next) => {
-  // Set CORS headers for images
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cross-Origin-Opener-Policy', 'cross-origin');
-  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-  res.setHeader('Access-Control-Allow-Methods', 'GET');
+// Additional headers for all responses
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
   
-  // Set proper content-type based on file extension
-  const ext = path.extname(req.path).toLowerCase();
-  const contentTypes = {
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif',
-    '.webp': 'image/webp',
-    '.svg': 'image/svg+xml'
-  };
+  // Check if origin is in allowed list
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
   
-  if (contentTypes[ext]) {
-    res.setHeader('Content-Type', contentTypes[ext]);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
   }
   
   next();
