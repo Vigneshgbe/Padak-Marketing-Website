@@ -178,7 +178,7 @@ export default function InternshipContent() { // This component is named Interns
     setLoadingAllInternships(true);
     setErrorAllInternships(null);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/internships`);
+      const response = await fetch(`https://padak-backend.onrender.com/api/internships`);
       if (!response.ok) {
         throw new Error(`HTTP error! Status: ${response.status} - ${response.statusText}`);
       }
@@ -205,7 +205,7 @@ export default function InternshipContent() { // This component is named Interns
     }
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/user/internship-applications`, {
+      const response = await fetch(`https://padak-backend.onrender.com/api/user/internship-applications`, {
         headers: { 'Authorization': `Bearer ${authData.token}` }
       });
 
@@ -290,7 +290,7 @@ export default function InternshipContent() { // This component is named Interns
     setApplicationMessage('');
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/internships/${selectedInternship.id}/apply`, {
+      const response = await fetch(`https://padak-backend.onrender.com/api/internships/${selectedInternship.id}/apply`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

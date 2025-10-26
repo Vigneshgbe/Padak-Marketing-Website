@@ -9,7 +9,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const app = express();
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 3306;
 
 // Firebase Client SDK with compat mode
 const firebase = require('firebase/compat/app');

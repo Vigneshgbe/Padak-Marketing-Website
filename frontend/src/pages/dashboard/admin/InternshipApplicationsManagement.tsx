@@ -117,7 +117,7 @@ const InternshipApplicationsManagement: React.FC = () => {
         return;
       }
 
-      const baseURL = `${import.meta.env.VITE_API_URL}` || 'http://localhost:5000';
+      const baseURL = 'https://padak-backend.onrender.com';
       console.log('Fetching applications from:', `${baseURL}/api/admin/internships/applications`);
       const response = await fetch(`${baseURL}/api/admin/internships/applications`, {
         method: 'GET',
@@ -181,7 +181,7 @@ const InternshipApplicationsManagement: React.FC = () => {
         return;
       }
 
-      const baseURL = `${import.meta.env.VITE_API_URL}` || 'http://localhost:5000';
+      const baseURL = 'https://padak-backend.onrender.com';
       const response = await fetch(`${baseURL}/api/admin/internships/applications/${applicationId}/status`, {
         method: 'PATCH',
         headers,

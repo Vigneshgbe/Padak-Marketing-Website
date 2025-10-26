@@ -58,7 +58,7 @@ const AssignmentManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = `${import.meta.env.VITE_API_URL}` || 'http://localhost:5000';
+      const baseURL = 'https://padak-backend.onrender.com';
       const response = await fetch(`${baseURL}/api/admin/assignments`, {
         method: 'GET',
         headers,
@@ -90,7 +90,7 @@ const AssignmentManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = `${import.meta.env.VITE_API_URL}` || 'http://localhost:5000';
+      const baseURL = 'https://padak-backend.onrender.com';
       const response = await fetch(`${baseURL}/api/admin/courses`, {
         method: 'GET',
         headers,
@@ -184,7 +184,7 @@ const AssignmentManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = `${import.meta.env.VITE_API_URL}` || 'http://localhost:5000';
+      const baseURL = 'https://padak-backend.onrender.com';
       const url = modalType === 'create' 
         ? `${baseURL}/api/admin/assignments`
         : `${baseURL}/api/admin/assignments/${selectedAssignment?.id}`;
@@ -237,7 +237,7 @@ const AssignmentManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = `${import.meta.env.VITE_API_URL}` || 'http://localhost:5000';
+      const baseURL = 'https://padak-backend.onrender.com';
       const response = await fetch(`${baseURL}/api/admin/assignments/${selectedAssignment.id}`, {
         method: 'DELETE',
         headers,

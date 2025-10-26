@@ -56,7 +56,7 @@ const ServiceRequests: React.FC = () => {
       }
 
       // Use hardcoded base URL
-      const baseURL = `${import.meta.env.VITE_API_URL}` || 'http://localhost:5000';
+      const baseURL = 'https://padak-backend.onrender.com';
       const response = await fetch(`${baseURL}/api/admin/service-requests`, {
         method: 'GET',
         headers,
@@ -204,7 +204,7 @@ const ServiceRequests: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = `${import.meta.env.VITE_API_URL}` || 'http://localhost:5000';
+      const baseURL = 'https://padak-backend.onrender.com';
       const response = await fetch(`${baseURL}/api/admin/service-requests/${selectedRequest.id}`, {
         method: 'DELETE',
         headers,
@@ -237,7 +237,7 @@ const ServiceRequests: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = `${import.meta.env.VITE_API_URL}` || 'http://localhost:5000';
+      const baseURL = 'https://padak-backend.onrender.com';
       const response = await fetch(`${baseURL}/api/admin/service-requests/${selectedRequest.id}`, {
         method: 'PUT',
         headers,

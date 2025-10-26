@@ -397,7 +397,7 @@ const AdminDashboard: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = `${import.meta.env.VITE_API_URL}`;
+      const baseURL = `https://padak-backend.onrender.com, ${import.meta.env.VITE_API_URL}`;
 
       // Fetch all data in parallel
       const fetchPromises = [
@@ -498,7 +498,7 @@ const AdminDashboard: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = `${import.meta.env.VITE_API_URL}`;
+      const baseURL = `https://padak-backend.onrender.com, ${import.meta.env.VITE_API_URL}`;
       let endpoint = '';
 
       switch (section) {
@@ -799,7 +799,7 @@ const AdminDashboard: React.FC = () => {
         'Authorization': `Bearer ${token}`
       };
 
-      const baseURL = `${import.meta.env.VITE_API_URL}`;
+      const baseURL = `https://padak-backend.onrender.com`;
       let endpoint = '';
 
       switch (activeSection) {
@@ -869,7 +869,7 @@ const AdminDashboard: React.FC = () => {
         'Authorization': `Bearer ${token}`
       };
 
-      const baseURL = `${import.meta.env.VITE_API_URL}`;
+      const baseURL = `https://padak-backend.onrender.com`;
       let endpoint = '';
 
       switch (activeSection) {
@@ -939,7 +939,7 @@ const AdminDashboard: React.FC = () => {
         'Authorization': `Bearer ${token}`
       };
 
-      const baseURL = `${import.meta.env.VITE_API_URL}`;
+      const baseURL = `https://padak-backend.onrender.com, ${import.meta.env.VITE_API_URL}`;
       let endpoint = '';
 
       switch (activeSection) {
