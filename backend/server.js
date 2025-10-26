@@ -155,8 +155,7 @@ const paymentProofUpload = multer({
 // CRITICAL: Handle CORS BEFORE anything else
 app.use((req, res, next) => {
   const allowedOrigins = [
-    'https://padak.onrender.com',
-    'http://localhost:3000'
+    'https://padak.onrender.com'
   ];
   
   const origin = req.headers.origin;
@@ -174,20 +173,18 @@ app.use((req, res, next) => {
     res.sendStatus(204);
     return;
   }
-  
   next();
 });
 
 // Then add the cors package as backup
 app.use(cors({
-  origin: ['https://padak.onrender.com', 'http://localhost:3000'],
+  origin: ['https://padak.onrender.com'],
   credentials: true
 }));
 
 // Serve the static files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
   setHeaders: (res, filePath) => {
-    // Cache images for better performance
     res.setHeader('Cache-Control', 'public, max-age=86400'); // 1 day
   }
 }));
