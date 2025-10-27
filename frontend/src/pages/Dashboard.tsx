@@ -75,7 +75,7 @@ const Dashboard: React.FC = () => {
       setIsLoadingData(true);
       try {
         // Fetch user stats
-        const statsResponse = await fetch(`https://localhost:5000/api/dashboard/stats`, {
+        const statsResponse = await fetch(`http://localhost:5000/api/dashboard/stats`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -93,7 +93,7 @@ const Dashboard: React.FC = () => {
 
         // Fetch enrolled courses if user is not admin
         if (user.accountType !== 'admin') {
-          const coursesResponse = await fetch(`https://localhost:5000/api/courses/enrolled`, {
+          const coursesResponse = await fetch(`http://localhost:5000/api/courses/enrolled`, {
             headers: {
               'Authorization': `Bearer ${token}`
             }
@@ -104,7 +104,7 @@ const Dashboard: React.FC = () => {
           }
 
           // Fetch internship applications
-          const internshipsResponse = await fetch(`https://localhost:5000/api/user/internship-applications`, {
+          const internshipsResponse = await fetch(`http://localhost:5000/api/user/internship-applications`, {
             headers: {
               'Authorization': `Bearer ${token}`
             }
@@ -116,7 +116,7 @@ const Dashboard: React.FC = () => {
 
           // Fetch service requests for professional/business/agency users
           if (['professional', 'business', 'agency'].includes(user.accountType)) {
-            const servicesResponse = await fetch(`https://localhost:5000/api/users/service-requests`, {
+            const servicesResponse = await fetch(`http://localhost:5000/api/users/service-requests`, {
               headers: {
                 'Authorization': `Bearer ${token}`
               }
@@ -128,7 +128,7 @@ const Dashboard: React.FC = () => {
           }
 
           // Fetch calendar events
-          const calendarResponse = await fetch(`https://localhost:5000/api/calendar/events`, {
+          const calendarResponse = await fetch(`http://localhost:5000/api/calendar/events`, {
             headers: {
               'Authorization': `Bearer ${token}`
             }

@@ -59,7 +59,7 @@ const ContactManagement: React.FC = () => {
         'Authorization': `Bearer ${token}`
       };
 
-      const baseURL = `https://localhost:5000`;
+      const baseURL = `http://localhost:5000`;
       
       console.log('Fetching contact messages...');
       
@@ -148,7 +148,7 @@ const ContactManagement: React.FC = () => {
         'Authorization': `Bearer ${token}`
       };
 
-      const baseURL = `https://localhost:5000`;
+      const baseURL = `http://localhost:5000`;
       const response = await fetch(`${baseURL}/api/admin/contact-messages/${selectedContact.id}`, {
         method: 'PUT',
         headers,
@@ -189,7 +189,7 @@ const ContactManagement: React.FC = () => {
         'Authorization': `Bearer ${token}`
       };
 
-      const baseURL = `https://localhost:5000`;
+      const baseURL = `http://localhost:5000`;
       const response = await fetch(`${baseURL}/api/admin/contact-messages/${selectedContact.id}`, {
         method: 'DELETE',
         headers,

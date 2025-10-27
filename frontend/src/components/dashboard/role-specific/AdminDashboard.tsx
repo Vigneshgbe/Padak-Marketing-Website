@@ -397,7 +397,7 @@ const AdminDashboard: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = `https://localhost:5000, ${import.meta.env.VITE_API_URL}`;
+      const baseURL = `http://localhost:5000, ${import.meta.env.VITE_API_URL}`;
 
       // Fetch all data in parallel
       const fetchPromises = [
@@ -498,7 +498,7 @@ const AdminDashboard: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = `https://localhost:5000, ${import.meta.env.VITE_API_URL}`;
+      const baseURL = `http://localhost:5000, ${import.meta.env.VITE_API_URL}`;
       let endpoint = '';
 
       switch (section) {
@@ -799,7 +799,7 @@ const AdminDashboard: React.FC = () => {
         'Authorization': `Bearer ${token}`
       };
 
-      const baseURL = `https://localhost:5000`;
+      const baseURL = `http://localhost:5000`;
       let endpoint = '';
 
       switch (activeSection) {
@@ -869,7 +869,7 @@ const AdminDashboard: React.FC = () => {
         'Authorization': `Bearer ${token}`
       };
 
-      const baseURL = `https://localhost:5000`;
+      const baseURL = `http://localhost:5000`;
       let endpoint = '';
 
       switch (activeSection) {
@@ -939,7 +939,7 @@ const AdminDashboard: React.FC = () => {
         'Authorization': `Bearer ${token}`
       };
 
-      const baseURL = `https://localhost:5000, ${import.meta.env.VITE_API_URL}`;
+      const baseURL = `http://localhost:5000, ${import.meta.env.VITE_API_URL}`;
       let endpoint = '';
 
       switch (activeSection) {

@@ -34,7 +34,7 @@ const CourseManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = `https://localhost:5000`;
+      const baseURL = `http://localhost:5000`;
       const response = await fetch(`${baseURL}/api/admin/courses`, {
         method: 'GET',
         headers,
@@ -84,7 +84,7 @@ const CourseManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = `https://localhost:5000`;
+      const baseURL = `http://localhost:5000`;
       const url = modalType === 'create' 
         ? `${baseURL}/api/admin/courses`
         : `${baseURL}/api/admin/courses/${selectedCourse?.id}`;
@@ -124,7 +124,7 @@ const CourseManagement: React.FC = () => {
       const formData = new FormData();
       formData.append('thumbnail', file);
 
-      const response = await fetch(`https://localhost:5000/api/admin/courses/${courseId}/thumbnail`, {
+      const response = await fetch(`http://localhost:5000/api/admin/courses/${courseId}/thumbnail`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -154,7 +154,7 @@ const CourseManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = `https://localhost:5000`;
+      const baseURL = `http://localhost:5000`;
       const response = await fetch(`${baseURL}/api/admin/courses/${selectedCourse.id}`, {
         method: 'DELETE',
         headers,

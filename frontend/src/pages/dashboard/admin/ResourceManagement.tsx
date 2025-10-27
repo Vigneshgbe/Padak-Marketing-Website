@@ -95,7 +95,7 @@ const ResourceManagement: React.FC = () => {
     return headers;
   };
 
-  const baseURL = 'https://localhost:5000';
+  const baseURL = 'http://localhost:5000';
 
   const fetchResources = async () => {
     try {

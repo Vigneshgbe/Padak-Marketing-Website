@@ -88,7 +88,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const login = async (email: string, password: string) => {
     try {
-      const response = await fetch(`https://localhost:5000/api/login`,  {
+      const response = await fetch(`http://localhost:5000/api/login`,  {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -145,7 +145,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // In your useAuth hook
 const refreshUser = async () => {
   try {
-    const response = await fetch(`https://localhost:5000/api/auth/me`, {
+    const response = await fetch(`http://localhost:5000/api/auth/me`, {
       headers: {
         'Authorization': `Bearer ${token}`
       }

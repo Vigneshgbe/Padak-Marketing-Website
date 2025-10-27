@@ -40,7 +40,7 @@ export const useAdminData = (endpoint: string) => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = `https://localhost:5000`;
+      const baseURL = `http://localhost:5000`;
       const response = await fetch(`${baseURL}${endpoint}`, {
         method: 'GET',
         headers,

@@ -125,7 +125,7 @@ const Assignments: React.FC = () => {
         formData.append('file', submissionFile);
       }
 
-      const baseURL = `https://localhost:5000/api`;
+      const baseURL = `http://localhost:5000/api`;
       const token = localStorage.getItem('token') || localStorage.getItem('authToken');
       
       const response = await fetch(`${baseURL}/assignments/submit`, {
@@ -171,7 +171,7 @@ const Assignments: React.FC = () => {
 
   const downloadSubmission = async (submissionId: string, fileName: string) => {
     try {
-      const baseURL = `https://localhost:5000/api`;
+      const baseURL = `http://localhost:5000/api`;
       const token = localStorage.getItem('token') || localStorage.getItem('authToken');
       const response = await fetch(`${baseURL}/assignments/download-submission/${submissionId}`, {
         headers: {

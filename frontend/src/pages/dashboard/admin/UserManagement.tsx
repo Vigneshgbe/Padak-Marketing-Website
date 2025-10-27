@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Edit, Trash2, Plus, Search, Filter, Key } from 'lucide-react';
 
 // ⚙️ CONFIGURATION - Change this for production
-const API_BASE_URL = 'https://localhost:5000';
+const API_BASE_URL = 'http://localhost:5000';
 
 interface User {
   id: string;

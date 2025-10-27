@@ -53,7 +53,7 @@ export const useProfile = () => {
       formData.append('avatar', file);
       
       const response = await fetch(
-       `https://localhost:5000/api/auth/avatar`,
+       `http://localhost:5000/api/auth/avatar`,
         {
           method: 'POST',
           headers: {

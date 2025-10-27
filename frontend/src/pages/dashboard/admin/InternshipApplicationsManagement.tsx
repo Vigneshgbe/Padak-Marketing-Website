@@ -117,7 +117,7 @@ const InternshipApplicationsManagement: React.FC = () => {
         return;
       }
 
-      const baseURL = 'https://localhost:5000';
+      const baseURL = 'http://localhost:5000';
       console.log('Fetching applications from:', `${baseURL}/api/admin/internships/applications`);
       const response = await fetch(`${baseURL}/api/admin/internships/applications`, {
         method: 'GET',
@@ -181,7 +181,7 @@ const InternshipApplicationsManagement: React.FC = () => {
         return;
       }
 
-      const baseURL = 'https://localhost:5000';
+      const baseURL = 'http://localhost:5000';
       const response = await fetch(`${baseURL}/api/admin/internships/applications/${applicationId}/status`, {
         method: 'PATCH',
         headers,

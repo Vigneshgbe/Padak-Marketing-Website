@@ -115,7 +115,7 @@ const InternshipManagement: React.FC = () => {
         return;
       }
 
-      const baseURL = 'https://localhost:5000';
+      const baseURL = 'http://localhost:5000';
       const response = await fetch(`${baseURL}/api/admin/internships`, {
         method: 'GET',
         headers,
@@ -181,7 +181,7 @@ const InternshipManagement: React.FC = () => {
         return;
       }
 
-      const baseURL = 'https://localhost:5000';
+      const baseURL = 'http://localhost:5000';
       const url = modalType === 'create' 
         ? `${baseURL}/api/admin/internships`
         : `${baseURL}/api/admin/internships/${selectedInternship?.id}`;
@@ -227,7 +227,7 @@ const InternshipManagement: React.FC = () => {
         return;
       }
 
-      const baseURL = 'https://localhost:5000';
+      const baseURL = 'http://localhost:5000';
       const response = await fetch(`${baseURL}/api/admin/internships/${selectedInternship.id}`, {
         method: 'DELETE',
         headers,

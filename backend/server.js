@@ -155,7 +155,7 @@ const paymentProofUpload = multer({
 // CRITICAL: Handle CORS BEFORE anything else
 app.use((req, res, next) => {
   const allowedOrigins = [
-    'https://localhost:8080',
+    'http://localhost:8080',
   ];
   
   const origin = req.headers.origin;
@@ -178,7 +178,7 @@ app.use((req, res, next) => {
 
 // Then add the cors package as backup
 app.use(cors({
-  origin: [ 'https://localhost:8080'],
+  origin: [ 'http://localhost:8080'],
   credentials: true
 }));
 
