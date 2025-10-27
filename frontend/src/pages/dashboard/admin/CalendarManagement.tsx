@@ -40,10 +40,13 @@ const CalendarManagement: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const navigate = useNavigate();
 
-  // Get API base URL
   const getBaseURL = () => {
-    return window.location.hostname === 'https://padak-backend.onrender.com' ? 'https://padak-backend.onrender.com'
-      : `${window.location.origin}`;
+    // Check if running on production (Render)
+    if (window.location.hostname === 'padak-backend.onrender.com') {
+      return 'https://padak-backend.onrender.com';
+    }
+    // Default to localhost for development
+    return 'http://localhost:5000';
   };
 
   // Get auth token with proper error handling
@@ -67,6 +70,32 @@ const CalendarManagement: React.FC = () => {
     navigate('/login');
   };
 
+  // ✅ FIX: Helper function to safely parse JSON responses
+  const safeJsonParse = async (response: Response) => {
+    const contentType = response.headers.get('content-type');
+    
+    // Check if response is JSON
+    if (contentType && contentType.includes('application/json')) {
+      try {
+        return await response.json();
+      } catch (error) {
+        console.error('Failed to parse JSON:', error);
+        throw new Error('Invalid JSON response from server');
+      }
+    }
+    
+    // If not JSON, get text to see what was returned
+    const text = await response.text();
+    console.error('Non-JSON response received:', text.substring(0, 200));
+    
+    // Check if it's HTML (likely an error page)
+    if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+      throw new Error(`Server returned HTML instead of JSON. Status: ${response.status}. This usually means the API endpoint doesn't exist or there's a server configuration issue.`);
+    }
+    
+    throw new Error(`Unexpected response format (Status: ${response.status})`);
+  };
+
   useEffect(() => {
     fetchEvents();
     fetchUsers();
@@ -88,7 +117,10 @@ const CalendarManagement: React.FC = () => {
       };
 
       const baseURL = getBaseURL();
-      const response = await fetch(`${baseURL}/api/admin/calendar-events`, {
+      const url = `${baseURL}/api/admin/calendar-events`;
+      console.log('Fetching events from:', url);
+      
+      const response = await fetch(url, {
         method: 'GET',
         headers
       });
@@ -99,25 +131,28 @@ const CalendarManagement: React.FC = () => {
       }
 
       if (response.ok) {
-        const data = await response.json();
+        const data = await safeJsonParse(response);
         setEvents(data);
         setError(null);
       } else {
-        const errorData = await response.json();
+        const errorData = await safeJsonParse(response);
         throw new Error(errorData.error || `Failed to fetch calendar events: ${response.status}`);
       }
     } catch (err) {
+      console.error('Error fetching events:', err);
       setError(err instanceof Error ? err.message : 'An error occurred while fetching events');
     } finally {
       setLoading(false);
     }
   };
 
+  // ✅ FIX: Improved fetchUsers with better error handling
   const fetchUsers = async () => {
     try {
       const token = getAuthToken();
       
       if (!token) {
+        console.warn('No auth token available for fetching users');
         return;
       }
 
@@ -127,22 +162,25 @@ const CalendarManagement: React.FC = () => {
       };
 
       const baseURL = getBaseURL();
-      console.log('Fetching users from:', `${baseURL}/api/admin/users`);
+      const url = `${baseURL}/api/admin/users`;
+      console.log('Fetching users from:', url);
       
-      const response = await fetch(`${baseURL}/api/admin/users`, {
+      const response = await fetch(url, {
         method: 'GET',
         headers
       });
 
       console.log('Users response status:', response.status);
+      console.log('Users response Content-Type:', response.headers.get('content-type'));
 
       if (response.status === 401) {
+        console.warn('Unauthorized access to users endpoint');
         handleAuthError();
         return;
       }
 
       if (response.ok) {
-        const data = await response.json();
+        const data = await safeJsonParse(response);
         console.log('Users data received:', data);
         
         // Handle both response formats: direct array or {users: [...]}
@@ -155,12 +193,19 @@ const CalendarManagement: React.FC = () => {
           setUsers([]);
         }
       } else {
-        const errorText = await response.text();
-        console.error('Failed to fetch users:', response.statusText, errorText);
+        // Try to parse error, but don't fail if it's not JSON
+        try {
+          const errorData = await safeJsonParse(response);
+          console.error('Failed to fetch users:', errorData);
+        } catch (parseError) {
+          console.error('Failed to fetch users (non-JSON error):', response.statusText);
+        }
         setUsers([]);
       }
     } catch (err) {
       console.error('Error fetching users:', err);
+      // Don't set the main error state, just log it
+      // Users dropdown is optional, so we don't want to break the whole page
       setUsers([]);
     }
   };
@@ -209,6 +254,8 @@ const CalendarManagement: React.FC = () => {
         method = 'PUT';
       }
 
+      console.log('Saving event to:', url);
+
       const response = await fetch(url, {
         method,
         headers,
@@ -224,10 +271,11 @@ const CalendarManagement: React.FC = () => {
         setIsModalOpen(false);
         await fetchEvents();
       } else {
-        const errorData = await response.json();
+        const errorData = await safeJsonParse(response);
         throw new Error(errorData.error || 'Failed to save calendar event');
       }
     } catch (err) {
+      console.error('Error saving event:', err);
       setError(err instanceof Error ? err.message : 'Failed to save calendar event');
     } finally {
       setSaving(false);
@@ -251,7 +299,10 @@ const CalendarManagement: React.FC = () => {
       };
 
       const baseURL = getBaseURL();
-      const response = await fetch(`${baseURL}/api/admin/calendar-events/${selectedEvent.id}`, {
+      const url = `${baseURL}/api/admin/calendar-events/${selectedEvent.id}`;
+      console.log('Deleting event from:', url);
+      
+      const response = await fetch(url, {
         method: 'DELETE',
         headers
       });
@@ -265,10 +316,11 @@ const CalendarManagement: React.FC = () => {
         setIsModalOpen(false);
         await fetchEvents();
       } else {
-        const errorData = await response.json();
+        const errorData = await safeJsonParse(response);
         throw new Error(errorData.error || 'Failed to delete calendar event');
       }
     } catch (err) {
+      console.error('Error deleting event:', err);
       setError(err instanceof Error ? err.message : 'Failed to delete calendar event');
     }
   };
