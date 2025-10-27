@@ -126,6 +126,13 @@ const Resources: React.FC = () => {
   };
 
   const handleResourceClick = (resource: Resource) => {
+    // ✅ FIX: Validate resource has an ID before proceeding
+    if (!resource || !resource.id) {
+      console.error('Invalid resource: missing ID', resource);
+      setError('Invalid resource data. Please refresh the page and try again.');
+      return;
+    }
+
     setSelectedResource(resource);
     
     // If resource is free or user has already purchased it, proceed directly
@@ -139,9 +146,23 @@ const Resources: React.FC = () => {
   };
 
   const handleAction = async (resource: Resource) => {
+    // ✅ FIX: Validate resource before attempting any action
+    if (!resource) {
+      console.error('No resource provided to handleAction');
+      setError('Invalid resource. Please try again.');
+      return;
+    }
+
     // Handle tool resources (external links)
     if (resource.type === 'tool' && resource.url) {
       window.open(resource.url, '_blank');
+      return;
+    }
+
+    // ✅ FIX: Validate resource ID before attempting download
+    if (!resource.id) {
+      console.error('Resource missing ID:', resource);
+      setError('Cannot download resource: Invalid resource ID');
       return;
     }
 
@@ -156,16 +177,19 @@ const Resources: React.FC = () => {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = resource.title;
+        a.download = resource.title || 'download';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
       } else {
-        console.error('Failed to download resource:', response.statusText);
+        const errorText = await response.text();
+        console.error('Failed to download resource:', response.statusText, errorText);
+        setError(`Failed to download: ${response.statusText}`);
       }
     } catch (error) {
       console.error('Error downloading resource:', error);
+      setError(error instanceof Error ? error.message : 'Error downloading resource');
     }
   };
 
@@ -275,6 +299,9 @@ const Resources: React.FC = () => {
 
   const filteredResources = resources
     .filter(resource => {
+      // ✅ FIX: Ensure resource has required properties
+      if (!resource || !resource.title) return false;
+
       // Filter by tab
       if (activeTab === 'free' && resource.is_premium) return false;
       if (activeTab === 'premium' && !resource.is_premium) return false;
@@ -284,14 +311,14 @@ const Resources: React.FC = () => {
         const searchLower = searchTerm.toLowerCase();
         return (
           resource.title.toLowerCase().includes(searchLower) ||
-          resource.description.toLowerCase().includes(searchLower) ||
-          resource.category.toLowerCase().includes(searchLower)
+          (resource.description || '').toLowerCase().includes(searchLower) ||
+          (resource.category || '').toLowerCase().includes(searchLower)
         );
       }
       
       return true;
     })
-    .sort((a, b) => a.title.localeCompare(b.title));
+    .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
 
   if (loading) {
     return (
@@ -307,7 +334,7 @@ const Resources: React.FC = () => {
       <div className="mb-8">
         <h1 className="text-2xl md:text-3xl font-bold">Resources</h1>
         <p className="text-gray-600 dark:text-gray-400">
-          Access course materials, templates, and tools for your {user?.account_type} account
+          Access course materials, templates, and tools for your {user?.account_type || 'account'}
         </p>
         
         {user?.subscription_plan === 'premium' && (
@@ -317,6 +344,22 @@ const Resources: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Error Display */}
+      {error && (
+        <div className="mb-6 p-4 bg-red-100 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+          <div className="flex items-center">
+            <AlertCircle className="text-red-500 mr-2" size={20} />
+            <span className="text-red-700 dark:text-red-300">{error}</span>
+            <button 
+              onClick={() => setError(null)} 
+              className="ml-auto text-red-500 hover:text-red-700"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Search and Filter */}
       <div className="mb-6 flex flex-col md:flex-row gap-4">
@@ -369,33 +412,34 @@ const Resources: React.FC = () => {
       {filteredResources.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredResources.map(resource => {
-            const IconComponent = iconMap[resource.icon_name] || FileText;
-            const hasAccess = !resource.is_premium || 
-                             purchasedResources.includes(resource.id) || 
+            // ✅ FIX: Safely handle resource properties with fallbacks
+            const IconComponent = iconMap[resource?.icon_name] || FileText;
+            const hasAccess = !resource?.is_premium || 
+                             (resource?.id && purchasedResources.includes(resource.id)) || 
                              user?.subscription_plan === 'premium';
             
             return (
               <div 
-                key={resource.id} 
+                key={resource?.id || Math.random()} 
                 className={`bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border-l-4 hover:shadow-lg transition-shadow cursor-pointer ${
                   hasAccess ? 'border-blue-500' : 'border-gray-300'
                 }`}
                 onClick={() => handleResourceClick(resource)}
               >
                 <div className="flex items-center mb-4">
-                  <div className={`text-${resource.button_color}-500 mr-3`}>
+                  <div className={`text-${resource?.button_color || 'blue'}-500 mr-3`}>
                     <IconComponent size={20} />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-bold text-lg">{resource.title}</h3>
+                    <h3 className="font-bold text-lg">{resource?.title || 'Untitled Resource'}</h3>
                     <div className="flex items-center space-x-2 mt-1">
                       <span className="inline-block px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs font-medium rounded-full">
-                        {resource.category}
+                        {resource?.category || 'General'}
                       </span>
                       <span className="inline-block px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs font-medium rounded-full capitalize">
-                        {resource.type}
+                        {resource?.type || 'resource'}
                       </span>
-                      {resource.is_premium && (
+                      {resource?.is_premium && (
                         <span className="inline-block px-2 py-1 bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400 text-xs font-medium rounded-full">
                           {hasAccess ? 'Unlocked' : 'Premium'}
                         </span>
@@ -406,17 +450,17 @@ const Resources: React.FC = () => {
 
                 <div className="mb-4">
                   <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                    {resource.description}
+                    {resource?.description || 'No description available'}
                   </p>
-                  {resource.size && (
+                  {resource?.size && (
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">File Size: {resource.size}</p>
                   )}
                 </div>
 
                 <div className="flex justify-between items-center">
-                  {resource.is_premium ? (
+                  {resource?.is_premium ? (
                     <div className={`font-medium ${hasAccess ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
-                      {hasAccess ? 'Available' : `$${resource.price || 9.99}`}
+                      {hasAccess ? 'Available' : `$${resource?.price || 9.99}`}
                     </div>
                   ) : (
                     <div className="text-green-600 dark:text-green-400 font-medium">
@@ -431,11 +475,11 @@ const Resources: React.FC = () => {
                     }}
                     className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
                       hasAccess 
-                        ? `${buttonColorClasses[resource.button_color] || buttonColorClasses.blue} text-white`
+                        ? `${buttonColorClasses[resource?.button_color] || buttonColorClasses.blue} text-white`
                         : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
                     }`}
                   >
-                    {resource.type === 'tool' && resource.url ? (
+                    {resource?.type === 'tool' && resource?.url ? (
                       <ExternalLink size={16} />
                     ) : hasAccess ? (
                       <Download size={16} />
@@ -443,7 +487,7 @@ const Resources: React.FC = () => {
                       <Lock size={16} />
                     )}
                     <span>
-                      {resource.type === 'tool' && resource.url ? 'Visit Tool' : 
+                      {resource?.type === 'tool' && resource?.url ? 'Visit Tool' : 
                        hasAccess ? 'Download' : 'Get Access'}
                     </span>
                   </button>
@@ -474,8 +518,8 @@ const Resources: React.FC = () => {
             </div>
             
             <div className="mb-6">
-              <h4 className="text-lg font-semibold mb-2">{selectedResource.title}</h4>
-              <p className="text-gray-600 dark:text-gray-400">{selectedResource.description}</p>
+              <h4 className="text-lg font-semibold mb-2">{selectedResource?.title || 'Resource'}</h4>
+              <p className="text-gray-600 dark:text-gray-400">{selectedResource?.description || ''}</p>
             </div>
             
             <div className="space-y-4">
@@ -514,7 +558,7 @@ const Resources: React.FC = () => {
                   Buy just this resource for one-time use
                 </p>
                 <div className="flex items-center">
-                  <span className="text-2xl font-bold">${selectedResource.price || 9.99}</span>
+                  <span className="text-2xl font-bold">${selectedResource?.price || 9.99}</span>
                   <span className="text-sm text-gray-500 ml-1">/ one-time</span>
                 </div>
               </div>
@@ -559,11 +603,11 @@ const Resources: React.FC = () => {
             <div className="p-6">
               <div className="mb-6">
                 <h4 className="text-lg font-semibold mb-2">
-                  {selectedPlan === 'individual' ? selectedResource.title : 'Premium Subscription'}
+                  {selectedPlan === 'individual' ? selectedResource?.title : 'Premium Subscription'}
                 </h4>
                 <p className="text-gray-600 dark:text-gray-400 mb-4">
                   {selectedPlan === 'individual' 
-                    ? selectedResource.description 
+                    ? selectedResource?.description 
                     : 'Unlimited access to all premium resources'}
                 </p>
                 
@@ -571,7 +615,7 @@ const Resources: React.FC = () => {
                   <div className="flex justify-between items-center">
                     <span className="font-medium">Total Amount:</span>
                     <span className="text-xl font-bold">
-                      ${selectedPlan === 'individual' ? (selectedResource.price || 9.99) : '49.99'}
+                      ${selectedPlan === 'individual' ? (selectedResource?.price || 9.99) : '49.99'}
                     </span>
                   </div>
                 </div>
