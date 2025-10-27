@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { BookOpen, Clock, User, Play, RefreshCw } from 'lucide-react';
 import { Enrollment } from '../../lib/types';
 
-const API_BASE = 'https://padak-backend.onrender.com';
+const API_BASE = 'https://padak-backend.onrender.com/api'; // ✅ Added /api
 
 const MyCourses: React.FC = () => {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
@@ -30,7 +30,6 @@ const MyCourses: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // Get user info from token
       const token = localStorage.getItem('token') || localStorage.getItem('authToken');
       
       if (!token) {
@@ -41,28 +40,12 @@ const MyCourses: React.FC = () => {
 
       console.log('🔍 Fetching enrollments with token:', token ? 'Present' : 'Missing');
 
-      // Try to auto-link guest enrollments first
-      try {
-        console.log('🔗 Attempting to link guest enrollments...');
-        const linkResponse = await fetch(`${API_BASE}/link-guest-enrollments`, {
-          method: 'POST',
-          headers: getAuthHeaders(),
-          credentials: 'include'
-        });
+      // ✅ REMOVED: Guest enrollment linking (happens automatically during login)
+      // The server handles this in the login endpoint
 
-        if (linkResponse.ok) {
-          const linkData = await linkResponse.json();
-          console.log('✅ Guest enrollments linked:', linkData);
-        } else {
-          console.log('⚠️ No guest enrollments to link or already linked');
-        }
-      } catch (linkError) {
-        console.log('⚠️ Link guest enrollments failed (might be already linked):', linkError);
-      }
-
-      // Fetch user's enrollments
-      console.log('📚 Fetching enrollments from:', 'https://padak-backend.onrender.com/enrollments/my-courses');
-      const response = await fetch(`${API_BASE}/enrollments/my-courses`, {
+      // ✅ FIXED: Use correct endpoint
+      console.log('📚 Fetching enrollments from:', `${API_BASE}/courses/enrolled`);
+      const response = await fetch(`${API_BASE}/courses/enrolled`, {
         method: 'GET',
         headers: getAuthHeaders(),
         credentials: 'include'
@@ -72,7 +55,11 @@ const MyCourses: React.FC = () => {
 
       if (!response.ok) {
         if (response.status === 401) {
-          throw new Error('Unauthorized. Please log in again.');
+          // Clear invalid token and redirect to login
+          localStorage.removeItem('token');
+          localStorage.removeItem('authToken');
+          window.location.href = '/login';
+          return;
         }
         throw new Error(`Failed to fetch enrollments: ${response.status}`);
       }
