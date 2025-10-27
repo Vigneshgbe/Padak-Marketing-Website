@@ -486,7 +486,7 @@ export default function Courses() {
         </div>
       </section>
 
-      {/* CTA Section */}
+      {/* CTA Section
       <section className="py-20 bg-gradient-to-r from-orange-500 to-orange-400 text-white">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-3xl lg:text-4xl font-bold mb-4">
@@ -529,7 +529,7 @@ export default function Courses() {
             )}
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* Enrollment Dialog for Non-Authenticated Users */}
       <Dialog open={showEnrollDialog} onOpenChange={setShowEnrollDialog}>
