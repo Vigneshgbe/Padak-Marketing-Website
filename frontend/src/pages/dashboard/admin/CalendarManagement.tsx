@@ -46,7 +46,7 @@ const CalendarManagement: React.FC = () => {
       return 'https://padak-backend.onrender.com';
     }
     // Default to localhost for development
-    return 'http://localhost:5000';
+    return 'https://padak-backend.onrender.com';
   };
 
   // Get auth token with proper error handling
