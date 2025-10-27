@@ -1,6 +1,6 @@
 // src/pages/dashboard/admin/CalendarManagement.tsx
 import React, { useState, useEffect } from 'react';
-import { Edit, Trash2, Plus, Search, Filter, Save } from 'lucide-react';
+import { Edit, Trash2, Plus, Search, Filter, Save, AlertCircle } from 'lucide-react';
 import DataTable from '../../../components/admin/DataTable';
 import Modal from '../../../components/admin/Modal';
 import { useNavigate } from 'react-router-dom';
@@ -40,12 +40,32 @@ const CalendarManagement: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const navigate = useNavigate();
 
+  // ✅ FIX: Proper environment detection with multiple checks
   const getBaseURL = () => {
-    // Check if running on production (Render)
-    if (window.location.hostname === 'padak-backend.onrender.com') {
+    // Priority 1: Check for environment variable (if using Vite)
+    if (import.meta.env?.VITE_API_URL) {
+      return import.meta.env.VITE_API_URL;
+    }
+
+    // Priority 2: Detect based on hostname
+    const hostname = window.location.hostname;
+    
+    // If on Render production or any production domain
+    if (hostname.includes('onrender.com') || hostname.includes('padak')) {
       return 'https://padak-backend.onrender.com';
     }
-    // Default to localhost for development
+    
+    // If on localhost or development
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      // Check if running on a specific port
+      const port = window.location.port;
+      if (port === '8080' || port === '3000' || port === '5173') {
+        // Frontend is on these ports, backend is likely on 5000
+        return 'http://localhost:5000';
+      }
+    }
+
+    // Default fallback to production
     return 'https://padak-backend.onrender.com';
   };
 
@@ -68,6 +88,24 @@ const CalendarManagement: React.FC = () => {
       console.error('Error clearing tokens:', error);
     }
     navigate('/login');
+  };
+
+  // ✅ FIX: Enhanced error handling for network failures
+  const handleNetworkError = (error: any, context: string) => {
+    console.error(`Network error in ${context}:`, error);
+    
+    // Check if it's a network/connection error
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      const baseURL = getBaseURL();
+      return `Unable to connect to the server at ${baseURL}. Please check:\n\n` +
+             `• Is the backend server running?\n` +
+             `• Are you using the correct API URL?\n` +
+             `• Is your internet connection working?\n\n` +
+             `Current API URL: ${baseURL}`;
+    }
+    
+    // Other errors
+    return error instanceof Error ? error.message : `An error occurred in ${context}`;
   };
 
   // ✅ FIX: Helper function to safely parse JSON responses
@@ -104,6 +142,7 @@ const CalendarManagement: React.FC = () => {
   const fetchEvents = async () => {
     try {
       setLoading(true);
+      setError(null);
       const token = getAuthToken();
       
       if (!token) {
@@ -118,7 +157,7 @@ const CalendarManagement: React.FC = () => {
 
       const baseURL = getBaseURL();
       const url = `${baseURL}/api/admin/calendar-events`;
-      console.log('Fetching events from:', url);
+      console.log('🔍 Fetching events from:', url);
       
       const response = await fetch(url, {
         method: 'GET',
@@ -132,6 +171,7 @@ const CalendarManagement: React.FC = () => {
 
       if (response.ok) {
         const data = await safeJsonParse(response);
+        console.log('✅ Events fetched successfully:', data.length, 'events');
         setEvents(data);
         setError(null);
       } else {
@@ -139,14 +179,14 @@ const CalendarManagement: React.FC = () => {
         throw new Error(errorData.error || `Failed to fetch calendar events: ${response.status}`);
       }
     } catch (err) {
-      console.error('Error fetching events:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred while fetching events');
+      const errorMessage = handleNetworkError(err, 'fetch events');
+      console.error('❌ Error fetching events:', err);
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  // ✅ FIX: Improved fetchUsers with better error handling
   const fetchUsers = async () => {
     try {
       const token = getAuthToken();
@@ -163,7 +203,7 @@ const CalendarManagement: React.FC = () => {
 
       const baseURL = getBaseURL();
       const url = `${baseURL}/api/admin/users`;
-      console.log('Fetching users from:', url);
+      console.log('🔍 Fetching users from:', url);
       
       const response = await fetch(url, {
         method: 'GET',
@@ -171,17 +211,15 @@ const CalendarManagement: React.FC = () => {
       });
 
       console.log('Users response status:', response.status);
-      console.log('Users response Content-Type:', response.headers.get('content-type'));
 
       if (response.status === 401) {
         console.warn('Unauthorized access to users endpoint');
-        handleAuthError();
         return;
       }
 
       if (response.ok) {
         const data = await safeJsonParse(response);
-        console.log('Users data received:', data);
+        console.log('✅ Users fetched successfully:', data);
         
         // Handle both response formats: direct array or {users: [...]}
         if (Array.isArray(data)) {
@@ -193,19 +231,12 @@ const CalendarManagement: React.FC = () => {
           setUsers([]);
         }
       } else {
-        // Try to parse error, but don't fail if it's not JSON
-        try {
-          const errorData = await safeJsonParse(response);
-          console.error('Failed to fetch users:', errorData);
-        } catch (parseError) {
-          console.error('Failed to fetch users (non-JSON error):', response.statusText);
-        }
+        console.error('Failed to fetch users:', response.status);
         setUsers([]);
       }
     } catch (err) {
-      console.error('Error fetching users:', err);
-      // Don't set the main error state, just log it
-      // Users dropdown is optional, so we don't want to break the whole page
+      console.error('❌ Error fetching users:', err);
+      // Don't set the main error state for users - it's optional
       setUsers([]);
     }
   };
@@ -254,7 +285,7 @@ const CalendarManagement: React.FC = () => {
         method = 'PUT';
       }
 
-      console.log('Saving event to:', url);
+      console.log('💾 Saving event to:', url);
 
       const response = await fetch(url, {
         method,
@@ -268,6 +299,7 @@ const CalendarManagement: React.FC = () => {
       }
 
       if (response.ok) {
+        console.log('✅ Event saved successfully');
         setIsModalOpen(false);
         await fetchEvents();
       } else {
@@ -275,8 +307,9 @@ const CalendarManagement: React.FC = () => {
         throw new Error(errorData.error || 'Failed to save calendar event');
       }
     } catch (err) {
-      console.error('Error saving event:', err);
-      setError(err instanceof Error ? err.message : 'Failed to save calendar event');
+      const errorMessage = handleNetworkError(err, 'save event');
+      console.error('❌ Error saving event:', err);
+      setError(errorMessage);
     } finally {
       setSaving(false);
     }
@@ -300,7 +333,7 @@ const CalendarManagement: React.FC = () => {
 
       const baseURL = getBaseURL();
       const url = `${baseURL}/api/admin/calendar-events/${selectedEvent.id}`;
-      console.log('Deleting event from:', url);
+      console.log('🗑️ Deleting event from:', url);
       
       const response = await fetch(url, {
         method: 'DELETE',
@@ -313,6 +346,7 @@ const CalendarManagement: React.FC = () => {
       }
 
       if (response.ok) {
+        console.log('✅ Event deleted successfully');
         setIsModalOpen(false);
         await fetchEvents();
       } else {
@@ -320,8 +354,9 @@ const CalendarManagement: React.FC = () => {
         throw new Error(errorData.error || 'Failed to delete calendar event');
       }
     } catch (err) {
-      console.error('Error deleting event:', err);
-      setError(err instanceof Error ? err.message : 'Failed to delete calendar event');
+      const errorMessage = handleNetworkError(err, 'delete event');
+      console.error('❌ Error deleting event:', err);
+      setError(errorMessage);
     }
   };
 
@@ -423,11 +458,21 @@ const CalendarManagement: React.FC = () => {
 
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6">
-          <div className="flex items-center mb-4">
-            <span className="text-red-500 mr-2">⚠️</span>
-            <h3 className="text-lg font-semibold text-red-700 dark:text-red-300">Error</h3>
+          <div className="flex items-start mb-4">
+            <AlertCircle className="text-red-500 mr-3 flex-shrink-0 mt-1" size={24} />
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-red-700 dark:text-red-300 mb-2">Connection Error</h3>
+              <div className="text-red-600 dark:text-red-400 mb-4 whitespace-pre-line">
+                {error}
+              </div>
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded p-3 mb-4">
+                <p className="text-sm text-yellow-800 dark:text-yellow-300">
+                  <strong>💡 Quick Fix:</strong> If you're running locally, make sure your backend server is running on port 5000.
+                  Run: <code className="bg-yellow-100 dark:bg-yellow-900 px-1 rounded">npm start</code> or <code className="bg-yellow-100 dark:bg-yellow-900 px-1 rounded">node server.js</code>
+                </p>
+              </div>
+            </div>
           </div>
-          <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>
           <button
             onClick={() => {
               setError(null);
