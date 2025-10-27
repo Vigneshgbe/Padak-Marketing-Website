@@ -5,8 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { apiService } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 import { 
   Clock, 
   Users, 
@@ -17,13 +21,17 @@ import {
   Award,
   TrendingUp,
   RefreshCw,
-  LogIn
+  LogIn,
+  UserPlus,
+  CheckCircle,
+  AlertCircle
 } from "lucide-react";
 
 const API_BASE = 'https://padak-backend.onrender.com';
 
 const fetchCourses = async () => {
   try {
+    // Call GET /api/courses endpoint from server.js
     const courses = await apiService.get('/courses');
     
     return courses.map(course => ({
@@ -51,10 +59,28 @@ export default function Courses() {
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [levelFilter, setLevelFilter] = useState("all");
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showEnrollDialog, setShowEnrollDialog] = useState(false);
+  const [selectedCourse, setSelectedCourse] = useState(null);
+  const [enrollmentType, setEnrollmentType] = useState("login"); // "login" or "guest"
+  const [guestForm, setGuestForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    message: ""
+  });
+  const [submittingRequest, setSubmittingRequest] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     loadCourses();
+    checkAuthentication();
   }, []);
+
+  const checkAuthentication = () => {
+    const token = localStorage.getItem('token');
+    setIsAuthenticated(!!token);
+  };
 
   const loadCourses = async () => {
     setLoading(true);
@@ -64,17 +90,134 @@ export default function Courses() {
     } catch (error) {
       console.error('Error loading courses:', error);
       setCourses([]);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to load courses. Please try again.",
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleEnrollment = (course) => {
+  const handleEnrollClick = (course) => {
+    setSelectedCourse(course);
+    
+    if (isAuthenticated) {
+      // If authenticated, directly enroll
+      handleDirectEnrollment(course);
+    } else {
+      // If not authenticated, show enrollment options dialog
+      setShowEnrollDialog(true);
+      setEnrollmentType("login");
+      setGuestForm({
+        name: "",
+        email: "",
+        phone: "",
+        message: ""
+      });
+    }
+  };
+
+  const handleDirectEnrollment = async (course) => {
+    try {
+      // Call POST /api/courses/enroll endpoint from server.js (line 2938-2976)
+      const response = await apiService.post('/courses/enroll', {
+        courseId: course.id
+      });
+
+      toast({
+        title: "Success!",
+        description: "You have been enrolled in the course successfully.",
+        variant: "success",
+      });
+
+      // Redirect to dashboard or my courses page
+      setTimeout(() => {
+        window.location.href = '/dashboard/my-courses';
+      }, 1500);
+    } catch (error) {
+      console.error('Error enrolling in course:', error);
+      
+      if (error.message?.includes('Already enrolled')) {
+        toast({
+          variant: "destructive",
+          title: "Already Enrolled",
+          description: "You are already enrolled in this course.",
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Enrollment Failed",
+          description: error.message || "Failed to enroll in course. Please try again.",
+        });
+      }
+    }
+  };
+
+  const handleGuestEnrollmentRequest = async () => {
+    // Validate guest form
+    if (!guestForm.name || !guestForm.email) {
+      toast({
+        variant: "destructive",
+        title: "Validation Error",
+        description: "Please provide your name and email.",
+      });
+      return;
+    }
+
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(guestForm.email)) {
+      toast({
+        variant: "destructive",
+        title: "Invalid Email",
+        description: "Please provide a valid email address.",
+      });
+      return;
+    }
+
+    setSubmittingRequest(true);
+    try {
+      // Call POST /api/courses/:courseId/enroll-request endpoint from server.js (line 3394-3467)
+      await apiService.post(`/courses/${selectedCourse.id}/enroll-request`, {
+        name: guestForm.name,
+        email: guestForm.email,
+        phone: guestForm.phone || null,
+        message: guestForm.message || null
+      });
+
+      toast({
+        title: "Request Submitted!",
+        description: "Your enrollment request has been submitted. We'll contact you via email once approved.",
+        duration: 5000,
+      });
+
+      setShowEnrollDialog(false);
+      setGuestForm({
+        name: "",
+        email: "",
+        phone: "",
+        message: ""
+      });
+    } catch (error) {
+      console.error('Error submitting enrollment request:', error);
+      toast({
+        variant: "destructive",
+        title: "Submission Failed",
+        description: error.message || "Failed to submit enrollment request. Please try again.",
+      });
+    } finally {
+      setSubmittingRequest(false);
+    }
+  };
+
+  const handleLoginRedirect = () => {
     // Store selected course in sessionStorage for after login
     sessionStorage.setItem('selectedCourse', JSON.stringify({
-      id: course.id,
-      title: course.title,
-      price: course.price
+      id: selectedCourse.id,
+      title: selectedCourse.title,
+      price: selectedCourse.price
     }));
     
     // Redirect to login page
@@ -182,20 +325,14 @@ export default function Courses() {
               </Button>
             </div>
           </div>
-        </div>
-        
-        {/* Floating background elements */}
-        <div className="absolute top-20 left-10 w-32 h-32 bg-orange-400/10 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-20 right-10 w-24 h-24 bg-orange-500/10 rounded-full blur-2xl animate-pulse delay-1000"></div>
-      </section>
 
-      {/* Courses Grid */}
-      <section className="py-20 bg-gradient-to-br from-orange-50/30 via-background to-orange-100/20">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+          {/* Courses Grid */}
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {filteredCourses.map((course) => (
-              <Card key={course.id} className="group hover:shadow-xl transition-all duration-300 hover:-translate-y-2 border-0 bg-background/90 backdrop-blur-sm hover:bg-white relative overflow-hidden">
-                {/* Orange accent line */}
+            {filteredCourses.map(course => (
+              <Card 
+                key={course.id} 
+                className="group hover:shadow-2xl transition-all duration-300 border-2 hover:border-orange-300/50 relative overflow-hidden"
+              >
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 to-orange-400 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300"></div>
                 
                 <CardHeader className="pb-4">
@@ -251,11 +388,20 @@ export default function Courses() {
                   <div className="flex items-center justify-between pt-4 border-t">
                     <div className="text-2xl font-bold text-orange-600">{course.price}</div>
                     <Button 
-                      onClick={() => handleEnrollment(course)}
+                      onClick={() => handleEnrollClick(course)}
                       className="bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500 text-white border-0 shadow-lg hover:shadow-xl transition-all duration-300 group relative overflow-hidden"
                     >
-                      <LogIn className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
-                      Enroll Now
+                      {isAuthenticated ? (
+                        <>
+                          <CheckCircle className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
+                          Enroll Now
+                        </>
+                      ) : (
+                        <>
+                          <LogIn className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
+                          Enroll Now
+                        </>
+                      )}
                     </Button>
                   </div>
                 </CardContent>
@@ -350,27 +496,223 @@ export default function Courses() {
             Join thousands of students who have transformed their careers with our courses
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button 
-              size="lg"
-              onClick={() => window.location.href = '/login'}
-              className="bg-white text-orange-600 hover:bg-gray-100 shadow-lg"
-            >
-              <LogIn className="w-5 h-5 mr-2" />
-              Login to Enroll
-            </Button>
-            <Button 
-              size="lg"
-              variant="outline"
-              onClick={() => window.location.href = '/signup'}
-              className="border-2 border-white text-white hover:bg-white/10"
-            >
-              Create Account
-            </Button>
+            {!isAuthenticated && (
+              <>
+                <Button 
+                  size="lg"
+                  onClick={() => window.location.href = '/login'}
+                  className="bg-white text-orange-600 hover:bg-gray-100 shadow-lg"
+                >
+                  <LogIn className="w-5 h-5 mr-2" />
+                  Login to Enroll
+                </Button>
+                <Button 
+                  size="lg"
+                  variant="outline"
+                  onClick={() => window.location.href = '/signup'}
+                  className="border-2 border-white text-white hover:bg-white/10"
+                >
+                  <UserPlus className="w-5 h-5 mr-2" />
+                  Create Account
+                </Button>
+              </>
+            )}
+            {isAuthenticated && (
+              <Button 
+                size="lg"
+                onClick={() => window.location.href = '/dashboard/my-courses'}
+                className="bg-white text-orange-600 hover:bg-gray-100 shadow-lg"
+              >
+                <BookOpen className="w-5 h-5 mr-2" />
+                View My Courses
+              </Button>
+            )}
           </div>
         </div>
       </section>
 
+      {/* Enrollment Dialog for Non-Authenticated Users */}
+      <Dialog open={showEnrollDialog} onOpenChange={setShowEnrollDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
+              Enroll in {selectedCourse?.title}
+            </DialogTitle>
+            <DialogDescription className="text-base">
+              Choose how you'd like to proceed with your enrollment
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            {/* Enrollment Type Selector */}
+            <div className="grid grid-cols-2 gap-4">
+              <Card 
+                className={`cursor-pointer transition-all hover:shadow-lg ${
+                  enrollmentType === "login" 
+                    ? "border-2 border-orange-500 bg-orange-50/50" 
+                    : "border-2 hover:border-orange-200"
+                }`}
+                onClick={() => setEnrollmentType("login")}
+              >
+                <CardContent className="pt-6 text-center">
+                  <LogIn className={`w-8 h-8 mx-auto mb-2 ${
+                    enrollmentType === "login" ? "text-orange-500" : "text-gray-400"
+                  }`} />
+                  <h3 className="font-semibold mb-1">Login</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Have an account? Login to enroll
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card 
+                className={`cursor-pointer transition-all hover:shadow-lg ${
+                  enrollmentType === "guest" 
+                    ? "border-2 border-orange-500 bg-orange-50/50" 
+                    : "border-2 hover:border-orange-200"
+                }`}
+                onClick={() => setEnrollmentType("guest")}
+              >
+                <CardContent className="pt-6 text-center">
+                  <UserPlus className={`w-8 h-8 mx-auto mb-2 ${
+                    enrollmentType === "guest" ? "text-orange-500" : "text-gray-400"
+                  }`} />
+                  <h3 className="font-semibold mb-1">Guest Request</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Request enrollment without account
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Login Option Content */}
+            {enrollmentType === "login" && (
+              <div className="space-y-4 p-4 bg-orange-50/30 rounded-lg border border-orange-200">
+                <div className="flex items-start space-x-3">
+                  <CheckCircle className="w-5 h-5 text-green-500 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium">Instant Access</p>
+                    <p className="text-xs text-muted-foreground">Get immediate access to course materials</p>
+                  </div>
+                </div>
+                <div className="flex items-start space-x-3">
+                  <CheckCircle className="w-5 h-5 text-green-500 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium">Track Progress</p>
+                    <p className="text-xs text-muted-foreground">Monitor your learning journey</p>
+                  </div>
+                </div>
+                <div className="flex items-start space-x-3">
+                  <CheckCircle className="w-5 h-5 text-green-500 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium">Earn Certificates</p>
+                    <p className="text-xs text-muted-foreground">Get recognized for your achievements</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Guest Request Form */}
+            {enrollmentType === "guest" && (
+              <div className="space-y-4">
+                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200 flex items-start space-x-2">
+                  <AlertCircle className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-blue-700">
+                    Submit your request and we'll contact you via email once approved. You can create an account later to access the course.
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <Label htmlFor="guest-name">Full Name *</Label>
+                    <Input
+                      id="guest-name"
+                      placeholder="Enter your full name"
+                      value={guestForm.name}
+                      onChange={(e) => setGuestForm({...guestForm, name: e.target.value})}
+                      className="border-orange-200 focus:border-orange-500 focus:ring-orange-500"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="guest-email">Email Address *</Label>
+                    <Input
+                      id="guest-email"
+                      type="email"
+                      placeholder="your.email@example.com"
+                      value={guestForm.email}
+                      onChange={(e) => setGuestForm({...guestForm, email: e.target.value})}
+                      className="border-orange-200 focus:border-orange-500 focus:ring-orange-500"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="guest-phone">Phone Number (Optional)</Label>
+                    <Input
+                      id="guest-phone"
+                      type="tel"
+                      placeholder="+1 (555) 000-0000"
+                      value={guestForm.phone}
+                      onChange={(e) => setGuestForm({...guestForm, phone: e.target.value})}
+                      className="border-orange-200 focus:border-orange-500 focus:ring-orange-500"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="guest-message">Message (Optional)</Label>
+                    <Textarea
+                      id="guest-message"
+                      placeholder="Tell us why you're interested in this course..."
+                      value={guestForm.message}
+                      onChange={(e) => setGuestForm({...guestForm, message: e.target.value})}
+                      className="border-orange-200 focus:border-orange-500 focus:ring-orange-500 min-h-[80px]"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowEnrollDialog(false)}
+              className="border-gray-300"
+            >
+              Cancel
+            </Button>
+            {enrollmentType === "login" ? (
+              <Button
+                onClick={handleLoginRedirect}
+                className="bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500 text-white"
+              >
+                <LogIn className="w-4 h-4 mr-2" />
+                Continue to Login
+              </Button>
+            ) : (
+              <Button
+                onClick={handleGuestEnrollmentRequest}
+                disabled={submittingRequest}
+                className="bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500 text-white"
+              >
+                {submittingRequest ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4 mr-2" />
+                    Submit Request
+                  </>
+                )}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Footer />
     </div>
   );
-}
+};
