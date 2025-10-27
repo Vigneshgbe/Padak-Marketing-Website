@@ -137,7 +137,7 @@ const Interns: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(`https://padak-backend.onrender.com/api/internships`);
+        const response = await fetch(`https://localhost:5000/api/internships`);
         if (!response.ok) {
           throw new Error(`HTTP error! Status: ${response.status} - ${response.statusText}`);
         }
@@ -206,7 +206,7 @@ const Interns: React.FC = () => {
 
       console.log("handleApplicationSubmit: Submitting application with payload:", submissionPayload);
 
-      const response = await fetch(`https://padak-backend.onrender.com/api/internships/${selectedInternship.id}/apply`, {
+      const response = await fetch(`https://localhost:5000/api/internships/${selectedInternship.id}/apply`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

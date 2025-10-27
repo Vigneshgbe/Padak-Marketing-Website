@@ -1,6 +1,5 @@
 // src/lib/api.ts
-
-const API_BASE_URL = 'https://padak-backend.onrender.com';
+const API_BASE_URL = 'https://localhost:5000';
 
 class ApiService {
   private getAuthHeaders() {

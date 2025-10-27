@@ -95,7 +95,7 @@ const ResourceManagement: React.FC = () => {
     return headers;
   };
 
-  const baseURL = 'https://padak-backend.onrender.com';
+  const baseURL = 'https://localhost:5000';
 
   const fetchResources = async () => {
     try {

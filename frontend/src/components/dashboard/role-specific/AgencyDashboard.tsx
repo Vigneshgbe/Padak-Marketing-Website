@@ -111,7 +111,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ user, stats }) => {
       setServicesError(null);
       
       try {
-        const response = await fetch(`https://padak-backend.onrender.com/api/services`, {
+        const response = await fetch(`https://localhost:5000/api/services`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
@@ -142,7 +142,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ user, stats }) => {
       setRequestsError(null);
       
       try {
-        const response = await fetch(`https://padak-backend.onrender.com/api/users/${user.id}/service-requests`, {
+        const response = await fetch(`https://localhost:5000/api/users/${user.id}/service-requests`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
@@ -189,7 +189,7 @@ const AgencyDashboard: React.FC<AgencyDashboardProps> = ({ user, stats }) => {
         ...requestData
       };
 
-      const response = await fetch(`https://padak-backend.onrender.com/api/service-requests`, {
+      const response = await fetch(`https://localhost:5000/api/service-requests`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

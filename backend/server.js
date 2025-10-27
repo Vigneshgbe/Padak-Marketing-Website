@@ -155,7 +155,7 @@ const paymentProofUpload = multer({
 // CRITICAL: Handle CORS BEFORE anything else
 app.use((req, res, next) => {
   const allowedOrigins = [
-    'https://padak.onrender.com'
+    'https://localhost:8080',
   ];
   
   const origin = req.headers.origin;
@@ -178,7 +178,7 @@ app.use((req, res, next) => {
 
 // Then add the cors package as backup
 app.use(cors({
-  origin: ['https://padak.onrender.com'],
+  origin: [ 'https://localhost:8080'],
   credentials: true
 }));
 
@@ -8134,16 +8134,6 @@ app.get('/api/health', (req, res) => {
     status: 'OK',
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
-  });
-});
-
-// Get server info
-app.get('/api/info', (req, res) => {
-  res.json({
-    name: 'Padak Dashboard API',
-    version: '1.0.0',
-    environment: process.env.NODE_ENV || 'development',
-    timestamp: new Date().toISOString()
   });
 });
 

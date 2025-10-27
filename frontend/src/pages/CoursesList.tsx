@@ -21,7 +21,7 @@ import {
   ChevronRight
 } from "lucide-react";
 
-const API_BASE = 'https://padak-backend.onrender.com';
+const API_BASE = 'https://localhost:5000';
 
 const fetchCourses = async () => {
   try {
