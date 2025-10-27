@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { BookOpen, Clock, User, Play, RefreshCw } from 'lucide-react';
 import { Enrollment } from '../../lib/types';
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = 'https://padak-backend.onrender.com/api';
 
 const MyCourses: React.FC = () => {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);

@@ -160,7 +160,7 @@ export const Contact = () => {
 
       console.log('Request data:', requestData);
 
-      const response = await fetch(`http://localhost:5000/api/contact`, {
+      const response = await fetch(`https://padak-backend.onrender.com/api/contact`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

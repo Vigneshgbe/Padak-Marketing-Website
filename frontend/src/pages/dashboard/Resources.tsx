@@ -99,7 +99,7 @@ const Resources: React.FC = () => {
 
   const fetchUserData = async () => {
     try {
-      const response = await fetch(`http://localhost:5000/api/user/profile`, {
+      const response = await fetch(`https://padak-backend.onrender.com/api/user/profile`, {
         headers: getAuthHeaders()
       });
       if (!response.ok) throw new Error('Failed to fetch user data');
@@ -112,7 +112,7 @@ const Resources: React.FC = () => {
 
   const fetchResources = async () => {
     try {
-      const response = await fetch(`http://localhost:5000/api/resources`, {
+      const response = await fetch(`https://padak-backend.onrender.com/api/resources`, {
         headers: getAuthHeaders()
       });
       if (!response.ok) throw new Error('Failed to fetch resources');
@@ -168,7 +168,7 @@ const Resources: React.FC = () => {
 
     // Handle downloadable resources
     try {
-      const response = await fetch(`http://localhost:5000/api/resources/${resource.id}/download`, {
+      const response = await fetch(`https://padak-backend.onrender.com/api/resources/${resource.id}/download`, {
         headers: getAuthHeaders()
       });
 
@@ -248,7 +248,7 @@ const Resources: React.FC = () => {
         : '49.99');
       formData.append('user_id', user?.id?.toString() || '');
 
-      const response = await fetch(`http://localhost:5000/api/payments/upload-proof`, {
+      const response = await fetch(`https://padak-backend.onrender.com/api/payments/upload-proof`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token') || localStorage.getItem('authToken')}`

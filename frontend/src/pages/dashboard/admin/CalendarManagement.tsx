@@ -42,7 +42,7 @@ const CalendarManagement: React.FC = () => {
 
   // Get API base URL
   const getBaseURL = () => {
-    return window.location.hostname === 'localhost' ? 'http://localhost:5000'
+    return window.location.hostname === 'https://padak-backend.onrender.com' ? 'https://padak-backend.onrender.com'
       : `${window.location.origin}`;
   };
 

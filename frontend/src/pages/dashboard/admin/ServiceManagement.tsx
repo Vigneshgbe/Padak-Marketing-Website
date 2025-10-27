@@ -60,7 +60,7 @@ const ServiceManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = 'http://localhost:5000';
+      const baseURL = 'https://padak-backend.onrender.com';
       const response = await fetch(`${baseURL}/api/admin/services`, {
         method: 'GET',
         headers,
@@ -91,7 +91,7 @@ const ServiceManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = 'http://localhost:5000';
+      const baseURL = 'https://padak-backend.onrender.com';
       const response = await fetch(`${baseURL}/api/admin/service-categories`, {
         method: 'GET',
         headers,
@@ -137,7 +137,7 @@ const ServiceManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = 'http://localhost:5000';
+      const baseURL = 'https://padak-backend.onrender.com';
       const url = modalType === 'create' 
         ? `${baseURL}/api/admin/services`
         : `${baseURL}/api/admin/services/${selectedService?.id}`;
@@ -186,7 +186,7 @@ const ServiceManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = 'http://localhost:5000';
+      const baseURL = 'https://padak-backend.onrender.com';
       const response = await fetch(`${baseURL}/api/admin/services/${selectedService.id}`, {
         method: 'DELETE',
         headers,

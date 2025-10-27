@@ -130,7 +130,7 @@ const EnrollmentManagement: React.FC = () => {
   const fetchRequests = async () => {
     try {
       setRequestsLoading(true);
-      const response = await fetch(`http://localhost:5000/api/admin/enrollment-requests`, {
+      const response = await fetch(`https://padak-backend.onrender.com/api/admin/enrollment-requests`, {
         method: 'GET',
         headers: getAuthHeaders(),
         credentials: 'include'
@@ -153,7 +153,7 @@ const EnrollmentManagement: React.FC = () => {
   const fetchEnrollments = async () => {
     try {
       setEnrollmentsLoading(true);
-      const response = await fetch(`http://localhost:5000/api/admin/enrollments`, {
+      const response = await fetch(`https://padak-backend.onrender.com/api/admin/enrollments`, {
         method: 'GET',
         headers: getAuthHeaders(),
         credentials: 'include'
@@ -177,7 +177,7 @@ const EnrollmentManagement: React.FC = () => {
 
     try {
       setSaving(true);
-      const response = await fetch(`http://localhost:5000/api/admin/enrollment-requests/${requestId}/approve`, {
+      const response = await fetch(`https://padak-backend.onrender.com/api/admin/enrollment-requests/${requestId}/approve`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         credentials: 'include'
@@ -207,7 +207,7 @@ const EnrollmentManagement: React.FC = () => {
 
     try {
       setSaving(true);
-      const response = await fetch(`http://localhost:5000/api/admin/enrollment-requests/${requestId}/reject`, {
+      const response = await fetch(`https://padak-backend.onrender.com/api/admin/enrollment-requests/${requestId}/reject`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         credentials: 'include',
@@ -231,7 +231,7 @@ const EnrollmentManagement: React.FC = () => {
     if (!confirm('Are you sure you want to delete this enrollment request?')) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/admin/enrollment-requests/${requestId}`, {
+      const response = await fetch(`https://padak-backend.onrender.com/api/admin/enrollment-requests/${requestId}`, {
         method: 'DELETE',
         headers: getAuthHeaders(),
         credentials: 'include'
@@ -263,7 +263,7 @@ const EnrollmentManagement: React.FC = () => {
 
     try {
       setSaving(true);
-      const response = await fetch(`http://localhost:5000/api/admin/enrollments/${selectedEnrollment.id}`, {
+      const response = await fetch(`https://padak-backend.onrender.com/api/admin/enrollments/${selectedEnrollment.id}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         credentials: 'include',
@@ -291,7 +291,7 @@ const EnrollmentManagement: React.FC = () => {
     if (!confirm('Are you sure you want to delete this enrollment?')) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/admin/enrollments/${id}`, {
+      const response = await fetch(`https://padak-backend.onrender.com/api/admin/enrollments/${id}`, {
         method: 'DELETE',
         headers: getAuthHeaders(),
         credentials: 'include'
@@ -610,15 +610,15 @@ const EnrollmentManagement: React.FC = () => {
                 {selectedRequest.payment_screenshot ? (
                   <div className="relative group">
                     <img 
-                      src={`http://localhost:5000${selectedRequest.payment_screenshot}`} 
+                      src={`https://padak-backend.onrender.com${selectedRequest.payment_screenshot}`} 
                       alt="Payment Proof"
                       className="w-full max-w-md h-auto rounded-lg border-2 border-gray-200 dark:border-gray-700 shadow-md cursor-pointer hover:shadow-xl transition-shadow"
-                      onClick={() => handleImageZoom(`http://localhost:5000${selectedRequest.payment_screenshot}`)}
+                      onClick={() => handleImageZoom(`https://padak-backend.onrender.com${selectedRequest.payment_screenshot}`)}
                       onLoad={(e) => {
-                        console.log('✅ Image loaded successfully:', `http://localhost:5000${selectedRequest.payment_screenshot}`);
+                        console.log('✅ Image loaded successfully:', `https://padak-backend.onrender.com${selectedRequest.payment_screenshot}`);
                       }}
                       onError={(e) => {
-                        console.error('❌ Image load error:', `http://localhost:5000${selectedRequest.payment_screenshot}`);
+                        console.error('❌ Image load error:', `https://padak-backend.onrender.com${selectedRequest.payment_screenshot}`);
                         const target = e.target as HTMLImageElement;
                         target.onerror = null; // Prevent infinite loop
                         target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"%3E%3Crect width="400" height="300" fill="%23f0f0f0"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="18" fill="%23999"%3EImage not found%3C/text%3E%3Ctext x="50%25" y="60%25" dominant-baseline="middle" text-anchor="middle" font-family="Arial" font-size="12" fill="%23666"%3EPath: ' + selectedRequest.payment_screenshot + '%3C/text%3E%3C/svg%3E';

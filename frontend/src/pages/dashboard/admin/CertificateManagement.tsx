@@ -46,7 +46,7 @@ const CertificateManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = 'http://localhost:5000';
+      const baseURL = 'https://padak-backend.onrender.com';
       const response = await fetch(`${baseURL}/api/certificates`, {
         method: 'GET',
         headers,
@@ -77,7 +77,7 @@ const CertificateManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = 'http://localhost:5000';
+      const baseURL = 'https://padak-backend.onrender.com';
       const response = await fetch(`${baseURL}/api/admin/users`, {
         method: 'GET',
         headers,
@@ -109,7 +109,7 @@ const CertificateManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = 'http://localhost:5000';
+      const baseURL = 'https://padak-backend.onrender.com';
       const response = await fetch(`${baseURL}/api/courses`, {
         method: 'GET',
         headers,
@@ -169,7 +169,7 @@ const CertificateManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = 'http://localhost:5000';
+      const baseURL = 'https://padak-backend.onrender.com';
       const response = await fetch(`${baseURL}/api/certificates/${selectedCertificate?.id}`, {
         method: 'DELETE',
         headers,
@@ -209,7 +209,7 @@ const CertificateManagement: React.FC = () => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const baseURL = 'http://localhost:5000';
+      const baseURL = 'https://padak-backend.onrender.com';
       const url = selectedCertificate
         ? `${baseURL}/api/certificates/${selectedCertificate.id}`
         : `${baseURL}/api/certificates`;
