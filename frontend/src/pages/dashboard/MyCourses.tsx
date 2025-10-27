@@ -125,48 +125,55 @@ const MyCourses: React.FC = () => {
 
       {enrollments.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {enrollments.map((enrollment) => (
-            <div key={enrollment.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow">
-              {enrollment.course.thumbnail && (
-                <div className="relative h-48 overflow-hidden">
-                  <div className="absolute inset-0 flex items-center justify-center text-6xl bg-gradient-to-br from-orange-50 to-orange-100">
-                    {enrollment.course.thumbnail}
+          {enrollments.map((enrollment) => {
+            // ✅ FIX: Safely handle missing course data
+            // The API might return the course data directly in the enrollment object
+            // or as a nested 'course' property
+            const course = enrollment.course || enrollment;
+            
+            return (
+              <div key={enrollment.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow">
+                {course?.thumbnail && (
+                  <div className="relative h-48 overflow-hidden">
+                    <div className="absolute inset-0 flex items-center justify-center text-6xl bg-gradient-to-br from-orange-50 to-orange-100">
+                      {course.thumbnail}
+                    </div>
                   </div>
-                </div>
-              )}
-              <div className="p-6">
-                <h3 className="font-bold text-lg mb-2">{enrollment.course.title}</h3>
-                <p className="text-gray-600 dark:text-gray-400 text-sm mb-4 line-clamp-2">
-                  {enrollment.course.description}
-                </p>
-                
-                <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 mb-4">
-                  <User size={16} className="mr-1" />
-                  <span className="mr-4 truncate">{enrollment.course.instructorName}</span>
-                  <Clock size={16} className="mr-1" />
-                  <span>{enrollment.course.durationWeeks} weeks</span>
-                </div>
+                )}
+                <div className="p-6">
+                  <h3 className="font-bold text-lg mb-2">{course?.title || 'Untitled Course'}</h3>
+                  <p className="text-gray-600 dark:text-gray-400 text-sm mb-4 line-clamp-2">
+                    {course?.description || 'No description available'}
+                  </p>
+                  
+                  <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 mb-4">
+                    <User size={16} className="mr-1" />
+                    <span className="mr-4 truncate">{course?.instructorName || 'Unknown'}</span>
+                    <Clock size={16} className="mr-1" />
+                    <span>{course?.durationWeeks || 0} weeks</span>
+                  </div>
 
-                <div className="mb-4">
-                  <div className="flex justify-between text-sm mb-1">
-                    <span>Progress</span>
-                    <span>{enrollment.progress}%</span>
+                  <div className="mb-4">
+                    <div className="flex justify-between text-sm mb-1">
+                      <span>Progress</span>
+                      <span>{enrollment?.progress || 0}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                      <div 
+                        className="bg-orange-500 h-2 rounded-full transition-all duration-300" 
+                        style={{ width: `${enrollment?.progress || 0}%` }}
+                      ></div>
+                    </div>
                   </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                    <div 
-                      className="bg-orange-500 h-2 rounded-full transition-all duration-300" 
-                      style={{ width: `${enrollment.progress}%` }}
-                    ></div>
-                  </div>
-                </div>
 
-                <button className="w-full px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors flex items-center justify-center">
-                  <Play size={16} className="mr-2" />
-                  Continue Learning
-                </button>
+                  <button className="w-full px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors flex items-center justify-center">
+                    <Play size={16} className="mr-2" />
+                    Continue Learning
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="text-center py-12">
