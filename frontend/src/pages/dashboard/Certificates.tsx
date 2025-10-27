@@ -71,7 +71,7 @@ const Certificates: React.FC = () => {
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Failed to download certificate:', error);
-      alert('Failed to download certificate. Please try again.');
+      alert('Failed to download certificate. Please try other options.');
     }
   };
 
