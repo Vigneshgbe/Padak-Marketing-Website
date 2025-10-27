@@ -1,5 +1,5 @@
 // src/lib/api.ts
-const API_BASE_URL = 'https://localhost:5000';
+const API_BASE_URL = 'https://localhost:5000/api';
 
 class ApiService {
   private getAuthHeaders() {
