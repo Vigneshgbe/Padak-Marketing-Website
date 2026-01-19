@@ -70,6 +70,8 @@ app.use('/api', require('./routes/services.routes'));
 
 // Admin routes (admin authentication required)
 app.use('/api/admin', require('./routes/admin/dashboard.routes'));
+app.use('/api/admin/payments', require('./routes/admin/payments.routes'));
+app.use('/api/admin/resource', require('./routes/admin/resource.routes'));
 app.use('/api/admin/users', require('./routes/admin/users.routes'));
 app.use('/api/admin/courses', require('./routes/admin/courses.routes'));
 app.use('/api/admin/assignments', require('./routes/admin/assignments.routes'));
