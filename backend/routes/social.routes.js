@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { db } = require('../config/firebase.js');
 const { authenticateToken, getUserConnections } = require('../middleware/auth.js');
-const { socialUpload } = require('../cofig/multer.js');
+const { socialUpload } = require('../config/multer.js');
 const { getFullImageUrl, timestampToISO } = require('../config/firebase.js');
 
 const app = express();
