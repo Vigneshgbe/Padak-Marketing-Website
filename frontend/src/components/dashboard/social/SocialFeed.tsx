@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../../hooks/use-auth';
 import { formatDistanceToNow } from 'date-fns';
+import { getImageUrl } from '../../../utils/image-utils';
 
 interface SocialActivity {
   id: number;
@@ -329,11 +330,12 @@ const SocialFeed: React.FC = () => {
     setShowEmojiPicker(false);
   };
 
-  const getImageUrl = (path: string | null) => {
-    if (!path) return '';
-    if (path.startsWith('http')) return path;
-    return `https://padak-backend.onrender.com${path}`;
-  };
+  // the local getImageUrl function
+  // const getImageUrl = (path: string | null) => {
+  //   if (!path) return '';
+  //   if (path.startsWith('http')) return path;
+  //   return `https://padak-backend.onrender.com${path}`;
+  // };
 
   if (loading) {
     return (
