@@ -3,11 +3,11 @@ const express = require('express');
 const firebase = require('firebase-admin');
 const path = require('path');
 const fs = require('fs');
-const { db } = require('../config/firebase');
-const { authenticateToken } = require('../middleware/auth.middleware');
-const { socialUpload } = require('../middleware/upload.middleware');
-const { getFullImageUrl, timestampToISO } = require('../utils/helpers.util');
-const { getUserConnections } = require('../utils/connections.util');
+const { db } = require('../config/firebase.js');
+const { authenticateToken, getUserConnections } = require('../middleware/auth.js');
+const { socialUpload } = require('../cofig/multer.js');
+const { getFullImageUrl, timestampToISO } = require('../config/firebase.js');
+
 const app = express();
 
 // --- GET All Posts (with Pagination, Likes, Comments, etc.) ---
