@@ -1,3 +1,4 @@
+// src/components/dashboard/profile/AvatarUpload.tsx
 import React, { useState, useRef, useEffect } from 'react';
 import { Camera, Upload, User, Shield } from 'lucide-react';
 import { useProfile } from '../../../hooks/use-profile';
@@ -15,10 +16,9 @@ const AvatarUpload: React.FC<AvatarUploadProps> = ({ user, onSuccess }) => {
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [imageKey, setImageKey] = useState(Date.now()); // Add key to force image reload
+  const [imageKey, setImageKey] = useState(Date.now());
 
   useEffect(() => {
-    // Reset preview when user changes
     setPreview(null);
     setImageKey(Date.now());
   }, [user]);
@@ -56,6 +56,11 @@ const AvatarUpload: React.FC<AvatarUploadProps> = ({ user, onSuccess }) => {
       // Update image key to force reload
       setImageKey(Date.now());
       
+      // Clear preview after successful upload
+      setTimeout(() => {
+        setPreview(null);
+      }, 1000);
+      
       // Call success callback if provided
       if (onSuccess) {
         onSuccess();
@@ -72,14 +77,19 @@ const AvatarUpload: React.FC<AvatarUploadProps> = ({ user, onSuccess }) => {
   };
 
   const handleUploadClick = () => {
-    setError(null); // Reset error on new upload attempt
+    setError(null);
     fileInputRef.current?.click();
   };
 
-  // Use preview if available, otherwise use user's profile image with cache busting
-  const imageSrc = preview || (user.profileImage 
-    ? `${user.profileImage}?t=${imageKey}` // Use key instead of timestamp
-    : null);
+  // Helper function to get image URL
+  const getImageUrl = (path: string | null) => {
+    if (!path) return null;
+    if (path.startsWith('http')) return path;
+    return `https://padak-backend.onrender.com${path}`;
+  };
+
+  // Use preview if available, otherwise use user's profile image
+  const imageSrc = preview || getImageUrl(user.profileImage);
 
   return (
     <div className="text-center">
@@ -87,25 +97,26 @@ const AvatarUpload: React.FC<AvatarUploadProps> = ({ user, onSuccess }) => {
         <div className="relative inline-block">
           {imageSrc ? (
             <img 
-              key={imageKey} // Force re-render with key
-              src={imageSrc} 
+              key={imageKey}
+              src={`${imageSrc}?t=${imageKey}`}
               alt="Profile" 
               className="w-32 h-32 rounded-full object-cover border-4 border-gray-200 dark:border-gray-600"
               onError={(e) => {
-                // Fallback to default avatar if image fails to load
-                e.currentTarget.onerror = null;
-                e.currentTarget.src = '/default-avatar.png';
+                console.error('Failed to load image:', imageSrc);
+                e.currentTarget.style.display = 'none';
+                e.currentTarget.parentElement?.querySelector('.fallback-avatar')?.classList.remove('hidden');
               }}
             />
-          ) : (
-            <div className="w-32 h-32 rounded-full bg-gray-200 dark:bg-gray-600 border-4 border-gray-300 dark:border-gray-500 flex items-center justify-center">
-              {user.accountType === 'admin' ? (
-                <Shield size={48} className="text-orange-500" />
-              ) : (
-                <User size={48} className="text-gray-400" />
-              )}
-            </div>
-          )}
+          ) : null}
+          
+          {/* Fallback Avatar */}
+          <div className={`fallback-avatar w-32 h-32 rounded-full bg-gray-200 dark:bg-gray-600 border-4 border-gray-300 dark:border-gray-500 flex items-center justify-center ${imageSrc ? 'hidden' : ''}`}>
+            {user.accountType === 'admin' ? (
+              <Shield size={48} className="text-orange-500" />
+            ) : (
+              <User size={48} className="text-gray-400" />
+            )}
+          </div>
           
           <button
             onClick={handleUploadClick}
@@ -135,7 +146,6 @@ const AvatarUpload: React.FC<AvatarUploadProps> = ({ user, onSuccess }) => {
         {loading ? 'Uploading...' : 'Upload New Avatar'}
       </button>
 
-      {/* Error message display */}
       {error && (
         <div className="mt-3 text-red-500 text-sm">
           {error}

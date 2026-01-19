@@ -13,7 +13,7 @@ export const useProfile = () => {
     setLoading(true);
     
     try {
-      const response = await fetch('/api/auth/profile', {
+      const response = await fetch('https://padak-backend.onrender.com/api/auth/profile', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -53,7 +53,7 @@ export const useProfile = () => {
       formData.append('avatar', file);
       
       const response = await fetch(
-       `https://padak-backend.onrender.com/api/auth/avatar`,
+        `https://padak-backend.onrender.com/api/auth/avatar`,
         {
           method: 'POST',
           headers: {
@@ -64,35 +64,31 @@ export const useProfile = () => {
       );
   
       if (!response.ok) {
-        // Handle text response for errors
-        const errorText = await response.text();
-        throw new Error(errorText || 'Failed to upload avatar');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to upload avatar');
       }
   
-      // Handle text response for success
-      const profileImage = await response.text();
+      // Get the JSON response with user data
+      const data = await response.json();
       
-      // Update user context with new absolute URL
-      updateUser({ profileImage });
+      // Update user context with new profile image path
+      updateUser({ 
+        profileImage: data.profile_image,
+        ...data.user 
+      });
       
       toast({
         title: "Success",
         description: "Avatar updated successfully!",
       });
       
-      return profileImage;
+      return data.profile_image;
     } catch (error: any) {
-      let errorMessage = "Failed to upload avatar";
-      
-      if (error instanceof SyntaxError) {
-        errorMessage = "Invalid server response";
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
+      console.error('Avatar upload error:', error);
       
       toast({
         title: "Error",
-        description: errorMessage,
+        description: error.message || "Failed to upload avatar",
         variant: "destructive",
       });
       throw error;

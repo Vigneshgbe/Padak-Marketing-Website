@@ -1,8 +1,8 @@
 // src/components/dashboard/profile/ProfileModal.tsx
-import React, { useState, useEffect } from 'react';
-import { X, Camera, Save, User } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Camera, User } from 'lucide-react';
 import { useProfile } from '../../../hooks/use-profile';
-import AvatarUpload from './AvatarUpload'; // Keep this import as is
+import AvatarUpload from './AvatarUpload';
 import ProfileForm from './ProfileForm';
 
 interface ProfileModalProps {
@@ -13,25 +13,20 @@ interface ProfileModalProps {
 const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) => {
   const { user, loading, updateProfile } = useProfile();
   const [activeTab, setActiveTab] = useState<'profile' | 'avatar'>('profile');
-  const [avatarKey, setAvatarKey] = useState(0); // Add key to reset avatar component
-
-  // Reset avatar component when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      setAvatarKey(prev => prev + 1);
-    }
-  }, [isOpen]);
 
   if (!isOpen || !user) return null;
 
   const handleAvatarSuccess = () => {
-    // Close the modal after successful upload
-    onClose();
+    // Optionally close modal or show success message
+    setTimeout(() => {
+      onClose();
+    }, 1500);
   };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">       <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
+        <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
           <h3 className="text-xl font-bold">Profile Settings</h3>
           <button 
             onClick={onClose}
@@ -70,7 +65,7 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) => {
           {activeTab === 'profile' ? (
             <ProfileForm user={user} onSubmit={updateProfile} loading={loading} />
           ) : (
-            <AvatarUpload user={user} />
+            <AvatarUpload user={user} onSuccess={handleAvatarSuccess} />
           )}
         </div>
       </div>

@@ -675,43 +675,83 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
 });
 
 // Upload avatar (UNIFIED)
-app.post('/api/auth/avatar', authenticateToken, (req, res, next) => {
-  // Handle multer errors properly
-  avatarUpload.single('avatar')(req, res, (err) => {
-    if (err) {
-      return res.status(400).json({ error: err.message });
-    }
-    next();
-  });
-}, async (req, res) => {
+// app.post('/api/auth/avatar', authenticateToken, (req, res, next) => {
+//   // Handle multer errors properly
+//   avatarUpload.single('avatar')(req, res, (err) => {
+//     if (err) {
+//       return res.status(400).json({ error: err.message });
+//     }
+//     next();
+//   });
+// }, async (req, res) => {
+//   try {
+//     if (!req.file) {
+//       return res.status(400).json({ error: 'No file uploaded' });
+//     }
+
+//     const userId = req.user.id;
+//     const profileImage = `/uploads/avatars/${req.file.filename}`;
+
+//     // Delete old avatar if exists
+//     if (req.user.profile_image) {
+//       const oldFilename = path.basename(req.user.profile_image);
+//       const oldPath = path.join(avatarsDir, oldFilename);
+//       if (fs.existsSync(oldPath)) {
+//         fs.unlinkSync(oldPath);
+//       }
+//     }
+
+//     await db.collection('users').doc(userId).update({
+//       profile_image: profileImage,
+//       updated_at: firebase.firestore.Timestamp.now()
+//     });
+
+//     // Send success response with plain text
+//     res.status(200).send(profileImage);
+
+//   } catch (error) {
+//     console.error('Avatar upload error:', error);
+//     res.status(500).json({ error: 'Server error' });
+//   }
+// });
+
+// Upload Avatar
+app.post('/api/auth/avatar', authenticateToken, avatarUpload.single('avatar'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const userId = req.user.id;
-    const profileImage = `/uploads/avatars/${req.file.filename}`;
-
-    // Delete old avatar if exists
-    if (req.user.profile_image) {
-      const oldFilename = path.basename(req.user.profile_image);
-      const oldPath = path.join(avatarsDir, oldFilename);
-      if (fs.existsSync(oldPath)) {
-        fs.unlinkSync(oldPath);
-      }
-    }
-
+    const userId = req.user.userId;
+    const avatarPath = `/uploads/avatars/${req.file.filename}`;
+    
+    // Update user document with new avatar path
     await db.collection('users').doc(userId).update({
-      profile_image: profileImage,
-      updated_at: firebase.firestore.Timestamp.now()
+      profile_image: avatarPath,
+      updated_at: new Date().toISOString()
     });
 
-    // Send success response with plain text
-    res.status(200).send(profileImage);
-
+    console.log(`✅ Avatar uploaded for user ${userId}: ${avatarPath}`);
+    
+    // Return the full user object
+    const userDoc = await db.collection('users').doc(userId).get();
+    const userData = userDoc.data();
+    
+    res.json({
+      success: true,
+      profile_image: avatarPath,
+      user: {
+        id: userId,
+        email: userData.email,
+        first_name: userData.first_name,
+        last_name: userData.last_name,
+        profile_image: avatarPath,
+        account_type: userData.account_type
+      }
+    });
   } catch (error) {
-    console.error('Avatar upload error:', error);
-    res.status(500).json({ error: 'Server error' });
+    console.error('❌ Avatar upload error:', error);
+    res.status(500).json({ error: error.message || 'Failed to upload avatar' });
   }
 });
 
